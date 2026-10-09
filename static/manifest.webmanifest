@@ -1,0 +1,16 @@
+{
+  "name": "対戦メモ",
+  "short_name": "対戦メモ",
+  "description": "ポケモンチャンピオンズ向けの対戦メモ・ダメージ計算ツール (非公式)",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e1115",
+  "theme_color": "#171b21",
+  "icons": [
+    {"src": "./icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "./icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

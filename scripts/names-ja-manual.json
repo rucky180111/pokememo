@@ -1,0 +1,30 @@
+{
+  "moves": {},
+  "abilities": {"auraguard": "はどうのぼうご", "eelevate": "うなぎのぼり", "firemane": "ほのおのたてがみ"},
+  "items": {},
+  "species": {
+    "aegislashshield": "ギルガルド", "aegislashblade": "ギルガルド(ブレード)", "aegislashboth": "ギルガルド(攻ブレード/受シールド)",
+    "basculegionf": "イダイトウ(メス)", "indeedeef": "イエッサン(メス)", "indeedee": "イエッサン(オス)",
+    "meowstic": "ニャオニクス(オス)", "meowsticf": "ニャオニクス(メス)", "meowsticfmega": "メガニャオニクス(メス)", "meowsticmmega": "メガニャオニクス(オス)",
+    "castformsunny": "ポワルン(たいよう)", "castformrainy": "ポワルン(あまみず)", "castformsnowy": "ポワルン(ゆきぐも)",
+    "floetteeternal": "フラエッテ(えいえん)",
+    "gourgeistsmall": "パンプジン(小)", "gourgeistlarge": "パンプジン(大)", "gourgeistsuper": "パンプジン(特大)",
+    "lycanroc": "ルガルガン(まひる)", "lycanrocmidnight": "ルガルガン(まよなか)", "lycanrocdusk": "ルガルガン(たそがれ)",
+    "maushold": "イッカネズミ(3びき)", "mausholdfour": "イッカネズミ(4ひき)",
+    "mimikyubusted": "ミミッキュ(ばれた)", "morpekohangry": "モルペコ(はらぺこ)", "palafinhero": "イルカマン(マイティ)",
+    "polteageistantique": "ポットデス(しんさく)", "sinistchamasterpiece": "ヤバソチャ(タカイモノ)",
+    "rotomheat": "ヒートロトム", "rotomwash": "ウォッシュロトム", "rotomfrost": "フロストロトム", "rotomfan": "スピンロトム", "rotommow": "カットロトム",
+    "squawkabillyblue": "イキリンコ(ブルー)", "squawkabillywhite": "イキリンコ(ホワイト)", "squawkabillyyellow": "イキリンコ(イエロー)", "squawkabilly": "イキリンコ(グリーン)",
+    "taurospaldeacombat": "ケンタロス(パルデア・コンバット)", "taurospaldeablaze": "ケンタロス(パルデア・ブレイズ)", "taurospaldeaaqua": "ケンタロス(パルデア・ウォーター)",
+    "toxtricity": "ストリンダー(ハイ)", "toxtricitylowkey": "ストリンダー(ロー)",
+    "vivillonfancy": "ビビヨン(ファンシー)", "vivillonpokeball": "ビビヨン(ボール)"
+  },
+  "natures": {
+    "Lonely": "さみしがり", "Adamant": "いじっぱり", "Naughty": "やんちゃ", "Brave": "ゆうかん",
+    "Bold": "ずぶとい", "Impish": "わんぱく", "Lax": "のうてんき", "Relaxed": "のんき",
+    "Modest": "ひかえめ", "Mild": "おっとり", "Rash": "うっかりや", "Quiet": "れいせい",
+    "Calm": "おだやか", "Gentle": "おとなしい", "Careful": "しんちょう", "Sassy": "なまいき",
+    "Timid": "おくびょう", "Hasty": "せっかち", "Jolly": "ようき", "Naive": "むじゃき",
+    "Hardy": "がんばりや", "Docile": "すなお", "Bashful": "てれや", "Quirky": "きまぐれ", "Serious": "まじめ"
+  }
+}
