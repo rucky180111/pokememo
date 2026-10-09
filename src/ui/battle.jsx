@@ -8,10 +8,11 @@ import {spreadLabel, PRESETS, SPE_COMBOS, speFromCombo, leadRate} from '../engin
 import {useApp, Sheet, Picker, Seg, MonName, TypeChip, Empty, Confirm, cx, rate, fmtPct} from './common.jsx';
 import {MonEditor, FORMAT_OPTS, buildSummary} from './teams.jsx';
 import {BoardTab} from './board.jsx';
+import {SelectTab} from './select.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
 import {DamageTab, SpeedTab, PredictTab} from './analysis.jsx';
 
-const TABS = [['setup', '見せ合い'], ['board', '盤面'], ['dmg', 'ダメージ'], ['speed', '素早さ'], ['predict', '予測'], ['log', 'ログ']];
+const TABS = [['setup', '① 選出'], ['board', '② 対戦'], ['dmg', 'ダメージ表'], ['speed', '素早さ'], ['predict', '予測'], ['log', 'ログ']];
 const RESULT_OPTS = [['', '未決'], ['win', '勝ち'], ['lose', '負け'], ['draw', '引分']];
 
 function useWide() {
@@ -48,7 +49,7 @@ export function BattleScreen({id}) {
   const right = tab === 'board' && wide ? 'dmg' : tab;
   const body = t => {
     switch (t) {
-      case 'setup': return <SetupTab {...props} />;
+      case 'setup': return <SelectTab {...props} />;
       case 'board': return <BoardTab {...props} />;
       case 'dmg': return <DamageTab {...props} />;
       case 'speed': return <SpeedTab {...props} />;

@@ -78,34 +78,31 @@ await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
 // 対戦を記録
 await page.getByRole('button', {name: '対戦を記録'}).click();
 await page.waitForSelector('.battle');
-await page.getByRole('button', {name: /相手のポケモンを追加/}).click();
+await page.locator('.opp-tile.empty').first().click();
 for (const n of ['ぼーまんだ', 'ばんぎらす', 'げんがー', 'はっさむ', 'みろかろす', 'どりゅうず']) await pickFrom(page, n);
 await page.waitForFunction(() => window.__pokememo.store.battles()[0].opp.length === 6);
 check(await page.locator('.overlay').count() === 0, '6体入れたら選択パネルが閉じる');
 await shot(page, 'setup');
 // 選出
-const myRows = page.locator('.party').nth(1).locator('.pick-no');
-await myRows.nth(0).click(); await myRows.nth(2).click(); await myRows.nth(1).click();
-const oppRows = page.locator('.party').nth(0).locator('.pick-no');
-await oppRows.nth(1).click();
-await page.getByRole('button', {name: '6×6 相性表を見る'}).click();
-await page.waitForSelector('.matrix');
-await shot(page, 'matrix');
-check(await page.locator('.matrix tbody tr').count() === 3, '相性表が自分3体ぶん出る');
-await page.getByRole('button', {name: '初手を場に出して開始'}).click();
-await page.waitForSelector('.board .moncard');
+check(await page.locator('.sel-table tbody tr').count() === 3, '選出表が自分3体ぶん出る');
+check(await page.locator('.sel-table tbody tr').first().locator('td').count() === 6, '選出表に相手6体ぶんの列');
+await page.locator('.sel-mon').nth(0).click(); await page.locator('.sel-mon').nth(2).click(); await page.locator('.sel-mon').nth(1).click();
+await shot(page, 'select');
+await page.getByRole('button', {name: /この選出で対戦開始/}).click();
+await page.waitForSelector('.board .side.me .moncard:not(.empty)');
+await page.locator('.side.opp .benchmon', {hasText: 'バンギラス'}).click();
+await page.waitForSelector('.matchup .mu');
 let b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.sides.me.active[0] === 0 && b.state.sides.opp.active[0] === 1, '初手が場に出る');
+check(b.pick.opp.join() === '1', '相手の選出に自動で入る');
 check(b.state.field.weather === 'Sand', `バンギラスのすなおこしで砂 (${b.state.field.weather})`);
 await shot(page, 'board');
 
-// ターンを記録: 自分=つるぎのまい, 相手=ステルスロック
-await page.getByRole('button', {name: 'このターンの行動を記録'}).click();
-await page.locator('.turn-row.me .chip', {hasText: 'つるぎのまい'}).click();
-await page.locator('.turn-row.opp .chip.add').click();
-await pickFrom(page, 'すてるすろっく');
-await shot(page, 'turn-sheet');
-await page.getByRole('button', {name: '記録する'}).click();
+// ターンを記録: 盤面のタップだけで (自分=つるぎのまい, 相手=ステルスロック)
+await page.locator('.mu-row.tap', {hasText: 'つるぎのまい'}).click();
+await page.locator('.mu-row.tap', {hasText: 'ステルスロック'}).click();
+await shot(page, 'quick-turn');
+await page.getByRole('button', {name: 'このターンを記録'}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.turns.length === 1 && b.turns[0].acts.length === 2, 'ターンが記録された');
 check(b.state.mons.me[0].boosts.atk === 2, 'つるぎのまいで A+2');
@@ -119,7 +116,7 @@ b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.mons.opp[1].hp === 40, '相手のHPを40%に');
 
 // ダメージ表
-await page.getByRole('tab', {name: 'ダメージ'}).click();
+await page.getByRole('tab', {name: 'ダメージ表'}).click();
 await page.waitForSelector('table.dmg');
 await shot(page, 'damage');
 const cols = await page.locator('table.dmg thead th').count();
@@ -134,7 +131,7 @@ await page.locator('.obs-in').fill('20');
 await page.getByRole('button', {name: '絞り込む'}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.mons.opp[1].hp === 20, '逆算の入力で盤面のHPも更新');
-await page.getByRole('tab', {name: 'ダメージ'}).click();
+await page.getByRole('tab', {name: 'ダメージ表'}).click();
 await page.locator('table.dmg tbody tr').first().locator('td .cell').first().click();
 await page.waitForSelector('.sheet .big');
 check(await page.locator('.sheet .mini tbody tr').count() >= 3, '耐久を変えた比較が出る');
@@ -158,16 +155,22 @@ check(await page.locator('.log li').count() === 1, 'ログに1ターン');
 await shot(page, 'log');
 
 // 交代を記録 → 取り消し
-await page.getByRole('tab', {name: '盤面'}).click();
-await page.getByRole('button', {name: 'このターンの行動を記録'}).click();
-await page.locator('.turn-row.me .chips').nth(1).locator('.chip', {hasText: 'ガオガエン'}).click();
-await page.getByRole('button', {name: '記録する'}).click();
+await page.getByRole('tab', {name: '② 対戦'}).click();
+await page.locator('.side.me .benchmon', {hasText: 'ガオガエン'}).click();
+await page.locator('.mu-row.tap', {hasText: 'ステルスロック'}).click();
+await page.getByRole('button', {name: 'このターンを記録'}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.sides.me.active[0] === 2, '交代でガオガエンが場に');
 check(b.state.mons.me[0].boosts.atk === 0, '下がったガブリアスのランクが戻る');
 await page.getByRole('button', {name: '戻す'}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.turns.length === 1 && b.state.sides.me.active[0] === 0 && b.state.mons.me[0].boosts.atk === 2, '取り消しで元の盤面に戻る');
+// 攻撃技を記録するとHPが仮入力される
+await page.locator('.mu-row.tap', {hasText: 'じしん'}).first().click();
+await page.getByRole('button', {name: 'このターンを記録'}).click();
+b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
+check(b.turns.length === 2 && b.state.mons.opp[1].fainted, 'じしんでHPが仮入力される (A+2 で倒れる)');
+await page.getByRole('button', {name: '戻す'}).click();
 
 // メガシンカのトグル (リザードンを出してから)
 await page.locator('.side.me .mc-top .btn', {hasText: '入替'}).click();
@@ -218,7 +221,7 @@ for (const h of ['#/battles', '#/teams', '#/stats', '#/settings']) {
 const bid = await page.evaluate(() => window.__pokememo.store.battles()[0].id);
 await page.goto(`${url}#/battle/${bid}`);
 await page.waitForSelector('.battle');
-for (const t of ['見せ合い', '盤面', 'ダメージ', '素早さ', '予測', 'ログ']) {
+for (const t of ['① 選出', '② 対戦', 'ダメージ表', '素早さ', '予測', 'ログ']) {
   await page.getByRole('tab', {name: t}).click();
   await page.waitForTimeout(120);
   const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -244,7 +247,7 @@ await ipad.locator('.card.link').first().click();
 await ipad.locator('.form .seg button', {hasText: 'ダブル'}).click();
 await ipad.getByRole('button', {name: '仮想盤面'}).click();
 await ipad.waitForSelector('.battle');
-await ipad.getByRole('button', {name: /相手のポケモンを追加/}).click();
+await ipad.locator('.opp-tile.empty').first().click();
 for (const n of ['がおがえん', 'ぺりっぱー', 'ふしぎばな', 'がぶりあす', 'みみっきゅ', 'さーないと']) {
   await ipad.locator('.picker-bar input[type=search]').last().fill(n);
   const rows = ipad.locator('.picker-list .row');
@@ -254,12 +257,12 @@ await ipad.waitForFunction(() => window.__pokememo.store.battles().find(x => x.k
 const dbl = await ipad.evaluate(() => window.__pokememo.store.battles().find(x => x.kind === 'sim'));
 check(dbl && dbl.format === 'double' && dbl.state.sides.me.active.length === 2, 'ダブルの仮想盤面は場が2枠');
 console.log('  ダブルの相手:', dbl.opp.map(o => o.species).join(','));
-const myNo = ipad.locator('.party').nth(1).locator('.pick-no');
-await myNo.nth(0).click(); await myNo.nth(1).click(); await myNo.nth(2).click();
-const opNo = ipad.locator('.party').nth(0).locator('.pick-no');
-await opNo.nth(0).click(); await opNo.nth(1).click();
-await ipad.getByRole('button', {name: '初手を場に出して開始'}).click();
-await ipad.waitForSelector('.side.opp .moncard:not(.empty)');
+for (const k of [0, 1, 2]) await ipad.locator('.sel-mon').nth(k).click();
+await ipad.getByRole('button', {name: /この選出で対戦開始/}).click();
+await ipad.waitForSelector('.col-board .side.me .moncard:not(.empty)');
+await ipad.locator('.col-board .side.opp .benchmon', {hasText: 'ガオガエン'}).click();
+await ipad.locator('.col-board .side.opp .benchmon', {hasText: 'ペリッパー'}).click();
+await ipad.waitForFunction(() => window.__pokememo.store.battles().find(x => x.kind === 'sim').state.sides.opp.active.join() === '0,1');
 const d2 = await ipad.evaluate(() => window.__pokememo.store.battles().find(x => x.kind === 'sim'));
 check(d2.state.sides.me.active.join() === '0,1' && d2.state.sides.opp.active.join() === '0,1', 'ダブルの初手2体ずつ');
 check(d2.state.mons.me[0].boosts.atk === -1 && d2.state.mons.me[1].boosts.atk === -1, `相手ガオガエンのいかくが2体に入る (${d2.state.mons.me[0].boosts.atk},${d2.state.mons.me[1].boosts.atk})`);

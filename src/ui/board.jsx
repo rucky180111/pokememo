@@ -27,6 +27,38 @@ export function BoardTab({battle, ctx, mut, usage, toast, setTab}) {
   const [sheet, setSheet] = useState(null); // {side, idx}
   const f = battle.state.field;
   const hasOpp = battle.opp.length > 0;
+  const [sel, setSel] = useState({me: null, opp: null, first: ''});
+  const aliveAct = side => battle.state.sides[side].active.filter(i => i != null && !condOf(battle, side, i)?.fainted);
+  const myAct = aliveAct('me'), oppAct = aliveAct('opp');
+  // シングルで両者が場にいるときは、盤面のタップだけで1ターンを記録できる
+  const quick = battle.format === 'single' && myAct.length === 1 && oppAct.length === 1;
+  const info = useMemo(() => benchInfo(battle, ctx, myAct, oppAct), [ctx]);
+  const label = (side, a) => (!a ? '未選択' : a.type === 'switch' ? `${speciesName(buildOf(battle, side, a.to)?.species)}に交代` : moveName(a.move));
+  const record = () => {
+    if (!sel.me && !sel.opp) { toast('自分か相手の行動をタップで選んでください'); return; }
+    const mk = (side, mon, a) => (a ? {side, mon, type: a.type, move: a.move || '', to: a.to ?? null, mega: !!a.mega, target: null, flags: {}} : null);
+    const A = mk('me', myAct[0], sel.me), O = mk('opp', oppAct[0], sel.opp);
+    let acts = [A, O].filter(Boolean);
+    if (A && O) {
+      let order = sel.first;
+      if (!order) {
+        const key = (side, mon, a) => ({build: ctx.build(side, mon), cond: ctx.cond(side, mon), moveId: a.type === 'switch' ? null : a.move, side: battle.state.sides[side]});
+        const o = turnOrder(key('me', A.mon, A), key('opp', O.mon, O), {format: battle.format, field: battle.state.field});
+        order = o === 'b' ? 'opp' : 'me';
+      }
+      acts = order === 'opp' ? [O, A] : [A, O];
+    }
+    // HPの仮入力: 計算値の中央を引いておく (あとでスライダーで直す)
+    const est = [];
+    if (A?.type === 'move') { const tgt = O?.type === 'switch' ? O.to : oppAct[0]; const r = info.give?.targets.find(t => t.idx === tgt)?.results[A.move]; if (r?.ok && !r.status && !r.immune) est.push(['opp', tgt, (r.minPct + r.maxPct) / 2]); }
+    if (O?.type === 'move') { const tgt = A?.type === 'switch' ? A.to : myAct[0]; const r = info.take?.targets.find(t => t.idx === tgt)?.results[O.move]; if (r?.ok && !r.status && !r.immune) est.push(['me', tgt, (r.minPct + r.maxPct) / 2]); }
+    mut(b => {
+      commitTurnInfer(b, {acts, orderKnown: !!sel.first && A?.type === 'move' && O?.type === 'move', note: ''}, {resolveAbility: ctx.strictAbility});
+      for (const [side, i, d] of est) { const c = condOf(b, side, i); if (c && !c.fainted) setHP(b, side, i, Math.max(0, Math.round(c.hp - d))); }
+    });
+    setSel({me: null, opp: null, first: ''});
+    toast(est.length ? 'ターンを記録しました。HPは計算値で仮入力したので、ずれていたら直してください' : 'ターンを記録しました');
+  };
   return (
     <div class="board">
       <div class="fieldbar">
@@ -43,15 +75,29 @@ export function BoardTab({battle, ctx, mut, usage, toast, setTab}) {
       </div>
 
       {!hasOpp && <Empty>「見せ合い」で相手のポケモンを登録すると、ここに盤面が出ます。</Empty>}
-      <Side side="opp" battle={battle} ctx={ctx} mut={mut} onOpen={setSheet} />
-      {hasOpp && <Matchup battle={battle} ctx={ctx} />}
-      <div class="turnbar">
-        <span class="tag">ターン {turnNumber(battle)}</span>
-        <button class="btn primary grow" onClick={() => setTurn(true)} disabled={!hasOpp}>このターンの行動を記録</button>
-        <button class="btn" disabled={!battle.turns.length || !battle.turns[battle.turns.length - 1].before}
-          onClick={() => { mut(b => { undoTurn(b); }); toast('直前のターンを取り消しました'); }}>戻す</button>
+      <Side side="opp" battle={battle} ctx={ctx} mut={mut} onOpen={setSheet} quick={quick} sel={sel} setSel={setSel} info={info} />
+      {hasOpp && <Matchup battle={battle} ctx={ctx} quick={quick} sel={sel} setSel={setSel} />}
+      <Side side="me" battle={battle} ctx={ctx} mut={mut} onOpen={setSheet} quick={quick} sel={sel} setSel={setSel} info={info} />
+      <div class="turnbar col">
+        {quick && (
+          <div class="qb-sum">
+            <span class="side-tag me">自分</span><b class={cx(!sel.me && 'muted')}>{label('me', sel.me)}</b>
+            <span class="side-tag opp">相手</span><b class={cx(!sel.opp && 'muted')}>{label('opp', sel.opp)}</b>
+            {sel.me?.type === 'move' && megaTarget(battle, 'me', myAct[0]) && !battle.state.sides.me.megaUsed && <Toggle small on={!!sel.me.mega} onChange={v => setSel({...sel, me: {...sel.me, mega: v}})}>メガ</Toggle>}
+            {sel.opp?.type === 'move' && megaTarget(battle, 'opp', oppAct[0]) && !battle.state.sides.opp.megaUsed && <Toggle small on={!!sel.opp.mega} onChange={v => setSel({...sel, opp: {...sel.opp, mega: v}})}>相手メガ</Toggle>}
+            {sel.me?.type === 'move' && sel.opp?.type === 'move' && <Seg small value={sel.first} options={[['', '順番は記録しない'], ['me', '自分が先'], ['opp', '相手が先']]} onChange={v => setSel({...sel, first: v})} />}
+          </div>
+        )}
+        <div class="qb-row">
+          <span class="tag">ターン {turnNumber(battle)}</span>
+          {quick
+            ? <button class="btn primary grow" onClick={record}>このターンを記録</button>
+            : <button class="btn primary grow" onClick={() => setTurn(true)} disabled={!hasOpp || (!myAct.length && !oppAct.length)}>このターンの行動を記録</button>}
+          {quick && <button class="btn" onClick={() => setTurn(true)}>詳しく</button>}
+          <button class="btn" disabled={!battle.turns.length || !battle.turns[battle.turns.length - 1].before}
+            onClick={() => { mut(b => { undoTurn(b); }); setSel({me: null, opp: null, first: ''}); toast('直前のターンを取り消しました'); }}>戻す</button>
+        </div>
       </div>
-      <Side side="me" battle={battle} ctx={ctx} mut={mut} onOpen={setSheet} />
 
       {turn && <TurnSheet battle={battle} ctx={ctx} mut={mut} toast={toast} onClose={() => setTurn(false)} />}
       {sheet && sheet.side === 'opp' && battle.opp[sheet.idx] && <OppSheet battle={battle} idx={sheet.idx} ctx={ctx} mut={mut} usage={usage} onClose={() => setSheet(null)} />}
@@ -61,6 +107,16 @@ export function BoardTab({battle, ctx, mut, usage, toast, setTab}) {
       )}
     </div>
   );
+}
+
+// 控えの判断材料: 自分の場の技が相手の各ポケモンにどれだけ入るか / 相手の場の技が自分の各ポケモンにどれだけ入るか
+function benchInfo(battle, ctx, myAct, oppAct) {
+  const give = myAct.length ? attackTable(ctx, 'me', myAct[0]) : null;
+  const take = oppAct.length ? attackTable(ctx, 'opp', oppAct[0]) : null;
+  // 自分の控えが相手の場に撃てる最大打点
+  const out = {};
+  if (oppAct.length) battle.my.forEach((_, i) => { if (!myAct.includes(i) && !condOf(battle, 'me', i)?.fainted) out[i] = attackTable(ctx, 'me', i)?.targets.find(t => t.idx === oppAct[0])?.best || null; });
+  return {give, take, out};
 }
 
 // 残りHPに対するダメージの帯: 濃い部分 = 最大ダメージ後も残るHP、薄い部分 = 乱数の幅
@@ -77,21 +133,25 @@ function DmgBar({r, hp}) {
 }
 
 // いまの対面の要点: 先手・自分の技・相手の技
-function Matchup({battle, ctx}) {
+function Matchup({battle, ctx, quick, sel, setSel}) {
   const alive = side => battle.state.sides[side].active.filter(i => i != null && !condOf(battle, side, i)?.fainted);
   const mine = alive('me'), opps = alive('opp');
   const data = useMemo(() => mine.map(mi => ({mi, give: attackTable(ctx, 'me', mi), spd: speedTable(ctx, mi)})), [ctx]);
-  const take = useMemo(() => opps.map(oi => ({oi, t: attackTable(ctx, 'opp', oi)})), [ctx]);
+  const take = useMemo(() => opps.map(oi => ({oi, t: attackTable(ctx, 'opp', oi, {includeStatus: !!quick})})), [ctx, quick]);
   if (!mine.length || !opps.length) return null;
   const tr = battle.state.field.trickRoom;
-  const line = (label, r, hp, extra) => (
-    <div class="mu-row">
+  const line = (label, r, hp, extra, side, moveId) => {
+    const on = quick && sel[side]?.type === 'move' && sel[side].move === moveId;
+    const Tag = quick ? 'button' : 'div';
+    return (
+    <Tag class={cx('mu-row', quick && 'tap', on && 'on')} aria-pressed={quick ? on : undefined} onClick={quick ? () => setSel({...sel, [side]: on ? null : {type: 'move', move: moveId}}) : undefined}>
       <span class="mu-mv">{label}{extra}</span>
       <DmgBar r={r} hp={hp} />
       <span class={cx('mu-val num', dmgClass(r))}>{!r?.ok ? '—' : r.status ? '変化' : r.immune ? '無効' : `${fmtPct(r.minPct)}–${fmtPct(r.maxPct)}%`}</span>
       <span class="mu-ko">{r?.ok && !r.status && !r.immune ? r.koText : ''}</span>
-    </div>
-  );
+    </Tag>
+    );
+  };
   return (
     <section class="matchup">
       {data.map(({mi, give, spd}) => opps.map(oi => {
@@ -99,8 +159,8 @@ function Matchup({battle, ctx}) {
         const tgt = give?.targets.find(t => t.idx === oi);
         const back = take.find(x => x.oi === oi)?.t;
         const backT = back?.targets.find(t => t.idx === mi);
-        const oppMoves = (back?.moves || []).filter(m => { const r = backT?.results[m.id]; return r?.ok && !r.status; })
-          .sort((a, b2) => (b2.known - a.known) || (backT.results[b2.id].maxPct - backT.results[a.id].maxPct)).slice(0, 4);
+        const oppMoves = (back?.moves || []).filter(m => backT?.results[m.id]?.ok && (quick || !backT.results[m.id].status))
+          .sort((a, b2) => (b2.known - a.known) || (backT.results[b2.id].maxPct - backT.results[a.id].maxPct) || (b2.rate - a.rate)).slice(0, quick ? 10 : 4);
         const oHP = ctx.cond('opp', oi).hp, mHP = ctx.cond('me', mi).hp;
         const assumed = row ? row.dist.length ? null : null : null;
         void assumed;
@@ -113,10 +173,10 @@ function Matchup({battle, ctx}) {
                 {row.pFaster != null && <span class={cx('tag', row.pSlower >= 0.995 ? 'res-win' : row.pFaster >= 0.995 ? 'res-lose' : '')}>{tr ? 'トリル ' : ''}先手 {rate(row.pSlower)}</span>}
               </span>}
             </div>
-            <div class="mu-cap me">自分の技 → 相手 (残り{Math.round(oHP)}%)</div>
-            {(give?.moves || []).map(m => line(moveName(m.id), tgt?.results[m.id], oHP, m.priority > 0 ? <span class="tag sm">先制</span> : null))}
-            <div class="mu-cap opp">相手の技 → 自分 (残り{Math.round(mHP)}%)</div>
-            {oppMoves.map(m => line(moveName(m.id), backT.results[m.id], mHP, m.known ? <span class="tag sm">確定</span> : <span class="rate"> {rate(m.rate)}</span>))}
+            <div class="mu-cap me">自分の技 → 相手 (残り{Math.round(oHP)}%){quick && <span class="muted"> タップで選択</span>}</div>
+            {(give?.moves || []).map(m => line(moveName(m.id), tgt?.results[m.id], oHP, m.priority > 0 ? <span class="tag sm">先制</span> : null, 'me', m.id))}
+            <div class="mu-cap opp">相手の技 → 自分 (残り{Math.round(mHP)}%){quick && <span class="muted"> 相手が使った技をタップ</span>}</div>
+            {oppMoves.map(m => line(moveName(m.id), backT.results[m.id], mHP, m.known ? <span class="tag sm">確定</span> : <span class="rate"> {rate(m.rate)}</span>, 'opp', m.id))}
             {!oppMoves.length && <div class="muted mu-row">候補技なし</div>}
           </div>
         );
@@ -125,7 +185,7 @@ function Matchup({battle, ctx}) {
   );
 }
 
-function Side({side, battle, ctx, mut, onOpen}) {
+function Side({side, battle, ctx, mut, onOpen, quick, sel, setSel, info}) {
   const s = battle.state.sides[side];
   const list = side === 'me' ? battle.my : battle.opp;
   const [sendSlot, setSendSlot] = useState(null);
@@ -164,16 +224,32 @@ function Side({side, battle, ctx, mut, onOpen}) {
           const c = condOf(battle, side, i);
           const build = side === 'me' ? battle.my[i] : battle.opp[i];
           const picked = battle.pick[side].includes(i);
+          if (side === 'me' && battle.pick.me.length && !picked) return null; // 選出していない自分のポケモンは出さない
+          const on = quick && sel[side]?.type === 'switch' && sel[side].to === i;
+          // 自分の控え: 出したときに受ける最大ダメージ と 撃てる最大打点 / 相手の控え: いまの自分の技の最大打点
+          const taken = side === 'me' ? info?.take?.targets.find(t => t.idx === i)?.best : null;
+          const dealt = side === 'me' ? info?.out?.[i] : info?.give?.targets.find(t => t.idx === i)?.best;
+          const pc = r => (!r ? '—' : r.immune ? '無効' : `${fmtPct(r.maxPct)}%`);
+          const tap = () => {
+            if (c.fainted) return;
+            if (emptySlot >= 0) doSend(emptySlot, i);
+            else if (quick) setSel({...sel, [side]: on ? null : {type: 'switch', to: i}});
+            else onOpen({side, idx: i});
+          };
           return (
-            <button class={cx('benchmon', c.fainted && 'fainted', picked && 'picked')} disabled={false}
-              onClick={() => (emptySlot >= 0 && !c.fainted ? doSend(emptySlot, i) : onOpen({side, idx: i}))}
-              title={emptySlot >= 0 ? '場に出す' : '情報を編集'}>
+            <button class={cx('benchmon', c.fainted && 'fainted', (picked || side === 'opp') && 'picked', on && 'on')} onClick={tap} aria-pressed={quick ? on : undefined}>
               <span class="nm">{speciesName(currentSpecies(build, c))}</span>
               <span class="num">{c.fainted ? 'ひんし' : `${Math.round(c.hp)}%`}{c.status ? ` ${STATUS_JA[c.status]}` : ''}</span>
+              {!c.fainted && side === 'me' && (taken || dealt) && <span class="bi"><i class={cx(dmgClass(taken))}>被{pc(taken)}</i><i class={cx(dmgClass(dealt))}>与{pc(dealt)}</i></span>}
+              {!c.fainted && side === 'opp' && dealt && <span class="bi"><i class={cx(dmgClass(dealt))}>与{pc(dealt)}</i></span>}
             </button>
           );
         })}
       </div>
+      {emptySlot >= 0 && bench.some(i => !condOf(battle, side, i)?.fainted) && (
+        <p class="hint next">{side === 'me' ? '次に出すポケモンをタップ (被 = 出したときに受ける最大ダメージ、与 = 撃てる最大打点)' : '相手が出してきたポケモンをタップ'}</p>
+      )}
+      {quick && emptySlot < 0 && <p class="hint next">{side === 'me' ? '控えをタップ = 交代を選ぶ' : '控えをタップ = 相手が交代した'}</p>}
       {sendSlot != null && (
         <Sheet title={`${SIDE_JA[side]}: 場に出すポケモン`} onClose={() => setSendSlot(null)}>
           <p class="hint">盤面を直接書き換えます (ターンの記録には残りません)。交代として記録したいときは「このターンの行動を記録」を使ってください。ひんし後の繰り出しはここから。</p>

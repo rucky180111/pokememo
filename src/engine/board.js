@@ -73,7 +73,7 @@ export function attackTable(ctx, atkSide, atkIdx, opts = {}) {
   else {
     const all = ctx.views[atkIdx]?.moves || [];
     const known = all.filter(m => m.known);
-    const guess = all.filter(m => !m.known && m.rate >= 0.04 && dex.moves[m.id]?.c !== 'Z').slice(0, Math.max(0, 8 - known.length));
+    const guess = all.filter(m => !m.known && m.rate >= 0.04 && (opts.includeStatus || dex.moves[m.id]?.c !== 'Z')).slice(0, Math.max(0, (opts.includeStatus ? 10 : 8) - known.length));
     moves = known.length >= 4 ? known : known.concat(guess);
   }
 
