@@ -8,6 +8,7 @@ import {spreadLabel, PRESETS, SPE_COMBOS, speFromCombo, leadRate} from '../engin
 import {useApp, Sheet, Picker, Seg, MonName, TypeChip, Empty, Confirm, cx, rate, fmtPct} from './common.jsx';
 import {MonEditor, FORMAT_OPTS, buildSummary} from './teams.jsx';
 import {BoardTab} from './board.jsx';
+import {spreadFits} from '../engine/infer-dmg.js';
 import {DamageTab, SpeedTab, PredictTab} from './analysis.jsx';
 
 const TABS = [['setup', '見せ合い'], ['board', '盤面'], ['dmg', 'ダメージ'], ['speed', '素早さ'], ['predict', '予測'], ['log', 'ログ']];
@@ -293,7 +294,7 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
           <div class="chips">
             {(v?.spreads || []).slice(0, 6).map((sp, i) => (
               <button class={cx('chip', as.kind === 'usage' && (as.idx || 0) === i && 'on')} onClick={() => set(x => { x.assume = {kind: 'usage', idx: i}; })}>
-                {i + 1}位 {spreadLabel(sp.nature, sp.sp)} <span class="rate">{rate(sp.rate, 1)}</span>
+                {o.statOk && !spreadFits(o, sp.nature, sp.sp) ? '✕ ' : ''}{i + 1}位 {spreadLabel(sp.nature, sp.sp)} <span class="rate">{rate(sp.rate, 1)}</span>
               </button>
             ))}
             {!(v?.spreads || []).length && <span class="muted">このポケモンの使用率データがありません。下の型から選んでください。</span>}
@@ -312,6 +313,12 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
               {speedRangeText(o, v, battle, idx)}
               <button class="btn ghost sm" onClick={() => set(x => { x.speOk = null; x.scarfLikely = false; })}>絞り込みをリセット</button>
             </p>
+          </div>
+        )}
+        {o.statOk && (
+          <div class="field"><span>ダメージから絞り込んだ能力</span>
+            <p class="hint">{Object.keys(o.statOk).map(k => ({atk: 'こうげき', spa: 'とくこう', def: 'HP・ぼうぎょ', spd: 'HP・とくぼう'}[k])).join('、')} を絞り込み済み。合わない配分は下の候補に ✕ が付きます。
+              <button class="btn ghost sm" onClick={() => set(x => { x.statOk = null; })}>絞り込みをリセット</button></p>
           </div>
         )}
         <label class="field"><span>メモ</span><textarea class="input" rows={2} value={o.note || ''} onChange={e => set(x => { x.note = e.currentTarget.value; })} /></label>

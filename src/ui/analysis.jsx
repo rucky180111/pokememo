@@ -5,7 +5,8 @@ import {calcDamage, currentSpecies, hitRange} from '../engine/calc.js';
 import {attackTable, speedTable, speedLine} from '../engine/board.js';
 import {PRESETS, spreadLabel, leadRate} from '../engine/assume.js';
 import {matchupActions, oppSpeciesStats, sortCounts, pct} from '../engine/predict.js';
-import {condOf, other} from '../engine/battle.js';
+import {condOf, other, setHP} from '../engine/battle.js';
+import {inferFromTaken, inferFromDealt, applyInference, inferable} from '../engine/infer-dmg.js';
 import {useApp, Sheet, Seg, Toggle, TypeChip, Empty, cx, fmtPct, rate} from './common.jsx';
 import {dmgClass} from './battle.jsx';
 
@@ -20,7 +21,7 @@ function defaultAttacker(battle, side) {
   return i >= 0 ? i : null;
 }
 
-export function DamageTab({battle, ctx}) {
+export function DamageTab({battle, ctx, mut, toast}) {
   const [dir, setDir] = useState('me');
   const [sel, setSel] = useState({me: null, opp: null});
   const [crit, setCrit] = useState(false);
@@ -114,13 +115,15 @@ export function DamageTab({battle, ctx}) {
         <span class="lg ko1">確定1発</span><span class="lg ko1r">乱数1発</span><span class="lg ko2">2発圏内</span><span class="lg ko3">3発圏内</span>
         <span class="muted">割合は最大HP比、確定数は現在HP基準。控えは「交代で出てきた場合」で、設置技・いかく・天候変化を加味します。マスをタップで内訳。</span>
       </p>
-      {detail && <DamageDetail battle={battle} ctx={ctx} d={detail} opts={{crit, helpingHand: hh, hits}} onClose={() => setDetail(null)} />}
+      {detail && <DamageDetail battle={battle} ctx={ctx} mut={mut} toast={toast} d={detail} opts={{crit, helpingHand: hh, hits}} onClose={() => setDetail(null)} />}
     </div>
   );
 }
 
 // 1マス分の内訳と、相手の型を変えた場合の比較
-function DamageDetail({battle, ctx, d, opts, onClose}) {
+function DamageDetail({battle, ctx, d, opts, onClose, mut, toast}) {
+  const [obs, setObs] = useState('');
+  const [sync, setSync] = useState(true);
   const defSide = other(d.dir);
   const table = attackTable(ctx, d.dir, d.atk, opts);
   const target = table.targets.find(t => t.idx === d.def);
@@ -145,6 +148,7 @@ function DamageDetail({battle, ctx, d, opts, onClose}) {
     return out;
   }, [ctx, d]);
   const aSp = table.species, dSp = target.species;
+  const curHP = ctx.cond(defSide, d.def).hp;
   return (
     <Sheet title={`${speciesName(aSp)} の ${moveName(d.move)} → ${speciesName(dSp)}`} onClose={onClose}>
       <div class="pad">
@@ -153,6 +157,29 @@ function DamageDetail({battle, ctx, d, opts, onClose}) {
         {target.notes.length > 0 && <p class="hint">{target.notes.join('・')}</p>}
         {r.rolls && r.rolls.length === 16 && <p class="rolls num">{r.rolls.join(' ')}</p>}
         {r.desc && <p class="hint en">{r.desc}</p>}
+        {target.active && inferable(d.move) && !r.immune && mut && (
+          <div class="box">
+            <h4>実際のダメージから相手の配分を絞り込む</h4>
+            <p class="hint">{d.dir === 'me' ? `この技を当てたあとの相手の残りHP (%) を入れてください。いまの盤面は ${Math.round(curHP)}% です。` : `この技で自分が受けたダメージ (HPの数値) を入れてください。`}急所や壁、ランクは盤面とこの画面の設定どおりで計算します。</p>
+            <div class="btnrow">
+              <input class="input num obs-in" type="number" inputMode="decimal" min={0} value={obs} placeholder={d.dir === 'me' ? '残り %' : 'ダメージ'} onInput={e => setObs(e.currentTarget.value)} />
+              <button class="btn primary" disabled={obs === ''} onClick={() => {
+                const v = Number(obs);
+                const msg = mut(b => {
+                  const res = d.dir === 'me' ? inferFromDealt(ctx, d.atk, d.def, d.move, curHP, v, opts) : inferFromTaken(ctx, d.atk, d.def, d.move, v, opts);
+                  const out = res ? applyInference(b.opp[oppIdx], ctx.views[oppIdx], res) : (d.dir === 'me' && v <= 0 ? '倒した場合は絞り込めません。' : '入力値を確認してください。');
+                  if (sync) {
+                    if (d.dir === 'me') setHP(b, 'opp', d.def, v);
+                    else { const c = b.state.mons.me[d.def]; setHP(b, 'me', d.def, c.hp - (v / r.defMaxHP) * 100); }
+                  }
+                  return out;
+                });
+                toast(msg); onClose();
+              }}>絞り込む</button>
+              <label class="check"><input type="checkbox" checked={sync} onChange={e => setSync(e.currentTarget.checked)} />盤面のHPにも反映</label>
+            </div>
+          </div>
+        )}
         <h4>{d.dir === 'me' ? '相手の耐久を変えた場合' : '相手の火力を変えた場合'} <span class="muted">(持ち物・特性はそのまま)</span></h4>
         <table class="mini">
           <tbody>

@@ -73,7 +73,7 @@ await page.locator('.sp-num').nth(3).fill('32');
 const spNow = await page.locator('.sp-num').evaluateAll(els => els.map(e => Number(e.value)));
 check(spNow.reduce((a, b) => a + b, 0) <= 66, `能力ポイント合計は66を超えない (${spNow})`);
 await shot(page, 'mon-editor');
-await page.getByRole('button', {name: '閉じる'}).click();
+await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
 
 // 対戦を記録
 await page.getByRole('button', {name: '対戦を記録'}).click();
@@ -129,8 +129,16 @@ check(/%/.test(cellText), `ダメージが表示される (${cellText.replace(/\
 await page.locator('table.dmg tbody tr').first().locator('td .cell').first().click();
 await page.waitForSelector('.sheet .big');
 await shot(page, 'damage-detail');
+check(await page.getByText('実際のダメージから相手の配分を絞り込む').count() === 1, '逆算の入力欄が出る');
+await page.locator('.obs-in').fill('20');
+await page.getByRole('button', {name: '絞り込む'}).click();
+b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
+check(b.state.mons.opp[1].hp === 20, '逆算の入力で盤面のHPも更新');
+await page.getByRole('tab', {name: 'ダメージ'}).click();
+await page.locator('table.dmg tbody tr').first().locator('td .cell').first().click();
+await page.waitForSelector('.sheet .big');
 check(await page.locator('.sheet .mini tbody tr').count() >= 3, '耐久を変えた比較が出る');
-await page.getByRole('button', {name: '閉じる'}).click();
+await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
 await page.getByRole('button', {name: /被ダメージ/}).click();
 await page.waitForSelector('table.dmg');
 await shot(page, 'damage-taken');
@@ -164,6 +172,7 @@ check(b.turns.length === 1 && b.state.sides.me.active[0] === 0 && b.state.mons.m
 // メガシンカのトグル (リザードンを出してから)
 await page.locator('.side.me .mc-top .btn', {hasText: '入替'}).click();
 await page.locator('.sheet .row', {hasText: 'リザードン'}).click();
+await page.locator('.side.me .mc-sub').click();
 await page.locator('.side.me .toggle', {hasText: 'メガシンカ'}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.mons.me[1].forme === 'charizardmegay' && b.state.field.weather === 'Sun', 'メガリザードンY で晴れ');
@@ -176,7 +185,7 @@ await shot(page, 'opp-sheet');
 await page.locator('.sheet .chip', {hasText: 'HB特化'}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.opp[1].assume.kind === 'preset' && b.opp[1].assume.key === 'hb', '相手の想定型を切り替えられる');
-await page.getByRole('button', {name: '閉じる'}).click();
+await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
 
 // 勝敗をつけて統計へ
 await page.locator('.battle-head .seg button', {hasText: '勝ち'}).click();

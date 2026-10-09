@@ -4,7 +4,9 @@ import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../eng
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility, turnOrder, emptyBoosts} from '../engine/calc.js';
 import {sendOut, megaEvolve, megaTarget, setHP, setWeather, setTerrain, setSideFlag, setFieldFlag, turnNumber, undoTurn, buildOf, condOf, other, PIVOT_MOVES} from '../engine/battle.js';
 import {commitTurnInfer} from '../engine/infer.js';
-import {useApp, Sheet, Picker, Seg, Toggle, Stepper, MonName, TypeChip, Empty, cx} from './common.jsx';
+import {attackTable, speedTable} from '../engine/board.js';
+import {dmgClass} from './battle.jsx';
+import {useApp, Sheet, Picker, Seg, Toggle, Stepper, MonName, TypeChip, Empty, cx, fmtPct, rate} from './common.jsx';
 import {OppSheet} from './battle.jsx';
 import {MonEditor} from './teams.jsx';
 
@@ -42,6 +44,7 @@ export function BoardTab({battle, ctx, mut, usage, toast, setTab}) {
 
       {!hasOpp && <Empty>「見せ合い」で相手のポケモンを登録すると、ここに盤面が出ます。</Empty>}
       <Side side="opp" battle={battle} ctx={ctx} mut={mut} onOpen={setSheet} />
+      {hasOpp && <Matchup battle={battle} ctx={ctx} />}
       <div class="turnbar">
         <span class="tag">ターン {turnNumber(battle)}</span>
         <button class="btn primary grow" onClick={() => setTurn(true)} disabled={!hasOpp}>このターンの行動を記録</button>
@@ -57,6 +60,68 @@ export function BoardTab({battle, ctx, mut, usage, toast, setTab}) {
           onSave={bd => { mut(b => { b.my[sheet.idx] = bd; }); setSheet(null); }} onClose={() => setSheet(null)} />
       )}
     </div>
+  );
+}
+
+// 残りHPに対するダメージの帯: 濃い部分 = 最大ダメージ後も残るHP、薄い部分 = 乱数の幅
+function DmgBar({r, hp}) {
+  if (!r?.ok || r.status) return <span class="dbar none" />;
+  const lo = Math.max(0, hp - r.maxPct), hi = Math.max(0, hp - r.minPct);
+  return (
+    <span class="dbar" aria-hidden="true">
+      <span class="d-left" style={{width: `${lo}%`}} />
+      <span class="d-roll" style={{width: `${hi - lo}%`}} />
+      <span class={cx('d-dmg', dmgClass(r))} style={{width: `${Math.max(0, hp - hi)}%`}} />
+    </span>
+  );
+}
+
+// いまの対面の要点: 先手・自分の技・相手の技
+function Matchup({battle, ctx}) {
+  const alive = side => battle.state.sides[side].active.filter(i => i != null && !condOf(battle, side, i)?.fainted);
+  const mine = alive('me'), opps = alive('opp');
+  const data = useMemo(() => mine.map(mi => ({mi, give: attackTable(ctx, 'me', mi), spd: speedTable(ctx, mi)})), [ctx]);
+  const take = useMemo(() => opps.map(oi => ({oi, t: attackTable(ctx, 'opp', oi)})), [ctx]);
+  if (!mine.length || !opps.length) return null;
+  const tr = battle.state.field.trickRoom;
+  const line = (label, r, hp, extra) => (
+    <div class="mu-row">
+      <span class="mu-mv">{label}{extra}</span>
+      <DmgBar r={r} hp={hp} />
+      <span class={cx('mu-val num', dmgClass(r))}>{!r?.ok ? '—' : r.status ? '変化' : r.immune ? '無効' : `${fmtPct(r.minPct)}–${fmtPct(r.maxPct)}%`}</span>
+      <span class="mu-ko">{r?.ok && !r.status && !r.immune ? r.koText : ''}</span>
+    </div>
+  );
+  return (
+    <section class="matchup">
+      {data.map(({mi, give, spd}) => opps.map(oi => {
+        const row = spd?.rows.find(x => x.idx === oi)?.outlook;
+        const tgt = give?.targets.find(t => t.idx === oi);
+        const back = take.find(x => x.oi === oi)?.t;
+        const backT = back?.targets.find(t => t.idx === mi);
+        const oppMoves = (back?.moves || []).filter(m => { const r = backT?.results[m.id]; return r?.ok && !r.status; })
+          .sort((a, b2) => (b2.known - a.known) || (backT.results[b2.id].maxPct - backT.results[a.id].maxPct)).slice(0, 4);
+        const oHP = ctx.cond('opp', oi).hp, mHP = ctx.cond('me', mi).hp;
+        const assumed = row ? row.dist.length ? null : null : null;
+        void assumed;
+        return (
+          <div class="mu" key={`${mi}-${oi}`}>
+            <div class="mu-head">
+              <strong>{speciesName(give.species)}</strong><span class="muted"> vs </span><strong>{speciesName(tgt?.species || battle.opp[oi].species)}</strong>
+              {row && <span class="mu-spd">
+                S <b class="num">{spd.my}</b> : <span class="num">{row.bench[3].eff}〜{row.bench[0].eff}</span>
+                {row.pFaster != null && <span class={cx('tag', row.pSlower >= 0.995 ? 'res-win' : row.pFaster >= 0.995 ? 'res-lose' : '')}>{tr ? 'トリル ' : ''}先手 {rate(row.pSlower)}</span>}
+              </span>}
+            </div>
+            <div class="mu-cap me">自分の技 → 相手 (残り{Math.round(oHP)}%)</div>
+            {(give?.moves || []).map(m => line(moveName(m.id), tgt?.results[m.id], oHP, m.priority > 0 ? <span class="tag sm">先制</span> : null))}
+            <div class="mu-cap opp">相手の技 → 自分 (残り{Math.round(mHP)}%)</div>
+            {oppMoves.map(m => line(moveName(m.id), backT.results[m.id], mHP, m.known ? <span class="tag sm">確定</span> : <span class="rate"> {rate(m.rate)}</span>))}
+            {!oppMoves.length && <div class="muted mu-row">候補技なし</div>}
+          </div>
+        );
+      }))}
+    </section>
   );
 }
 
@@ -157,13 +222,16 @@ function MonCard({side, idx, slot, battle, ctx, mut, onOpen, onSwap}) {
         </button>
         <button class="btn ghost sm" onClick={onSwap}>入替</button>
       </div>
-      <div class="mc-sub">
+      <button class="mc-sub" onClick={() => setOpen(o => !o)} aria-expanded={open}>
         <span>{abilityName(ability)}{side === 'opp' && view?.abilityGuess && !s.mega ? '?' : ''}</span>
         <span class={cx(rawCond.itemGone && 'strike')}>{itemName(build.item) || '持ち物なし'}{side === 'opp' && view?.itemGuess ? '?' : ''}</span>
-        <span class="num dim">{stats.join('-')}</span>
-      </div>
+        {rawCond.status && <span class="tag bad">{STATUS_JA[rawCond.status]}</span>}
+        {anyBoost && <span class="tag accent">{BOOST_KEYS.filter(k => rawCond.boosts[k]).map(k => `${BOOST_JA[k]}${rawCond.boosts[k] > 0 ? '+' : ''}${rawCond.boosts[k]}`).join(' ')}</span>}
+        {isMega && <span class="tag accent">メガ</span>}
+        <span class="mc-more">{open ? 'たたむ ▲' : '状態・ランク ▼'}</span>
+      </button>
       <HPControl hp={rawCond.hp} maxHP={side === 'me' ? maxHP : null} onSet={v => mut(b => { setHP(b, side, idx, v); })} />
-      <div class="mc-row">
+      {open && <div class="mc-row">
         <select class="input sm" value={rawCond.status} aria-label="状態異常" onChange={e => set(c => { c.status = e.currentTarget.value; c.toxicCounter = 1; })}>
           {STATUSES.map(([v, l]) => <option value={v}>{v ? l : '状態異常なし'}</option>)}
         </select>
@@ -178,12 +246,12 @@ function MonCard({side, idx, slot, battle, ctx, mut, onOpen, onSwap}) {
           <Seg small wrap value={rawCond.forme || build.species} options={[build.species, ...base.forms].map(f => [f, speciesName(f).replace(/^.*\(|\)$/g, '') || '通常'])}
             onChange={v => set(c => { c.forme = v === build.species ? null : v; })} />
         )}
-        <Toggle small on={open || anyBoost} onChange={() => setOpen(o => !o)}>ランク{anyBoost ? ` ${BOOST_KEYS.filter(k => rawCond.boosts[k]).map(k => `${BOOST_JA[k]}${rawCond.boosts[k] > 0 ? '+' : ''}${rawCond.boosts[k]}`).join(' ')}` : ''}</Toggle>
-      </div>
+      </div>}
       {open && (
         <div class="mc-boosts">
           {BOOST_KEYS.map(k => <Stepper signed label={BOOST_JA[k]} value={rawCond.boosts[k] || 0} onChange={v => set(c => { c.boosts[k] = v; })} />)}
           <button class="btn ghost sm" onClick={() => set(c => { c.boosts = emptyBoosts(); })}>リセット</button>
+          <span class="num dim">実数値 {stats.join('-')}</span>
           <Toggle small on={rawCond.itemGone} onChange={v => set(c => { c.itemGone = v; })}>持ち物なし (消費・はたき)</Toggle>
           {['flashfire', 'stakeout', 'unburden', 'plus', 'minus', 'electromorphosis', 'analytic'].includes(ability) && (
             <Toggle small on={rawCond.abilityOn} onChange={v => set(c => { c.abilityOn = v; })}>{abilityName(ability)} 発動中</Toggle>

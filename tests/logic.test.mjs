@@ -476,3 +476,42 @@ test('行動の説明文', () => {
   assert.ok(inferSpeeds);
   assert.ok(finalSpeed);
 });
+
+import {inferFromTaken, inferFromDealt, applyInference, spreadFits} from '../src/engine/infer-dmg.js';
+import {calcDamage} from '../src/engine/calc.js';
+import {comboOf as cOf} from '../src/engine/assume.js';
+
+test('ダメージからの逆算: 実際の配分が候補に残り、想定が合う型に切り替わる', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 5); sendOut(b, 'opp', 0, 1); // ウォッシュロトム vs バンギラス
+  b.opp[1].ability = 'sandstream'; b.opp[1].item = 'leftovers';
+  b.opp[1].assume = {kind: 'preset', key: 'none'};
+  const truth = {species: 'tyranitar', item: 'leftovers', ability: 'sandstream', nature: 'Adamant', sp: [32, 32, 0, 0, 2, 0], moves: []};
+  // 受けたダメージ: いじっぱりA32 のかみくだく
+  let ctx = boardContext(b, usage);
+  const real = calcDamage({build: truth, cond: b.state.mons.opp[1]}, {build: b.my[5], cond: b.state.mons.me[5]}, 'crunch', {field: b.state.field});
+  const res = inferFromTaken(ctx, 1, 5, 'crunch', real.rolls[8]);
+  assert.equal(res.stat, 'atk');
+  assert.equal(res.mask[cOf(1.1, 32)], '1', '真の配分は候補に残る');
+  assert.equal(res.mask[cOf(1, 0)], '0', '無振りは否定される');
+  assert.ok(res.count < 40);
+  const msg = applyInference(b.opp[1], ctx.views[1], res);
+  assert.match(msg, /こうげきの実数値/);
+  ctx = boardContext(b, usage);
+  assert.ok(spreadFits(b.opp[1], ctx.views[1].build.nature, ctx.views[1].build.sp), '切り替え後の想定は矛盾しない');
+  assert.notEqual(b.opp[1].assume.key, 'none');
+
+  // 与えたダメージ: 相手 HP 100% → after%
+  const dealt = calcDamage({build: b.my[5], cond: b.state.mons.me[5]}, {build: truth, cond: b.state.mons.opp[1]}, 'hydropump', {field: b.state.field});
+  const after = 100 - (dealt.rolls[8] / dealt.defMaxHP) * 100;
+  const r2 = inferFromDealt(ctx, 5, 1, 'hydropump', 100, after);
+  assert.equal(r2.stat, 'spd');
+  assert.equal(r2.mask[32 * 99 + cOf(1, 2)], '1', '真の H32 D2 は候補に残る');
+  assert.equal(r2.mask[0 * 99 + cOf(0.9, 0)], '0', 'H0 D下降は否定される');
+  assert.match(applyInference(b.opp[1], ctx.views[1], r2), /HPの能力ポイント/);
+  // ありえない値は保存しない
+  const before = JSON.stringify(b.opp[1].statOk);
+  assert.match(applyInference(b.opp[1], ctx.views[1], inferFromTaken(ctx, 1, 5, 'crunch', 9999)), /説明がつきません/);
+  assert.equal(JSON.stringify(b.opp[1].statOk), before);
+  assert.equal(inferFromTaken(ctx, 1, 5, 'foulplay', 50), null);
+});
