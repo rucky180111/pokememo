@@ -31,7 +31,7 @@ async function addMon(page, species, item, moves, {nature, sp} = {}) {
   await page.getByRole('button', {name: /ポケモンを追加/}).click();
   await pickFrom(page, species);
   if (item) { await page.locator('.editor .field', {hasText: '持ち物'}).locator('button').click(); await pickFrom(page, item); }
-  if (nature) await page.locator('.editor select').selectOption(nature);
+  if (nature) await page.locator('.nature button', {hasText: {Jolly: 'ようき', Timid: 'おくびょう'}[nature]}).click();
   if (sp) for (const [i, v] of Object.entries(sp)) { const inp = page.locator('.sp-num').nth(Number(i)); await inp.fill(String(v)); }
   for (let i = 0; i < moves.length; i++) { await page.locator('.move-grid button').nth(i).click(); await pickFrom(page, moves[i]); }
   await page.getByRole('button', {name: '保存', exact: true}).click();

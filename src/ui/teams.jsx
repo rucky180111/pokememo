@@ -15,6 +15,31 @@ const natureLabel = n => {
   return `${d.j} (${STAT_JA[STAT_KEYS.indexOf(d.p)]}↑ ${STAT_JA[STAT_KEYS.indexOf(d.m)]}↓)`;
 };
 
+// ゲーム内と同じ並びの性格表: 行 = 上がる能力、列 = 下がる能力
+const NATURE_STATS = [['atk', 'こうげき'], ['def', 'ぼうぎょ'], ['spa', 'とくこう'], ['spd', 'とくぼう'], ['spe', 'すばやさ']];
+function NatureGrid({value, onChange}) {
+  const find = (up, down) => (up === down ? (up === 'atk' ? 'Serious' : null) : Object.keys(dex.natures).find(n => dex.natures[n].p === up && dex.natures[n].m === down));
+  const cur = dex.natures[value]?.p ? value : 'Serious';
+  return (
+    <div class="scroll-x nature-wrap">
+      <table class="nature">
+        <thead><tr><th></th>{NATURE_STATS.map(([, l]) => <th class="down">{l}<span aria-hidden="true">▼</span></th>)}</tr></thead>
+        <tbody>
+          {NATURE_STATS.map(([up, l]) => (
+            <tr>
+              <th class="up">{l}<span aria-hidden="true">▲</span></th>
+              {NATURE_STATS.map(([down]) => {
+                const n = find(up, down);
+                return <td>{n ? <button class={cx(cur === n && 'on')} aria-pressed={cur === n} onClick={() => onChange(n)}>{dex.natures[n].j}</button> : <span class="blank" />}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function buildSummary(b) {
   const sp = (b.sp || []).map((v, i) => (v ? `${STAT_JA[i]}${v}` : '')).filter(Boolean).join(' ');
   return `${natureName(b.nature)}${sp ? ' / ' + sp : ''}`;
@@ -211,11 +236,9 @@ export function MonEditor({build, usage, onSave, onClose, isNew, title, lockSpec
           <div class="field"><span>特性</span>
             <Seg wrap value={b.ability} options={s.ab.map(a => [a, abilityName(a)])} onChange={v => set({ability: v})} />
           </div>
-          <label class="field"><span>性格</span>
-            <select class="input" value={b.nature} onChange={e => set({nature: e.currentTarget.value})}>
-              {NATURE_ORDER.map(n => <option value={n}>{natureLabel(n)}</option>)}
-            </select>
-          </label>
+          <div class="field"><span>性格 (能力補正): {natureLabel(b.nature)}</span>
+            <NatureGrid value={b.nature} onChange={v => set({nature: v})} />
+          </div>
           <div class="field">
             <span>能力ポイント <b class={cx('num', total > SP_TOTAL && 'bad')}>残り {SP_TOTAL - total}</b> / 種族値 {s.bs.join('-')}</span>
             <div class="sp-grid">

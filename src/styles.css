@@ -325,3 +325,16 @@ td.ruled { text-decoration: line-through; opacity: .45; }
 .side-sum { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; flex: 1; align-items: center; }
 .side-flags { margin-top: 6px; justify-content: flex-start; }
 .fieldbar select.input.sm { min-height: 32px; }
+
+/* 性格表 */
+.nature-wrap { margin: 0; padding: 0; }
+.nature { width: 100%; border-spacing: 3px; border-collapse: separate; table-layout: fixed; min-width: 330px; }
+.nature th { font-size: 10.5px; font-weight: 700; padding: 3px 1px; white-space: nowrap; }
+.nature th span { margin-left: 1px; font-size: 9px; }
+.nature th.down { color: var(--me); }
+.nature th.up { color: var(--bad); text-align: right; width: 56px; }
+.nature td { padding: 0; }
+.nature button, .nature .blank { display: block; width: 100%; min-height: 36px; border-radius: 8px; }
+.nature button { border: 1px solid var(--border); background: var(--surface); font-size: 10.5px; letter-spacing: -0.04em; font-weight: 600; padding: 2px 0; white-space: nowrap; overflow: hidden; }
+.nature button.on { background: #c8e830; border-color: #7fa800; color: #1b2a00; }
+.nature .blank { background: var(--surface2); opacity: .6; }
