@@ -410,9 +410,11 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .ar-left, .ar-right { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px; min-width: 0; }
 .arena.wide .ar-left, .arena.wide .ar-right { position: sticky; top: calc(var(--top-h) + 50px); max-height: calc(100dvh - var(--top-h) - 50px - var(--nav-h) - 12px); display: flex; flex-direction: column; }
 .arena.wide .ar-right { overflow-y: auto; }
-.tl { flex: 1 1 auto; overflow-y: auto; min-height: 80px; max-height: 46vh; margin-bottom: 8px; }
-.arena.wide .tl { max-height: none; min-height: 90px; flex: 1 1 90px; }
-.arena.wide .composer { flex: 0 1 auto; overflow-y: auto; max-height: 62%; }
+.tl { flex: 1 1 auto; overflow-y: auto; min-height: 40vh; max-height: 58vh; margin-bottom: 8px; }
+.arena.wide .ar-left { height: calc(100dvh - var(--top-h) - 110px - var(--nav-h) - 16px); min-height: 420px; }
+.composer > .btnrow { position: sticky; bottom: 0; background: var(--surface); padding: 6px 0 2px; }
+.arena.wide .tl { max-height: none; min-height: 50%; flex: 1 1 50%; }
+.arena.wide .composer { flex: 0 1 auto; overflow-y: auto; max-height: 50%; }
 .tl-n { text-align: center; color: var(--muted); font-size: 12px; margin: 6px 0 4px; }
 .tl-act { border: 1.5px solid var(--border); border-radius: 8px; padding: 4px 8px; margin: 4px 0; display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; font-size: 13.5px; }
 .tl-act.opp { border-color: var(--opp); margin-right: 18px; } .tl-act.me { border-color: var(--me); margin-left: 18px; }

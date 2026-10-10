@@ -1,5 +1,5 @@
 // 対戦フェーズ: 左 = 時系列とターン入力 / 中央 = 相手と自分の盤面 / 右 = ダメージ表・統計
-import {useMemo, useState} from 'preact/hooks';
+import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf, STAT_JA, STAT_KEYS} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility, finalSpeed} from '../engine/calc.js';
 import {sendOut, megaEvolve, megaTarget, setHP, setWeather, setTerrain, setSideFlag, setFieldFlag, undoTurn, buildOf, condOf, other, turnNumber} from '../engine/battle.js';
@@ -75,10 +75,14 @@ function Timeline({battle, ctx, mut, usage, toast}) {
   };
   const send = i => { mut(b => { sendOut(b, side, emptySlot, i, {resolveAbility: ctx.strictAbility}); }); };
   const open = openTurn(battle);
+  const tlRef = useRef(null);
+  const nActs = battle.turns.reduce((a, t) => a + t.acts.length, 0);
+  // 追加したら最新の行が見えるように下端へ
+  useEffect(() => { const el = tlRef.current; if (el) el.scrollTop = el.scrollHeight; }, [nActs, battle.turns.length]);
   return (
     <div class="ar-left">
       <h3>時系列</h3>
-      <div class="tl">
+      <div class="tl" ref={tlRef}>
         {!battle.turns.length && <p class="muted">下の入力欄から、動いた順に1つずつ追加します。追加した順が行動順として扱われ、相手の素早さの絞り込みに使われます。</p>}
         {battle.turns.map(t => (
           <div class="tl-turn" key={t.n}>
