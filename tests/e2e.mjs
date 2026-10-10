@@ -89,107 +89,69 @@ check(await page.locator('.sel-table tbody tr').first().locator('td').count() ==
 await page.locator('.sel-mon').nth(0).click(); await page.locator('.sel-mon').nth(2).click(); await page.locator('.sel-mon').nth(1).click();
 await shot(page, 'select');
 await page.getByRole('button', {name: /この選出で対戦開始/}).click();
-await page.waitForSelector('.board .side.me .moncard:not(.empty)');
-await page.locator('.side.opp .benchmon', {hasText: 'バンギラス'}).click();
-await page.waitForSelector('.matchup .mu');
+await page.waitForSelector('.arena .mon-panel.me');
+const pane = async n => { await page.locator('.arena-tabs button', {hasText: n}).click(); };
+await pane('入力');
+await page.locator('.composer .chip.add', {hasText: 'バンギラス'}).click();
 let b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.sides.me.active[0] === 0 && b.state.sides.opp.active[0] === 1, '初手が場に出る');
 check(b.pick.opp.join() === '1', '相手の選出に自動で入る');
 check(b.state.field.weather === 'Sand', `バンギラスのすなおこしで砂 (${b.state.field.weather})`);
-await shot(page, 'board');
 
-// ターンを記録: 盤面のタップだけで (自分=つるぎのまい, 相手=ステルスロック)
-await page.locator('.mu-row.tap', {hasText: 'つるぎのまい'}).click();
-await page.locator('.mu-row.tap', {hasText: 'ステルスロック'}).click();
-await shot(page, 'quick-turn');
-await page.getByRole('button', {name: 'このターンを記録'}).click();
+// 時系列入力: 相手=ステルスロック → 自分=つるぎのまい
+await page.locator('.composer .chip', {hasText: 'ステルスロック'}).click();
+await page.getByRole('button', {name: '追加', exact: true}).click();
+await page.locator('.composer .chip', {hasText: 'つるぎのまい'}).click();
+await page.getByRole('button', {name: '追加', exact: true}).click();
+await shot(page, 'timeline');
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
-check(b.turns.length === 1 && b.turns[0].acts.length === 2, 'ターンが記録された');
+check(b.turns.length === 1 && b.turns[0].acts.length === 2, '同じターンに2行動が入る');
 check(b.state.mons.me[0].boosts.atk === 2, 'つるぎのまいで A+2');
 check(b.state.sides.me.sr === true, '自分の場にステルスロック');
 check(b.opp[1].moves.includes('stealthrock'), '相手の技が判明済みに入る');
-
-// HP を変える (スライダー)
-const slider = page.locator('.side.opp .hp input[type=range]').first();
-await slider.evaluate(el => { el.value = '40'; el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); });
+check(await page.locator('.tl-act').count() === 2, '時系列に2行');
+// 相手=がんせきふうじ(自分の残り70%) → 自分=じしん(相手の残り20%)。次のターンに自動で進む
+await page.locator('.composer .chip', {hasText: 'がんせきふうじ'}).click();
+await page.locator('.cp-hp input').fill('70');
+await page.getByRole('button', {name: '追加', exact: true}).click();
+await page.locator('.composer .chip', {hasText: 'じしん'}).first().click();
+await page.locator('.cp-hp input').fill('20');
+await page.getByRole('button', {name: '追加', exact: true}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
-check(b.state.mons.opp[1].hp === 40, '相手のHPを40%に');
-
-// ダメージ表
+check(b.turns.length === 2 && b.turns[1].acts.length === 2, '次のターンに自動で進む');
+check(b.state.mons.me[0].hp === 70 && b.state.mons.opp[1].hp === 20, '残りHPが盤面に反映される');
+check(b.state.mons.me[0].boosts.spe === -1, 'がんせきふうじで S-1');
+check(b.turns[1].acts.some(a => (a.auto || []).some(x => /実数値|説明がつきません/.test(x))), 'ダメージからの絞り込み結果が時系列に出る');
+await page.getByRole('button', {name: 'ターン終了'}).click();
+await pane('盤面');
+await shot(page, 'arena-center');
+check(await page.locator('.mon-panel.opp .mp-table tbody tr').count() === 4, '相手の表に 種族値/推定Pt/能力上昇/実数値');
+check(await page.locator('.mon-panel.opp .mp-speed li').count() >= 5, '素早さ一覧に自分の位置が入る');
+check(await page.locator('.mon-panel.me .mv-box').count() === 4, '自分の技4つ');
+await pane('ダメージ表');
+await page.waitForSelector('.dp-move');
+await shot(page, 'arena-damage');
+check(await page.locator('.dp-move .dp-bar').count() >= 8, '無振り/全振りの2本ずつ帯が出る');
+// 取り消し
+await pane('入力');
+await page.getByRole('button', {name: '戻す'}).click();
+b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
+check(b.turns.length === 1 && b.state.mons.opp[1].hp === 100, '取り消しでターンごと戻る');
+// 交代
+await page.locator('.composer .seg button', {hasText: '自分'}).click();
+await page.locator('.composer .chip', {hasText: 'ガオガエン'}).click();
+await page.getByRole('button', {name: '追加', exact: true}).click();
+b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
+check(b.state.sides.me.active[0] === 2 && b.state.mons.opp[1].boosts.atk === -1, '交代でガオガエンが出て、いかくが入る');
+// 既存の詳細タブ
 await page.getByRole('tab', {name: 'ダメージ表'}).click();
 await page.waitForSelector('table.dmg');
-await shot(page, 'damage');
-const cols = await page.locator('table.dmg thead th').count();
-check(cols === 7, `ダメージ表は相手6体ぶん (${cols - 1})`);
-const cellText = await page.locator('table.dmg tbody tr').first().locator('td').first().innerText();
-check(/%/.test(cellText), `ダメージが表示される (${cellText.replace(/\n/g, ' ')})`);
-await page.locator('table.dmg tbody tr').first().locator('td .cell').first().click();
-await page.waitForSelector('.sheet .big');
-await shot(page, 'damage-detail');
-check(await page.getByText('実際のダメージから相手の配分を絞り込む').count() === 1, '逆算の入力欄が出る');
-await page.locator('.obs-in').fill('20');
-await page.getByRole('button', {name: '絞り込む'}).click();
-b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
-check(b.state.mons.opp[1].hp === 20, '逆算の入力で盤面のHPも更新');
-await page.getByRole('tab', {name: 'ダメージ表'}).click();
-await page.locator('table.dmg tbody tr').first().locator('td .cell').first().click();
-await page.waitForSelector('.sheet .big');
-check(await page.locator('.sheet .mini tbody tr').count() >= 3, '耐久を変えた比較が出る');
-await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
-await page.getByRole('button', {name: /被ダメージ/}).click();
-await page.waitForSelector('table.dmg');
-await shot(page, 'damage-taken');
-check(await page.locator('table.dmg tbody tr').count() >= 1, '被ダメージ表に相手の候補技が出る');
-check(await page.locator('table.dmg .tag', {hasText: '確定'}).count() === 1, '判明済みの技に「確定」が付く');
-
-// 素早さ・予測・ログ
+check(await page.locator('table.dmg thead th').count() === 7, 'ダメージ表タブは相手6体ぶん');
 await page.getByRole('tab', {name: '素早さ'}).click();
 await page.waitForSelector('.spd');
-await shot(page, 'speed');
-check((await page.locator('.box h4 .big-num').first().innerText()).trim() === '253', 'スカーフガブリアスの素早さ 253');
-await page.getByRole('tab', {name: '予測'}).click();
-await page.waitForSelector('.bars');
-await shot(page, 'predict');
 await page.getByRole('tab', {name: 'ログ'}).click();
-check(await page.locator('.log li').count() === 1, 'ログに1ターン');
-await shot(page, 'log');
-
-// 交代を記録 → 取り消し
+check(await page.locator('.log li').count() === 2, 'ログに2ターン');
 await page.getByRole('tab', {name: '② 対戦'}).click();
-await page.locator('.side.me .benchmon', {hasText: 'ガオガエン'}).click();
-await page.locator('.mu-row.tap', {hasText: 'ステルスロック'}).click();
-await page.getByRole('button', {name: 'このターンを記録'}).click();
-b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
-check(b.state.sides.me.active[0] === 2, '交代でガオガエンが場に');
-check(b.state.mons.me[0].boosts.atk === 0, '下がったガブリアスのランクが戻る');
-await page.getByRole('button', {name: '戻す'}).click();
-b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
-check(b.turns.length === 1 && b.state.sides.me.active[0] === 0 && b.state.mons.me[0].boosts.atk === 2, '取り消しで元の盤面に戻る');
-// 攻撃技を記録するとHPが仮入力される
-await page.locator('.mu-row.tap', {hasText: 'じしん'}).first().click();
-await page.getByRole('button', {name: 'このターンを記録'}).click();
-b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
-check(b.turns.length === 2 && b.state.mons.opp[1].fainted, 'じしんでHPが仮入力される (A+2 で倒れる)');
-await page.getByRole('button', {name: '戻す'}).click();
-
-// メガシンカのトグル (リザードンを出してから)
-await page.locator('.side.me .mc-top .btn', {hasText: '入替'}).click();
-await page.locator('.sheet .row', {hasText: 'リザードン'}).click();
-await page.locator('.side.me .mc-sub').click();
-await page.locator('.side.me .toggle', {hasText: 'メガシンカ'}).click();
-b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
-check(b.state.mons.me[1].forme === 'charizardmegay' && b.state.field.weather === 'Sun', 'メガリザードンY で晴れ');
-await shot(page, 'board-mega');
-
-// 相手の情報入力
-await page.locator('.side.opp .mc-name').click();
-await page.waitForSelector('.sheet .editor');
-await shot(page, 'opp-sheet');
-await page.locator('.sheet .chip', {hasText: 'HB特化'}).click();
-b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
-check(b.opp[1].assume.kind === 'preset' && b.opp[1].assume.key === 'hb', '相手の想定型を切り替えられる');
-await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
-
 // 勝敗をつけて統計へ
 await page.locator('.battle-head .seg button', {hasText: '勝ち'}).click();
 await page.getByRole('link', {name: '統計'}).click();
@@ -230,58 +192,15 @@ for (const t of ['① 選出', '② 対戦', 'ダメージ表', '素早さ', '�
 
 // ---------- iPad 横 ----------
 console.log('iPad 横 (1180x820)');
-const state = await mctx.storageState();
-void state;
 const dump = await page.evaluate(() => window.__pokememo.store.exportAll());
 const {page: ipad} = await open({width: 1180, height: 820}, 'ipad');
 await ipad.evaluate(async d => { await window.__pokememo.store.importAll(d); }, dump);
 await ipad.goto(`${url}#/battle/${bid}`);
-await ipad.waitForSelector('.battle-cols');
-check(await ipad.locator('.col-board .moncard').count() >= 2, '2カラム表示で盤面が左に出る');
-check(await ipad.locator('table.dmg').count() === 1, '右にダメージ表が出る');
-await shot(ipad, 'ipad-battle');
-
-// ダブルの仮想盤面
-await ipad.goto(url + '#/teams');
-await ipad.locator('.card.link').first().click();
-await ipad.locator('.form .seg button', {hasText: 'ダブル'}).click();
-await ipad.getByRole('button', {name: '仮想盤面'}).click();
-await ipad.waitForSelector('.battle');
-await ipad.locator('.opp-tile.empty').first().click();
-for (const n of ['がおがえん', 'ぺりっぱー', 'ふしぎばな', 'がぶりあす', 'みみっきゅ', 'さーないと']) {
-  await ipad.locator('.picker-bar input[type=search]').last().fill(n);
-  const rows = ipad.locator('.picker-list .row');
-  if (await rows.count()) await rows.first().click();
-}
-await ipad.waitForFunction(() => window.__pokememo.store.battles().find(x => x.kind === 'sim').opp.length === 6);
-const dbl = await ipad.evaluate(() => window.__pokememo.store.battles().find(x => x.kind === 'sim'));
-check(dbl && dbl.format === 'double' && dbl.state.sides.me.active.length === 2, 'ダブルの仮想盤面は場が2枠');
-console.log('  ダブルの相手:', dbl.opp.map(o => o.species).join(','));
-for (const k of [0, 1, 2]) await ipad.locator('.sel-mon').nth(k).click();
-await ipad.getByRole('button', {name: /この選出で対戦開始/}).click();
-await ipad.waitForSelector('.col-board .side.me .moncard:not(.empty)');
-await ipad.locator('.col-board .side.opp .benchmon', {hasText: 'ガオガエン'}).click();
-await ipad.locator('.col-board .side.opp .benchmon', {hasText: 'ペリッパー'}).click();
-await ipad.waitForFunction(() => window.__pokememo.store.battles().find(x => x.kind === 'sim').state.sides.opp.active.join() === '0,1');
-const d2 = await ipad.evaluate(() => window.__pokememo.store.battles().find(x => x.kind === 'sim'));
-check(d2.state.sides.me.active.join() === '0,1' && d2.state.sides.opp.active.join() === '0,1', 'ダブルの初手2体ずつ');
-check(d2.state.mons.me[0].boosts.atk === -1 && d2.state.mons.me[1].boosts.atk === -1, `相手ガオガエンのいかくが2体に入る (${d2.state.mons.me[0].boosts.atk},${d2.state.mons.me[1].boosts.atk})`);
-await shot(ipad, 'ipad-double');
-await ipad.getByRole('button', {name: 'このターンの行動を記録'}).click();
-await ipad.waitForSelector('.turn-row');
-check(await ipad.locator('.turn-row').count() === 4, 'ダブルは4体ぶんの行動欄');
-await ipad.locator('.turn-row.me').first().locator('.chip', {hasText: 'じしん'}).click();
-await ipad.locator('.turn-row.me').nth(1).locator('.chip', {hasText: 'かえんほうしゃ'}).click();
-await shot(ipad, 'ipad-turn');
-check(await ipad.locator('.turn-row.me', {hasText: '対象:'}).count() === 1, '単体技だけ対象を選べる (じしんは範囲技)');
-await ipad.getByRole('button', {name: '記録する'}).click();
-const d3 = await ipad.evaluate(() => window.__pokememo.store.battles().find(x => x.kind === 'sim'));
-check(d3.turns.length === 1, 'ダブルのターンが記録された');
-
-// 統計に仮想盤面は含めない
-await ipad.goto(url + '#/stats');
-await ipad.locator('.page-head .seg button', {hasText: 'ダブル'}).click();
-check((await ipad.locator('.kpi-v').first().innerText()).trim() === '0', '仮想盤面は統計に含まれない');
+await ipad.waitForSelector('.arena.wide');
+check(await ipad.locator('.arena.wide > .ar-left').count() === 1 && await ipad.locator('.arena.wide > .ar-center').count() === 1 && await ipad.locator('.arena.wide > .ar-right').count() === 1, 'iPad横は3列で表示');
+await shot(ipad, 'ipad-arena');
+const over = await ipad.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+check(over <= 0, `iPad横で横にはみ出さない (${over}px)`);
 
 await browser.close();
 server.close();

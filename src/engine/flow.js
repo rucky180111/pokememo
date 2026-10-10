@@ -1,0 +1,119 @@
+// 時系列での入力: 行動を1つずつ追加していく。追加のたびに盤面・判明情報・能力の絞り込みへ反映する。
+import {dex, speciesName, moveName, statsOf} from './dex.js';
+import {currentSpecies} from './calc.js';
+import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver} from './battle.js';
+import {boardContext} from './board.js';
+import {inferFromTaken, inferFromDealt, applyInference, inferable} from './infer-dmg.js';
+import {inferSpeeds} from './infer.js';
+
+export const openTurn = b => { const t = b.turns[b.turns.length - 1]; return t && t.open ? t : null; };
+
+function ensureTurn(b) {
+  let t = openTurn(b);
+  if (!t) {
+    t = {n: b.turns.length + 1, acts: [], orderKnown: true, note: '', auto: [], open: true, before: clone({state: b.state, pick: b.pick, opp: b.opp})};
+    b.turns.push(t);
+    for (let i = 0; i < b.turns.length - UNDO_DEPTH; i++) delete b.turns[i].before;
+  }
+  return t;
+}
+
+// ターンを締める: 行動順から素早さを絞り込み、ターン終了時の特性を処理する
+export function endTurn(b, usage) {
+  const t = openTurn(b);
+  if (!t) return [];
+  const log = [];
+  const res = boardContext(b, usage).strictAbility;
+  if (t.before && t.acts.filter(a => a.type === 'move').length >= 2) {
+    try {
+      const sim = clone(b);
+      sim.state = clone(t.before.state); sim.pick = clone(t.before.pick);
+      sim.opp.forEach((o, i) => { if (t.before.opp[i]) { o.item = o.item || ''; } });
+      const before = sim.opp.map(o => JSON.stringify(o.speOk || null));
+      log.push(...inferSpeeds(sim, {acts: t.acts}, {resolveAbility: res}));
+      sim.opp.forEach((o, i) => { if (JSON.stringify(o.speOk || null) !== before[i] && b.opp[i]) { b.opp[i].speOk = o.speOk; b.opp[i].scarfLikely = o.scarfLikely; } });
+    } catch { /* 絞り込めなくても記録は続ける */ }
+  }
+  const entered = new Set(t.acts.filter(a => a.toSp).map(a => `${a.side}${a.to}`));
+  for (const side of ['me', 'opp']) for (const i of b.state.sides[side].active) {
+    if (i == null || condOf(b, side, i).fainted || entered.has(`${side}${i}`)) continue;
+    if (res(b, side, i) === 'speedboost') applyBoosts(b, side, i, {spe: 1}, {log, resolveAbility: () => ''});
+  }
+  t.open = false;
+  t.auto.push(...log);
+  b.updatedAt = Date.now();
+  return log;
+}
+
+/**
+ * 行動を1つ追加する。
+ * input: {side, mon?, type: 'move'|'switch', move, to, mega, crit, miss, protect, target?: {side, mon}, hpAfter?: 対象の残りHP(%)}
+ * 戻り値: 反映内容のログ
+ */
+export function addAct(b, input, usage) {
+  const side = input.side;
+  const mon = input.mon ?? b.state.sides[side].active.find(i => i != null && !condOf(b, side, i)?.fainted);
+  if (mon == null) return ['場にポケモンがいません'];
+  // 同じポケモンが同じターンに2回目の行動 → 前のターンを締めて次のターンへ
+  let t = openTurn(b);
+  if (t && t.acts.some(a => a.side === side && (a.mon === mon || a.to === mon))) { endTurn(b, usage); t = null; }
+  t = ensureTurn(b);
+  const log = [];
+  let ctx = boardContext(b, usage);
+  const res = ctx.strictAbility;
+  const build = buildOf(b, side, mon);
+  const a = {side, mon, type: input.type, move: input.move || '', to: input.to ?? null, mega: !!input.mega, target: input.target || null,
+    flags: {crit: !!input.crit, miss: !!input.miss, protect: !!input.protect, cant: !!input.cant},
+    sp: build.species, vs: b.state.sides[other(side)].active.filter(i => i != null).map(i => buildOf(b, other(side), i)?.species).filter(Boolean)};
+  const slot = b.state.sides[side].active.indexOf(mon);
+  if (a.type === 'switch') {
+    if (a.to == null || slot < 0) return ['交代先がありません'];
+    a.toSp = buildOf(b, side, a.to)?.species;
+    sendOut(b, side, slot, a.to, {log, resolveAbility: res});
+  } else {
+    if (a.mega) { megaEvolve(b, side, mon, null, {log, resolveAbility: res}); ctx = boardContext(b, usage); }
+    if (side === 'opp' && dex.moves[a.move] && !build.moves.includes(a.move) && build.moves.length < 4) build.moves.push(a.move);
+    const foe = other(side);
+    const tgt = a.target || (() => { const f = b.state.sides[foe].active.filter(i => i != null && !condOf(b, foe, i)?.fainted); return f.length === 1 ? {side: foe, mon: f[0]} : null; })();
+    const failed = a.flags.miss || a.flags.protect || a.flags.cant;
+    const hp = input.hpAfter;
+    if (!failed && tgt && hp != null && Number.isFinite(hp)) {
+      a.hpAfter = Math.max(0, Math.min(100, hp));
+      const tc = condOf(b, tgt.side, tgt.mon);
+      const before = tc.hp;
+      // ダメージから相手の能力を絞り込む (自分↔相手の技のみ)
+      if (tgt.side !== side && inferable(a.move) && a.hpAfter > 0 && before > a.hpAfter) {
+        try {
+          const oppIdx = side === 'opp' ? mon : tgt.mon, myIdx = side === 'opp' ? tgt.mon : mon;
+          let r;
+          if (side === 'opp') {
+            const tb = buildOf(b, 'me', myIdx);
+            const maxHP = statsOf(currentSpecies(tb, tc), tb.sp, tb.nature)[0];
+            r = inferFromTaken(ctx, oppIdx, myIdx, a.move, ((before - a.hpAfter) / 100) * maxHP, {crit: a.flags.crit, tol: maxHP * 0.006 + 0.5});
+          } else r = inferFromDealt(ctx, myIdx, oppIdx, a.move, before, a.hpAfter, {crit: a.flags.crit});
+          if (r) log.push(`相手の${speciesName(b.opp[oppIdx].species)}: ${applyInference(b.opp[oppIdx], ctx.views[oppIdx], r)}`);
+        } catch { /* 絞り込めなくても記録は続ける */ }
+      }
+      a.target = tgt;
+    }
+    if (!failed) applyMoveEffects(b, {...a, target: tgt}, {log, resolveAbility: res});
+    if (a.hpAfter != null && tgt) setHP(b, tgt.side, tgt.mon, a.hpAfter);
+    if (a.to != null && !failed) {
+      const s2 = b.state.sides[side].active.indexOf(mon);
+      if (s2 >= 0) { a.toSp = buildOf(b, side, a.to)?.species; sendOut(b, side, s2, a.to, {log, resolveAbility: res}); }
+    }
+  }
+  a.auto = log;
+  t.acts.push(a);
+  b.updatedAt = Date.now();
+  return log;
+}
+
+// 時系列に出す1行
+export function actLine(b, a) {
+  if (a.type === 'switch') return `交代 ${speciesName(a.toSp)}`;
+  const f = a.flags || {};
+  const tags = [a.mega && 'メガ', f.crit && '急所', f.miss && '外れ', f.protect && 'まもる', f.cant && '行動不能'].filter(Boolean).join('・');
+  return `${moveName(a.move)}${a.hpAfter != null ? ` ${Math.round(a.hpAfter)}%` : ''}${tags ? ` ${tags}` : ''}${a.toSp ? ` → ${speciesName(a.toSp)}` : ''}`;
+}
+export {turnNumber, defaultAbilityResolver};

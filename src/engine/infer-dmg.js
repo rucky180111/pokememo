@@ -11,7 +11,7 @@ const NATURE_FOR = {
   atk: {up: 'Adamant', down: 'Modest'}, spa: {up: 'Modest', down: 'Adamant'},
   def: {up: 'Bold', down: 'Hasty'}, spd: {up: 'Calm', down: 'Naive'},
 };
-const natureOf = (stat, mod) => (mod > 1 ? NATURE_FOR[stat].up : mod < 1 ? NATURE_FOR[stat].down : 'Serious');
+export const natureOf = (stat, mod) => (mod > 1 ? NATURE_FOR[stat].up : mod < 1 ? NATURE_FOR[stat].down : 'Serious');
 const withBuild = (ctx, oppIdx, alt) => ({...ctx, build: (side, i) => (side === 'opp' && i === oppIdx ? alt : ctx.build(side, i))});
 
 // 技がどの能力で計算されるか (特殊な参照をする技は対象外)
@@ -39,7 +39,8 @@ export function inferFromTaken(ctx, oppIdx, myIdx, moveId, damage, opts = {}) {
     const alt = {...base, nature: natureOf(stat, mod), sp: spArr};
     let r = cache.get(key);
     if (!r) { r = attackTable(withBuild(ctx, oppIdx, alt), 'opp', oppIdx, {...opts, only: {def: myIdx, move: moveId}})?.targets[0]?.results[moveId]; cache.set(key, r); }
-    mask += r?.ok && damage >= r.min && damage <= r.max ? '1' : '0';
+    const tol = opts.tol || 0;
+    mask += r?.ok && damage + tol >= r.min && damage - tol <= r.max ? '1' : '0';
   }
   return summarize(ctx, oppIdx, stat, mask);
 }

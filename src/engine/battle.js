@@ -443,7 +443,7 @@ export function undoTurn(b) {
     b.state = t.before.state;
     b.pick = t.before.pick;
     // 相手の判明情報のうち、このターンで増えた技だけ戻す (メモ等の手入力は残す)
-    t.before.opp.forEach((o, i) => { if (b.opp[i] && b.opp[i].species === o.species) { b.opp[i].moves = o.moves; if (!o.megaSeen && b.opp[i].megaSeen) b.opp[i].item = o.item; b.opp[i].megaSeen = o.megaSeen; b.opp[i].speOk = o.speOk; b.opp[i].scarfLikely = o.scarfLikely; } });
+    t.before.opp.forEach((o, i) => { if (b.opp[i] && b.opp[i].species === o.species) { b.opp[i].moves = o.moves; if (!o.megaSeen && b.opp[i].megaSeen) b.opp[i].item = o.item; b.opp[i].megaSeen = o.megaSeen; b.opp[i].speOk = o.speOk; b.opp[i].scarfLikely = o.scarfLikely; b.opp[i].statOk = o.statOk; b.opp[i].assume = o.assume; } });
   }
   b.updatedAt = Date.now();
   return true;

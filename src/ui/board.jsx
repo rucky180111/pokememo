@@ -120,7 +120,7 @@ function benchInfo(battle, ctx, myAct, oppAct) {
 }
 
 // 残りHPに対するダメージの帯: 濃い部分 = 最大ダメージ後も残るHP、薄い部分 = 乱数の幅
-function DmgBar({r, hp}) {
+export function DmgBar({r, hp}) {
   if (!r?.ok || r.status) return <span class="dbar none" />;
   const lo = Math.max(0, hp - r.maxPct), hi = Math.max(0, hp - r.minPct);
   return (
@@ -339,7 +339,7 @@ function MonCard({side, idx, slot, battle, ctx, mut, onOpen, onSwap}) {
   );
 }
 
-function HPControl({hp, maxHP, onSet}) {
+export function HPControl({hp, maxHP, onSet}) {
   const [v, setV] = useState(hp);
   useEffect(() => setV(hp), [hp]);
   const cur = maxHP ? Math.round((maxHP * v) / 100) : null;

@@ -515,3 +515,82 @@ test('ダメージからの逆算: 実際の配分が候補に残り、想定が
   assert.equal(JSON.stringify(b.opp[1].statOk), before);
   assert.equal(inferFromTaken(ctx, 1, 5, 'foulplay', 50), null);
 });
+
+import {addAct, endTurn, openTurn, actLine} from '../src/engine/flow.js';
+import {estimateStats, scenarioBuild} from '../src/engine/estimate.js';
+
+test('時系列入力: 1行動ずつ追加すると盤面・判明技・HP・能力の絞り込みに反映される', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 5); sendOut(b, 'opp', 0, 1); // ウォッシュロトム vs バンギラス
+  b.opp[1].ability = 'sandstream'; b.opp[1].item = 'leftovers'; b.opp[1].assume = {kind: 'preset', key: 'none'};
+  const truth = {species: 'tyranitar', item: 'leftovers', ability: 'sandstream', nature: 'Adamant', sp: [32, 32, 0, 0, 2, 0], moves: []};
+  const real = calcDamage({build: truth, cond: b.state.mons.opp[1]}, {build: b.my[5], cond: b.state.mons.me[5]}, 'crunch', {field: b.state.field});
+  const myMax = statsOf5(b.my[5]);
+  const after = 100 - (real.rolls[8] / myMax) * 100;
+  let log = addAct(b, {side: 'opp', type: 'move', move: 'crunch', hpAfter: after}, usage);
+  assert.equal(b.turns.length, 1);
+  assert.ok(openTurn(b));
+  assert.deepEqual(b.opp[1].moves, ['crunch']);
+  assert.ok(Math.abs(b.state.mons.me[5].hp - after) < 1e-9);
+  assert.ok(b.opp[1].statOk?.atk, 'こうげきが絞り込まれる');
+  assert.ok(log.some(l => l.includes('こうげきの実数値')));
+  assert.match(actLine(b, b.turns[0].acts[0]), /^かみくだく \d+%$/);
+  // 同じターンに自分の行動
+  addAct(b, {side: 'me', type: 'move', move: 'thunderwave'}, usage);
+  assert.equal(b.turns.length, 1);
+  assert.equal(b.turns[0].acts.length, 2);
+  // 同じ側がもう一度動いたら次のターンへ
+  addAct(b, {side: 'me', type: 'switch', to: 0}, usage);
+  assert.equal(b.turns.length, 2);
+  assert.ok(!b.turns[0].open && b.turns[1].open);
+  assert.deepEqual(b.state.sides.me.active, [0]);
+  assert.equal(actLine(b, b.turns[1].acts[0]), '交代 ガブリアス');
+  endTurn(b, usage);
+  assert.ok(!openTurn(b));
+  // 取り消しでターンごと戻る (絞り込みも戻る)
+  undoTurn(b); undoTurn(b);
+  assert.equal(b.turns.length, 0);
+  assert.equal(b.opp[1].statOk, undefined);
+  assert.equal(b.state.mons.me[5].hp, 100);
+  assert.deepEqual(b.opp[1].moves, []);
+});
+
+test('時系列入力: 行動順から素早さが絞り込まれる (入力順 = 行動順)', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 0); sendOut(b, 'opp', 0, 4);
+  b.opp[4].ability = 'marvelscale';
+  addAct(b, {side: 'opp', type: 'move', move: 'scald', hpAfter: 80}, usage);
+  addAct(b, {side: 'me', type: 'move', move: 'earthquake', hpAfter: 60}, usage);
+  endTurn(b, usage);
+  assert.ok(b.opp[4].speOk, '相手が先に動いた → 絞り込み');
+  assert.ok(!b.opp[4].speOk.plain.includes('1'));
+  assert.ok(b.opp[4].scarfLikely);
+});
+
+test('推定能力ポイント: 絞り込みの範囲と残りポイント、無振り/全振りの配分', () => {
+  const o = newOpp('tyranitar');
+  let e = estimateStats(o, 'tyranitar');
+  assert.equal(e.remain, 66);
+  assert.deepEqual([e.rows[0].spLo, e.rows[0].spHi], [0, 32]);
+  // こうげきが SP28以上・補正ありに絞り込まれた場合
+  let mask = '';
+  for (let c = 0; c < 99; c++) mask += c >= 66 + 28 ? '1' : '0';
+  o.statOk = {atk: mask};
+  e = estimateStats(o, 'tyranitar');
+  assert.deepEqual([e.rows[1].spLo, e.rows[1].spHi], [28, 32]);
+  assert.equal(e.remain, 38);
+  assert.equal(e.rows[2].spHi, 32);
+  const base = {species: 'tyranitar', item: '', ability: 'sandstream', nature: 'Serious', sp: [0, 0, 0, 0, 0, 0], moves: []};
+  const lo = scenarioBuild(o, base, 'tyranitar', 'bulkMin', 'P');
+  assert.deepEqual(lo.sp, [0, 28, 0, 0, 0, 0]);
+  const hi = scenarioBuild(o, base, 'tyranitar', 'bulkMax', 'P');
+  assert.deepEqual(hi.sp, [32, 28, 6, 0, 0, 0], '残り38を HP32 + B6 に');
+  assert.equal(hi.nature, 'Bold');
+  const pm = scenarioBuild(o, base, 'tyranitar', 'powMax', 'P');
+  assert.equal(pm.sp[1], 32);
+  assert.equal(pm.nature, 'Adamant');
+  assert.equal(scenarioBuild(o, base, 'tyranitar', 'powMin', 'P').nature, 'Adamant', '補正ありが確定しているので下限も補正あり');
+  assert.equal(scenarioBuild(newOpp('tyranitar'), base, 'tyranitar', 'powMin', 'S').nature, 'Serious');
+});
+
+function statsOf5(build) { return calcDamage({build, cond: newCond()}, {build, cond: newCond()}, 'tackle' in dex.moves ? 'tackle' : 'bodyslam').defMaxHP; }

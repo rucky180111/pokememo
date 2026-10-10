@@ -84,7 +84,7 @@ export function attackTable(ctx, atkSide, atkIdx, opts = {}) {
   const defActives = st.sides[defSide].active;
   defList.sort((x, y) => (defActives.includes(y) ? 1 : 0) - (defActives.includes(x) ? 1 : 0) || x - y);
 
-  if (opts.only) { defList.splice(0, defList.length, ...defList.filter(i => i === opts.only.def)); moves = moves.filter(m => m.id === opts.only.move); if (!moves.length && dex.moves[opts.only.move]) moves = [{id: opts.only.move, known: false, rate: 0}]; }
+  if (opts.only) { defList.splice(0, defList.length, ...defList.filter(i => i === opts.only.def)); if (opts.only.move) { moves = moves.filter(m => m.id === opts.only.move); if (!moves.length && dex.moves[opts.only.move]) moves = [{id: opts.only.move, known: false, rate: 0}]; } }
   const targets = defList.map(di => {
     const active = defActives.includes(di);
     const dBuild = ctx.build(defSide, di);

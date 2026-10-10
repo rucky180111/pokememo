@@ -9,6 +9,7 @@ import {useApp, Sheet, Picker, Seg, MonName, TypeChip, Empty, Confirm, cx, rate,
 import {MonEditor, FORMAT_OPTS, buildSummary} from './teams.jsx';
 import {BoardTab} from './board.jsx';
 import {SelectTab} from './select.jsx';
+import {Arena} from './arena.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
 import {DamageTab, SpeedTab, PredictTab} from './analysis.jsx';
 
@@ -46,11 +47,10 @@ export function BattleScreen({id}) {
     return out;
   };
   const props = {battle, ctx, mut, usage, setTab, toast};
-  const right = tab === 'board' && wide ? 'dmg' : tab;
   const body = t => {
     switch (t) {
       case 'setup': return <SelectTab {...props} />;
-      case 'board': return <BoardTab {...props} />;
+      case 'board': return <Arena {...props} wide={wide} />;
       case 'dmg': return <DamageTab {...props} />;
       case 'speed': return <SpeedTab {...props} />;
       case 'predict': return <PredictTab {...props} />;
@@ -67,21 +67,15 @@ export function BattleScreen({id}) {
           <span class="muted"> vs {battle.oppName || '相手'}</span>
           {battle.kind === 'sim' && <span class="tag accent">仮想盤面</span>}
           <span class="tag">{battle.format === 'double' ? 'ダブル' : 'シングル'}</span>
-          <span class="tag">ターン {turnNumber(battle)}</span>
         </div>
         {battle.kind !== 'sim' && <Seg small value={battle.result} options={RESULT_OPTS} onChange={v => mut(b => { b.result = v; })} />}
       </div>
       <div class="tabs" role="tablist">
-        {TABS.filter(([k]) => !(wide && k === 'board')).map(([k, label]) => (
-          <button role="tab" aria-selected={right === k} class={cx(right === k && 'on')} onClick={() => setTab(k)}>{label}</button>
+        {TABS.map(([k, label]) => (
+          <button role="tab" aria-selected={tab === k} class={cx(tab === k && 'on')} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
-      {wide ? (
-        <div class="battle-cols">
-          <div class="col-board"><BoardTab {...props} /></div>
-          <div class="col-side">{body(right)}</div>
-        </div>
-      ) : <div class="battle-body">{body(tab)}</div>}
+      <div class="battle-body">{body(tab)}</div>
       {confirm && <Confirm title="対戦を削除" message="この対戦の記録を削除します。元に戻せません。" okLabel="削除する" danger
         onOk={async () => { await store.deleteBattle(battle.id); nav('#/battles'); }} onClose={() => setConfirm(false)} />}
     </div>
