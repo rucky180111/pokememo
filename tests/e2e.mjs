@@ -119,7 +119,7 @@ await page.locator('.cp-hp input').fill('20');
 await page.getByRole('button', {name: '追加', exact: true}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.turns.length === 2 && b.turns[1].acts.length === 2, '次のターンに自動で進む');
-check(b.state.mons.me[0].hp === 70 && b.state.mons.opp[1].hp === 20, '残りHPが盤面に反映される');
+check(Math.round(b.state.mons.me[0].hp) === Math.round(70 / 185 * 100) && b.state.mons.opp[1].hp === 20, `残りHPが盤面に反映される (${b.state.mons.me[0].hp})`);
 check(b.state.mons.me[0].boosts.spe === -1, 'がんせきふうじで S-1');
 check(b.turns[1].acts.some(a => (a.auto || []).some(x => /実数値|説明がつきません/.test(x))), 'ダメージからの絞り込み結果が時系列に出る');
 await page.getByRole('button', {name: 'ターン終了'}).click();

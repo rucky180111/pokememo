@@ -30,17 +30,20 @@ export function inferFromTaken(ctx, oppIdx, myIdx, moveId, damage, opts = {}) {
   const stat = dex.moves[moveId].c === 'P' ? 'atk' : 'spa';
   const si = STAT_KEYS.indexOf(stat);
   const base = ctx.build('opp', oppIdx);
-  const cache = new Map();
+  const tol = opts.tol || 0;
+  // 持ち物が未判明なら「推定の持ち物」「持ち物の補正なし」のどちらかで説明がつけば候補に残す
+  const items = opts.itemUnknown ? [...new Set([base.item, ''])] : [base.item];
   let mask = '';
   for (let c = 0; c < SPE_COMBOS; c++) {
     const mod = comboMod(c), sp = comboSP(c);
-    const key = `${mod}:${sp}`;
     const spArr = [0, 0, 0, 0, 0, 0]; spArr[si] = sp;
-    const alt = {...base, nature: natureOf(stat, mod), sp: spArr};
-    let r = cache.get(key);
-    if (!r) { r = attackTable(withBuild(ctx, oppIdx, alt), 'opp', oppIdx, {...opts, only: {def: myIdx, move: moveId}})?.targets[0]?.results[moveId]; cache.set(key, r); }
-    const tol = opts.tol || 0;
-    mask += r?.ok && damage + tol >= r.min && damage - tol <= r.max ? '1' : '0';
+    let ok = false;
+    for (const item of items) {
+      const alt = {...base, item, nature: natureOf(stat, mod), sp: spArr};
+      const r = attackTable(withBuild(ctx, oppIdx, alt), 'opp', oppIdx, {...opts, only: {def: myIdx, move: moveId}})?.targets[0]?.results[moveId];
+      if (r?.ok && damage + tol >= r.min && damage - tol <= r.max) { ok = true; break; }
+    }
+    mask += ok ? '1' : '0';
   }
   return summarize(ctx, oppIdx, stat, mask);
 }
@@ -69,15 +72,19 @@ export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts =
   const sid = cond.forme && dex.species[cond.forme] ? cond.forme : base.species;
   const bs = dex.species[sid].bs;
   const byVal = new Map();
+  const items = opts.itemUnknown ? [...new Set([base.item, ''])] : [base.item];
   const rolls = c => {
     const mod = comboMod(c), sp = comboSP(c);
     const val = statValue(bs[si], sp, mod, false);
     if (!byVal.has(val)) {
       const spArr = [0, 0, 0, 0, 0, 0]; spArr[si] = sp;
-      const alt = {...base, nature: natureOf(stat, mod), sp: spArr};
-      // HP満タン扱いで実ダメージの幅だけ取り出す (マルチスケイル等は盤面のHPに従う)
-      const r = attackTable(withBuild(ctx, oppIdx, alt), 'me', myIdx, {...opts, only: {def: oppIdx, move: moveId}})?.targets[0]?.results[moveId];
-      byVal.set(val, r?.ok ? [r.min, r.max] : null);
+      let lo = Infinity, hi = -Infinity;
+      for (const item of items) {
+        const alt = {...base, item, nature: natureOf(stat, mod), sp: spArr};
+        const r = attackTable(withBuild(ctx, oppIdx, alt), 'me', myIdx, {...opts, only: {def: oppIdx, move: moveId}})?.targets[0]?.results[moveId];
+        if (r?.ok) { lo = Math.min(lo, r.min); hi = Math.max(hi, r.max); }
+      }
+      byVal.set(val, Number.isFinite(lo) ? [lo, hi] : null);
     }
     return byVal.get(val);
   };

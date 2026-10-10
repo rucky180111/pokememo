@@ -46,13 +46,15 @@ export function estimateStats(opp, speciesId) {
     }
     const m = allowed(opp, key);
     let spLo = 33, spHi = -1, valLo = Infinity, valHi = -Infinity, modLo = 2, modHi = 0;
+    const byMod = {};
     for (let c = 0; c < SPE_COMBOS; c++) {
       if (m && m[c] !== '1') continue;
       const sp = comboSP(c), mod = comboMod(c), v = statValue(base, sp, mod, false);
+      const e = (byMod[mod] ||= [33, -1]); e[0] = Math.min(e[0], sp); e[1] = Math.max(e[1], sp);
       spLo = Math.min(spLo, sp); spHi = Math.max(spHi, sp); valLo = Math.min(valLo, v); valHi = Math.max(valHi, v); modLo = Math.min(modLo, mod); modHi = Math.max(modHi, mod);
     }
     if (spHi < 0) return {key, base, spLo: 0, spHi: 32, valLo: statValue(base, 0, 0.9, false), valHi: statValue(base, 32, 1.1, false), modLo: 0.9, modHi: 1.1, known: false};
-    return {key, base, spLo, spHi, valLo, valHi, modLo, modHi, known: !!m};
+    return {key, base, spLo, spHi, valLo, valHi, modLo, modHi, known: !!m, byMod: m ? byMod : null};
   });
   const used = rows.reduce((a, r) => a + r.spLo, 0);
   const remain = Math.max(0, SP_TOTAL - used);

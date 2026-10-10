@@ -63,12 +63,16 @@ function Timeline({battle, ctx, mut, usage, toast}) {
   const mv = act?.type === 'move' ? dex.moves[act.move] : null;
   const tgt = target && foes.includes(target.mon) ? target : foes.length ? {side: other(side), mon: foes[0]} : null;
   const needHP = mv && mv.c !== 'Z' && tgt;
+  const tb = tgt?.side === 'me' ? battle.my[tgt.mon] : null;
+  const hpMax = tb ? statsOf(currentSpecies(tb, condOf(battle, 'me', tgt.mon)), tb.sp, tb.nature)[0] : null;
   const canMega = mon != null && megaTarget(battle, side, mon) && !sd.megaUsed && !dex.species[condOf(battle, side, mon).forme]?.mega;
   const reset = () => { setAct(null); setHp(''); setFlags({}); setTarget(null); };
   const add = () => {
     if (!act) { toast('技か交代先を選んでください'); return; }
-    const log = mut(b => addAct(b, {side, mon, ...act, mega: !!flags.mega, crit: !!flags.crit, miss: !!flags.miss, protect: !!flags.protect,
-      target: double ? tgt : null, hpAfter: needHP && hp !== '' && !flags.miss && !flags.protect ? Number(hp) : null}, usage));
+    // 自分のHPは実数で入力 → 割合に直す。相手のHPは割合のまま
+    const hpPct = hpMax ? (Number(hp) / hpMax) * 100 : Number(hp);
+    const log = mut(b => addAct(b, {side, mon, ...act, mega: !!flags.mega, crit: !!flags.crit, miss: !!flags.miss, protect: !!flags.protect, exact: !!hpMax,
+      target: double ? tgt : null, hpAfter: needHP && hp !== '' && !flags.miss && !flags.protect ? hpPct : null}, usage));
     if (log?.length) toast(log[log.length - 1]);
     reset();
     setSide(other(side));
@@ -128,7 +132,7 @@ function Timeline({battle, ctx, mut, usage, toast}) {
               {double && foes.length > 1 && mv && !mv.sp && foes.map(i => <button class={cx('chip', tgt?.mon === i && 'on')} onClick={() => setTarget({side: other(side), mon: i})}>→ {speciesName(buildOf(battle, other(side), i).species)}</button>)}
               {needHP && (
                 <label class="cp-hp">{speciesName(buildOf(battle, tgt.side, tgt.mon).species)}の残りHP
-                  <input class="input sm num" type="number" inputMode="decimal" min={0} max={100} value={hp} placeholder={`${Math.round(condOf(battle, tgt.side, tgt.mon).hp)}`} onInput={e => setHp(e.currentTarget.value)} />%
+                  <input class="input sm num" type="number" inputMode="decimal" min={0} max={hpMax || 100} value={hp} placeholder={`${Math.round(hpMax ? (condOf(battle, tgt.side, tgt.mon).hp * hpMax) / 100 : condOf(battle, tgt.side, tgt.mon).hp)}`} onInput={e => setHp(e.currentTarget.value)} />{hpMax ? `/${hpMax}` : '%'}
                 </label>
               )}
               {[['crit', '急所'], ['miss', '外れ'], ['protect', 'まもる']].map(([k, l]) => <Toggle small on={!!flags[k]} onChange={v => setFlags({...flags, [k]: v})}>{l}</Toggle>)}
@@ -203,7 +207,16 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
   const megaOptions = side === 'me' ? [megaTarget(battle, side, idx)].filter(Boolean) : (opp.item ? [megaTarget(battle, side, idx)].filter(Boolean) : (dex.species[build.species].megas || []));
   const isMega = !!dex.species[raw.forme]?.mega;
   const moves = side === 'me' ? (build.moves || []) : (opp.moves || []);
-  const fmtSp = r => (r.spLo === r.spHi ? `${r.spLo}` : `${r.spLo}〜${r.spHi}`);
+  // 補正なしで説明がつくならその範囲を、つかなければ補正あり(↑)/下降(↓)の範囲を出す
+  const fmtSp = r => {
+    if (!r.byMod) return r.spLo === r.spHi ? `${r.spLo}` : `${r.spLo}〜${r.spHi}`;
+    const rg = e => (e[0] === e[1] ? `${e[0]}` : `${e[0]}〜${e[1]}`);
+    const out = [];
+    if (r.byMod[1]) out.push(rg(r.byMod[1]));
+    if (r.byMod[1.1]) out.push(`↑${rg(r.byMod[1.1])}`);
+    if (r.byMod[0.9] && !r.byMod[1]) out.push(`↓${rg(r.byMod[0.9])}`);
+    return out.join(' ');
+  };
   const fmtVal = r => (r.valLo === r.valHi ? `${r.valLo}` : `${r.valLo}〜${r.valHi}`);
   const tr = battle.state.field.trickRoom;
   return (
@@ -252,7 +265,7 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
           )}
         </div>
       </div>
-      {side === 'opp' && <p class="hint mp-remain">H・B・D = 与えたダメージ、A・C = 受けたダメージ、S = 行動順 から推定 (青字が推定済み)。未確定の残り能力Pt: <b class="num">{est.remain}</b> / 66{speeds.o?.pFaster != null ? ` ・ 先手率 自分 ${rate(speeds.o.pSlower)}` : ''}</p>}
+      {side === 'opp' && <p class="hint mp-remain">H・B・D = 与えたダメージ、A・C = 受けたダメージ、S = 行動順 から推定 (青字が推定済み。↑ は性格補正ありの場合)。未確定の残り能力Pt: <b class="num">{est.remain}</b> / 66{speeds.o?.pFaster != null ? ` ・ 先手率 自分 ${rate(speeds.o.pSlower)}` : ''}</p>}
       <div class="mp-lower">
         <div class="mp-moves">
           {[0, 1, 2, 3].map(i => {

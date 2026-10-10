@@ -477,3 +477,5 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .dp-val { font-weight: 700; background: transparent !important; color: var(--text) !important; white-space: nowrap; }
 .dp-ko { grid-column: 2 / -1; text-align: right; font-size: 10.5px; color: var(--muted); margin-top: -3px; }
 @media (max-width: 620px) { .mp-body { grid-template-columns: 1fr; } .mp-speed ol { flex-direction: row; flex-wrap: wrap; gap: 2px 8px; } .mp-lower { grid-template-columns: 1fr; } }
+
+.mp-table tr.est td { font-size: 11px; line-height: 1.25; word-break: keep-all; }

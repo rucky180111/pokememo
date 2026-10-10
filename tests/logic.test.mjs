@@ -596,3 +596,24 @@ test('推定能力ポイント: 絞り込みの範囲と残りポイント、無
 });
 
 function statsOf5(build) { return calcDamage({build, cond: newCond()}, {build, cond: newCond()}, 'tackle' in dex.moves ? 'tackle' : 'bodyslam').defMaxHP; }
+
+test('時系列入力: メガ想定の相手でも盤面の姿で逆算でき、推定Ptの表示が変わる', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 5); sendOut(b, 'opp', 0, 0); // ウォッシュロトム vs ボーマンダ (持ち物不明・メガ想定)
+  const truth = {species: 'salamence', item: 'lifeorb', ability: 'intimidate', nature: 'Naive', sp: [0, 16, 0, 18, 0, 32], moves: []};
+  // 実際の相手は いのちのたま (アプリの推定とは違う持ち物)。受けたダメージを実数で入力
+  const real = calcDamage({build: truth, cond: b.state.mons.opp[0]}, {build: b.my[5], cond: b.state.mons.me[5]}, 'dragonclaw', {field: b.state.field});
+  const after = ((real.defMaxHP - real.rolls[7]) / real.defMaxHP) * 100;
+  const log = addAct(b, {side: 'opp', type: 'move', move: 'dragonclaw', hpAfter: after, exact: true}, usage);
+  assert.ok(b.opp[0].statOk?.atk, `こうげきが絞り込まれる: ${log.join(' / ')}`);
+  const e = estimateStats(b.opp[0], 'salamence');
+  assert.ok(e.rows[1].known);
+  assert.ok(e.rows[1].byMod, '補正ごとの範囲が出る');
+  assert.ok(e.rows[1].valHi - e.rows[1].valLo < 80, '実数値の幅が狭まる');
+  // 与えたダメージ (相手は通常の姿のまま)
+  const dealt = calcDamage({build: b.my[5], cond: b.state.mons.me[5]}, {build: truth, cond: b.state.mons.opp[0]}, 'hydropump', {field: b.state.field});
+  const oppAfter = Math.round(100 - (dealt.rolls[8] / dealt.defMaxHP) * 100);
+  addAct(b, {side: 'me', type: 'move', move: 'hydropump', hpAfter: oppAfter}, usage);
+  assert.ok(b.opp[0].statOk?.spd, 'HP・とくぼうが絞り込まれる');
+  assert.equal(b.opp[0].statOk.spd[0 * 99 + cOf(0.9, 0)], '1', '真の H0 D下降 が候補に残る');
+});

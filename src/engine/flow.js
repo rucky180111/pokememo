@@ -82,16 +82,21 @@ export function addAct(b, input, usage) {
       const tc = condOf(b, tgt.side, tgt.mon);
       const before = tc.hp;
       // ダメージから相手の能力を絞り込む (自分↔相手の技のみ)
+      if (tgt.side !== side && a.hpAfter <= 0 && dex.moves[a.move]?.c !== 'Z') log.push('倒した/倒された場合は、ダメージからの推定はできません');
       if (tgt.side !== side && inferable(a.move) && a.hpAfter > 0 && before > a.hpAfter) {
         try {
           const oppIdx = side === 'opp' ? mon : tgt.mon, myIdx = side === 'opp' ? tgt.mon : mon;
+          // 逆算は「いま盤面にある姿」で行う (メガシンカの想定は使わない)
+          const ictx = {...ctx, cond: (sd, i) => b.state.mons[sd][i]};
+          const iopt = {crit: a.flags.crit, itemUnknown: !b.opp[oppIdx].item};
           let r;
           if (side === 'opp') {
             const tb = buildOf(b, 'me', myIdx);
             const maxHP = statsOf(currentSpecies(tb, tc), tb.sp, tb.nature)[0];
-            r = inferFromTaken(ctx, oppIdx, myIdx, a.move, ((before - a.hpAfter) / 100) * maxHP, {crit: a.flags.crit, tol: maxHP * 0.006 + 0.5});
-          } else r = inferFromDealt(ctx, myIdx, oppIdx, a.move, before, a.hpAfter, {crit: a.flags.crit});
+            r = inferFromTaken(ictx, oppIdx, myIdx, a.move, ((before - a.hpAfter) / 100) * maxHP, {...iopt, tol: input.exact ? 0.5 : maxHP * 0.006 + 0.5});
+          } else r = inferFromDealt(ictx, myIdx, oppIdx, a.move, before, a.hpAfter, iopt);
           if (r) log.push(`相手の${speciesName(b.opp[oppIdx].species)}: ${applyInference(b.opp[oppIdx], ctx.views[oppIdx], r)}`);
+          else log.push('この技はダメージからの推定に対応していません');
         } catch { /* 絞り込めなくても記録は続ける */ }
       }
       a.target = tgt;
