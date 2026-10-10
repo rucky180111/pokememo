@@ -6,6 +6,8 @@ import {dex, search, TYPE_JA, speciesName} from '../engine/dex.js';
 
 export const AppCtx = createContext(null);
 const DepthCtx = createContext(0);
+let openSheets = 0;
+const sheetStack = [];
 export const useApp = () => useContext(AppCtx);
 
 export function useStoreVersion(store) {
@@ -33,11 +35,21 @@ export function MonName({id, sub}) {
 export function Sheet({title, onClose, children, wide, actions}) {
   const depth = useContext(DepthCtx);
   useEffect(() => {
-    const onKey = e => { if (e.key === 'Escape') onClose?.(); };
+    const me = {};
+    sheetStack.push(me);
+    // Esc はいちばん手前のパネルだけを閉じる
+    const onKey = e => { if (e.key === 'Escape' && sheetStack[sheetStack.length - 1] === me) { e.stopImmediatePropagation(); onClose?.(); } };
     document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
+    // 開いているパネルの数で背景のスクロールを止める。重ねて開いたパネルが閉じる順番に関係なく、
+    // 最後の1枚が閉じたら必ずスクロールできる状態に戻す。
+    openSheets++;
     document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      const at = sheetStack.indexOf(me); if (at >= 0) sheetStack.splice(at, 1);
+      openSheets = Math.max(0, openSheets - 1);
+      if (!openSheets) document.body.style.overflow = '';
+    };
   }, []);
   // 画面のどこから開いても最前面に出るよう、body 直下に描画する
   return createPortal(

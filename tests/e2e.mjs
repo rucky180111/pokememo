@@ -21,6 +21,23 @@ async function open(viewport, name) {
   await page.waitForSelector('.bottomnav');
   return {ctx, page};
 }
+// パネルが出ていないのに背景のスクロールが止まったままになっていないか
+const scrollOK = async (page, where) => {
+  await page.waitForTimeout(250);
+  const r = await page.evaluate(() => ({overlays: document.querySelectorAll('.overlay').length, body: document.body.style.overflow, html: getComputedStyle(document.documentElement).overflowY}));
+  check(r.overlays > 0 || (r.body !== 'hidden' && r.html !== 'hidden'), `${where}: 背景がスクロールできる状態 (overlay ${r.overlays}, body "${r.body}")`);
+};
+// 実際に縦スクロールが効くか (内容が画面より長いとき)
+const canScroll = async (page, where) => {
+  const r = await page.evaluate(async () => {
+    const need = document.documentElement.scrollHeight - window.innerHeight;
+    window.scrollTo(0, 0); window.scrollTo(0, 400);
+    await new Promise(f => setTimeout(f, 50));
+    const y = window.scrollY; window.scrollTo(0, 0);
+    return {need, y};
+  });
+  check(r.need <= 4 || r.y > 0, `${where}: 縦スクロールが効く (必要 ${r.need}px, 動いた ${r.y}px)`);
+};
 const shot = async (page, name) => { await page.screenshot({path: path.join(outDir, `${String(++step).padStart(2, '0')}-${name}.png`)}); };
 const pickFrom = async (page, text) => {
   await page.locator('.picker-bar input[type=search]').last().fill(text);
@@ -58,6 +75,8 @@ await addMon(page, 'がぶりあす', 'こだわりスカーフ', ['じしん', 
 await addMon(page, 'りざーどん', 'リザードナイトY', ['かえんほうしゃ', 'エアスラッシュ', 'ソーラービーム', 'まもる'], {nature: 'Timid', sp: {3: 32, 5: 32}});
 await addMon(page, 'がおがえん', 'オボンのみ', ['ねこだまし', 'フレアドライブ', 'じごくづき', 'すてゼリフ'], {sp: {0: 32}});
 await shot(page, 'team');
+await scrollOK(page, '構築 (3体追加後)');
+await canScroll(page, '構築');
 const state1 = await page.evaluate(() => window.__pokememo.store.teams()[0]);
 check(state1.mons.length === 3, '構築に3体登録された');
 check(state1.mons[0].species === 'garchomp' && state1.mons[0].item === 'choicescarf' && state1.mons[0].nature === 'Jolly', 'ガブリアスの内容が正しい');
@@ -73,7 +92,13 @@ await page.locator('.sp-num').nth(3).fill('32');
 const spNow = await page.locator('.sp-num').evaluateAll(els => els.map(e => Number(e.value)));
 check(spNow.reduce((a, b) => a + b, 0) <= 66, `能力ポイント合計は66を超えない (${spNow})`);
 await shot(page, 'mon-editor');
+// 編集パネルの中で選択パネルを開いて、外側ごと閉じても背景が固まらない
+await page.locator('.editor .field', {hasText: '持ち物'}).locator('button').click();
+await page.keyboard.press('Escape');
+await page.waitForTimeout(100);
 await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
+await scrollOK(page, '構築 (編集を閉じた後)');
+await canScroll(page, '構築 (編集後)');
 
 // 対戦を記録
 await page.getByRole('button', {name: '対戦を記録'}).click();
@@ -188,6 +213,8 @@ check(await page.evaluate(() => window.__pokememo.store.battles().length === 1 &
 for (const h of ['#/battles', '#/teams', '#/stats', '#/settings']) {
   await page.goto(url + h);
   await page.waitForTimeout(150);
+  await scrollOK(page, h);
+  await canScroll(page, h);
   const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(over <= 0, `${h} が横にはみ出さない (${over}px)`);
 }
@@ -197,6 +224,8 @@ await page.waitForSelector('.battle');
 for (const t of ['① 選出', '② 対戦', 'ダメージ表', '素早さ', '予測', 'ログ']) {
   await page.getByRole('tab', {name: t}).click();
   await page.waitForTimeout(120);
+  await scrollOK(page, `対戦/${t}`);
+  await canScroll(page, `対戦/${t}`);
   const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(over <= 0, `対戦/${t} が横にはみ出さない (${over}px)`);
 }
