@@ -5,7 +5,7 @@ import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility
 import {sendOut, megaEvolve, megaTarget, setHP, setWeather, setTerrain, setSideFlag, setFieldFlag, undoTurn, buildOf, condOf, other, turnNumber} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {speedOutlook} from '../engine/assume.js';
-import {addAct, endTurn, openTurn, actLine} from '../engine/flow.js';
+import {addAct, addEvent, endTurn, openTurn, actLine} from '../engine/flow.js';
 import {estimateStats, scenarioBuild} from '../engine/estimate.js';
 import {Picker, Seg, Toggle, TypeChip, Empty, cx, fmtPct, rate} from './common.jsx';
 import {OppSheet, dmgClass} from './battle.jsx';
@@ -28,7 +28,7 @@ export function Arena({battle, ctx, mut, usage, toast, wide}) {
       {(wide || pane === 'center') && (
         <div class="ar-center">
           <SidePanels side="opp" {...p} />
-          <FieldRow battle={battle} mut={mut} />
+          <FieldRow battle={battle} />
           <SidePanels side="me" {...p} />
         </div>
       )}
@@ -51,6 +51,10 @@ function Timeline({battle, ctx, mut, usage, toast}) {
   const [actor, setActor] = useState(null);
   const [target, setTarget] = useState(null);
   const [pick, setPick] = useState(false);
+  const [mode, setMode] = useState('act');
+  const [defItem, setDefItem] = useState('');
+  const [atkItem, setAtkItem] = useState('');
+  const [ev, setEv] = useState({kind: 'item'});
   const act0 = alive(battle, side);
   const mon = actor != null && act0.includes(actor) ? actor : act0[0];
   const foes = alive(battle, other(side));
@@ -66,16 +70,30 @@ function Timeline({battle, ctx, mut, usage, toast}) {
   const tb = tgt?.side === 'me' ? battle.my[tgt.mon] : null;
   const hpMax = tb ? statsOf(currentSpecies(tb, condOf(battle, 'me', tgt.mon)), tb.sp, tb.nature)[0] : null;
   const canMega = mon != null && megaTarget(battle, side, mon) && !sd.megaUsed && !dex.species[condOf(battle, side, mon).forme]?.mega;
-  const reset = () => { setAct(null); setHp(''); setFlags({}); setTarget(null); };
+  const reset = () => { setAct(null); setHp(''); setFlags({}); setTarget(null); setDefItem(''); setAtkItem(''); setEv({kind: ev.kind}); };
   const add = () => {
     if (!act) { toast('技か交代先を選んでください'); return; }
     // 自分のHPは実数で入力 → 割合に直す。相手のHPは割合のまま
     const hpPct = hpMax ? (Number(hp) / hpMax) * 100 : Number(hp);
     const log = mut(b => addAct(b, {side, mon, ...act, mega: !!flags.mega, crit: !!flags.crit, miss: !!flags.miss, protect: !!flags.protect, exact: !!hpMax,
+      defItem: defItem ? {item: defItem} : null, atkItem: atkItem ? {item: atkItem} : null,
       target: double ? tgt : null, hpAfter: needHP && hp !== '' && !flags.miss && !flags.protect ? hpPct : null}, usage));
     if (log?.length) toast(log[log.length - 1]);
     reset();
     setSide(other(side));
+  };
+  // 出来事の対象 (HPの入力は 自分=実数 / 相手=%)
+  const evMon = mon;
+  const evBuild = evMon != null ? list[evMon] : null;
+  const evMax = side === 'me' && evBuild ? statsOf(currentSpecies(evBuild, condOf(battle, 'me', evMon)), evBuild.sp, evBuild.nature)[0] : null;
+  const toPct = v => (evMax ? (Number(v) / evMax) * 100 : Number(v));
+  const addEv = extra => {
+    const e = {...ev, ...extra, side, mon: evMon};
+    if (e.hp !== undefined && e.hp !== '') e.hpAfter = toPct(e.hp);
+    delete e.hp;
+    const log = mut(b => addEvent(b, e, usage));
+    if (log?.length) toast(log[0]);
+    setEv({kind: ev.kind});
   };
   const send = i => { mut(b => { sendOut(b, side, emptySlot, i, {resolveAbility: ctx.strictAbility}); }); };
   const open = openTurn(battle);
@@ -104,7 +122,8 @@ function Timeline({battle, ctx, mut, usage, toast}) {
       </div>
       <div class="composer">
         <div class="cp-head">
-          <strong>ターン {open ? open.n : battle.turns.length + 1} の入力</strong>
+          <Seg small value={mode} options={[['act', '行動'], ['ev', '出来事']]} onChange={setMode} />
+          <strong>ターン {open ? open.n : battle.turns.length + 1}</strong>
           <Seg small value={side} options={[['opp', '相手'], ['me', '自分']]} onChange={v => { setSide(v); reset(); setActor(null); }} />
         </div>
         {emptySlot >= 0 && bench.length > 0 && (
@@ -112,7 +131,7 @@ function Timeline({battle, ctx, mut, usage, toast}) {
             {bench.map(i => <button class="chip add" onClick={() => send(i)}>{speciesName(list[i].species)}</button>)}
           </div>
         )}
-        {mon != null && <>
+        {mode === 'act' && mon != null && <>
           {act0.length > 1 && <div class="chips"><span class="muted">行動:</span>{act0.map(i => <button class={cx('chip', mon === i && 'on')} onClick={() => { setActor(i); reset(); }}>{speciesName(list[i].species)}</button>)}</div>}
           <div class="chips">
             {moves.map(m => (
@@ -130,7 +149,7 @@ function Timeline({battle, ctx, mut, usage, toast}) {
           {act?.type === 'move' && (
             <div class="chips">
               {double && foes.length > 1 && mv && !mv.sp && foes.map(i => <button class={cx('chip', tgt?.mon === i && 'on')} onClick={() => setTarget({side: other(side), mon: i})}>→ {speciesName(buildOf(battle, other(side), i).species)}</button>)}
-              {needHP && (
+              {needHP && defItem !== 'focussash' && (
                 <label class="cp-hp">{speciesName(buildOf(battle, tgt.side, tgt.mon).species)}の残りHP
                   <input class="input sm num" type="number" inputMode="decimal" min={0} max={hpMax || 100} value={hp} placeholder={`${Math.round(hpMax ? (condOf(battle, tgt.side, tgt.mon).hp * hpMax) / 100 : condOf(battle, tgt.side, tgt.mon).hp)}`} onInput={e => setHp(e.currentTarget.value)} />{hpMax ? `/${hpMax}` : '%'}
                 </label>
@@ -139,29 +158,83 @@ function Timeline({battle, ctx, mut, usage, toast}) {
               {canMega && <Toggle small on={!!flags.mega} onChange={v => setFlags({...flags, mega: v})}>メガシンカ</Toggle>}
             </div>
           )}
+          {needHP && (
+            <div class="chips">
+              <span class="muted">受けた側の持ち物:</span>
+              {[['focussash', 'タスキで耐えた'], ['sitrusberry', 'オボンで回復']].map(([k, l]) => <button class={cx('chip', defItem === k && 'on')} onClick={() => setDefItem(defItem === k ? '' : k)}>{l}</button>)}
+              <button class={cx('chip', defItem && !['focussash', 'sitrusberry'].includes(defItem) ? 'on' : 'add')} onClick={() => setPick('def')}>{defItem && !['focussash', 'sitrusberry'].includes(defItem) ? `${itemName(defItem)} 発動` : 'ほかの持ち物…'}</button>
+              <button class={cx('chip', atkItem ? 'on' : 'add')} onClick={() => (atkItem ? setAtkItem('') : setPick('atk'))}>{atkItem ? `攻撃側: ${itemName(atkItem)}` : '攻撃側の持ち物が判明…'}</button>
+            </div>
+          )}
+          {defItem === 'sitrusberry' && <p class="hint">残りHPには、オボンで回復したあとの値を入れてください (回復前に戻して計算します)。</p>}
         </>}
+        {mode === 'ev' && mon != null && (
+          <div class="ev">
+            {act0.length > 1 && <div class="chips"><span class="muted">対象:</span>{act0.map(i => <button class={cx('chip', mon === i && 'on')} onClick={() => setActor(i)}>{speciesName(list[i].species)}</button>)}</div>}
+            <div class="chips">
+              {[['item', '持ち物'], ['hp', 'HPの変化'], ['status', '状態異常'], ['boost', 'ランク'], ['ability', '特性'], ['mega', 'メガシンカ'], ['faint', 'ひんし'], ['field', '天候・場'], ['side', '壁・設置技']].map(([k, l]) => <button class={cx('chip', ev.kind === k && 'on')} onClick={() => setEv({kind: k})}>{l}</button>)}
+            </div>
+            <p class="hint">{SIDE_JA[side]}の{speciesName(list[mon].species)}{['field'].includes(ev.kind) ? ' (場全体)' : ev.kind === 'side' ? `側の場` : ''}</p>
+            {ev.kind === 'item' && <div class="chips">
+              <button class="chip add" onClick={() => setPick('ev')}>{ev.item ? itemName(ev.item) : '持ち物をえらぶ…'}</button>
+              {[['sitrusberry', 'オボンのみ'], ['leftovers', 'たべのこし'], ['lumberry', 'ラムのみ'], ['rockyhelmet', 'ゴツゴツメット'], ['lifeorb', 'いのちのたま'], ['choicescarf', 'こだわりスカーフ']].map(([k, l]) => <button class={cx('chip', ev.item === k && 'on')} onClick={() => setEv({...ev, item: k, consumed: ['sitrusberry', 'lumberry'].includes(k)})}>{l}</button>)}
+              <Toggle small on={!!ev.consumed} onChange={v => setEv({...ev, consumed: v})}>消費した</Toggle>
+              <label class="cp-hp">発動後のHP (任意。オボンは空欄で+25%)
+                <input class="input sm num" type="number" inputMode="decimal" value={ev.hp ?? ''} onInput={e => setEv({...ev, hp: e.currentTarget.value})} />{evMax ? `/${evMax}` : '%'}</label>
+              <button class="btn primary sm" disabled={!ev.item} onClick={() => addEv()}>追加</button>
+            </div>}
+            {ev.kind === 'hp' && <div class="chips">
+              <label class="cp-hp">変化後のHP (天候・やけど・回復など)
+                <input class="input sm num" type="number" inputMode="decimal" value={ev.hp ?? ''} onInput={e => setEv({...ev, hp: e.currentTarget.value})} />{evMax ? `/${evMax}` : '%'}</label>
+              <button class="btn primary sm" disabled={!ev.hp && ev.hp !== 0} onClick={() => addEv()}>追加</button>
+            </div>}
+            {ev.kind === 'status' && <div class="chips">{STATUSES.map(([k, l]) => <button class="chip" onClick={() => addEv({status: k})}>{k ? l : '回復した'}</button>)}</div>}
+            {ev.kind === 'boost' && <div class="chips">
+              {BOOST_KEYS.map(k => <button class={cx('chip', ev.stat === k && 'on')} onClick={() => setEv({...ev, stat: k})}>{{atk: 'こうげき', def: 'ぼうぎょ', spa: 'とくこう', spd: 'とくぼう', spe: 'すばやさ'}[k]}</button>)}
+              {ev.stat && [-2, -1, 1, 2].map(d => <button class="chip add" onClick={() => addEv({delta: d})}>{d > 0 ? `+${d}` : d}</button>)}
+            </div>}
+            {ev.kind === 'ability' && <div class="chips">{dex.species[list[mon].species].ab.map(a => <button class="chip" onClick={() => addEv({ability: a})}>{abilityName(a)}</button>)}</div>}
+            {ev.kind === 'mega' && <div class="chips">
+              {(megaTarget(battle, side, mon) ? (side === 'opp' && !battle.opp[mon].item ? dex.species[list[mon].species].megas : [megaTarget(battle, side, mon)]) : []).map(m => <button class="chip" onClick={() => addEv({forme: m})}>{speciesName(m)} にメガシンカ</button>)}
+              {!megaTarget(battle, side, mon) && <span class="muted">このポケモンはメガシンカできません</span>}
+            </div>}
+            {ev.kind === 'faint' && <div class="chips"><button class="chip" onClick={() => addEv()}>ひんしになった</button></div>}
+            {ev.kind === 'field' && <>
+              <div class="chips"><span class="muted">天候:</span>{WEATHERS.map(([k, l]) => <button class={cx('chip', battle.state.field.weather === k && 'on')} onClick={() => addEv({key: 'weather', value: k})}>{l}</button>)}</div>
+              <div class="chips"><span class="muted">フィールド:</span>{TERRAINS.map(([k, l]) => <button class={cx('chip', battle.state.field.terrain === k && 'on')} onClick={() => addEv({key: 'terrain', value: k})}>{l}</button>)}</div>
+              <div class="chips">{[['trickRoom', 'トリックルーム'], ['gravity', 'じゅうりょく']].map(([k, l]) => <button class={cx('chip', battle.state.field[k] && 'on')} onClick={() => addEv({key: k, value: !battle.state.field[k]})}>{l}{battle.state.field[k] ? ' 終了' : ''}</button>)}</div>
+            </>}
+            {ev.kind === 'side' && <div class="chips">
+              {FLAGS.map(([k, l]) => <button class={cx('chip', sd[k] && 'on')} onClick={() => addEv({key: k, value: !sd[k]})}>{l}{sd[k] ? ' 終了' : ''}</button>)}
+              {[0, 1, 2, 3].map(n => <button class={cx('chip', sd.spikes === n && 'on')} onClick={() => addEv({kind: 'spikes', value: n})}>まきびし{n}</button>)}
+            </div>}
+          </div>
+        )}
         {mon == null && emptySlot < 0 && <p class="muted">場にポケモンがいません。</p>}
         <div class="btnrow">
-          <button class="btn primary grow" onClick={add} disabled={!act}>追加</button>
+          {mode === 'act' && <button class="btn primary grow" onClick={add} disabled={!act}>追加</button>}
           <button class="btn" disabled={!open} onClick={() => { mut(b => { endTurn(b, usage); }); }}>ターン終了</button>
           <button class="btn" disabled={!battle.turns.length || !battle.turns[battle.turns.length - 1].before} onClick={() => { mut(b => { undoTurn(b); }); toast('直前のターンを取り消しました'); }}>戻す</button>
         </div>
       </div>
-      {pick && mon != null && <Picker kind="moves" title="使った技" onClose={() => setPick(false)} prefer={dex.learn[list[mon].species]} preferLabel="覚えない技も表示"
+      {pick === true && mon != null && <Picker kind="moves" title="使った技" onClose={() => setPick(false)} prefer={dex.learn[list[mon].species]} preferLabel="覚えない技も表示"
         onPick={id => { setAct({type: 'move', move: id}); setPick(false); }} />}
+      {['def', 'atk', 'ev'].includes(pick) && <Picker kind="items" title="持ち物" onClose={() => setPick(false)} filter={id => !dex.items[id].ms}
+        onPick={id => { if (pick === 'def') setDefItem(id); else if (pick === 'atk') setAtkItem(id); else setEv({...ev, item: id}); setPick(false); }} />}
     </div>
   );
 }
 
 // ---- 中央: 盤面 ----
-function FieldRow({battle, mut}) {
+function FieldRow({battle}) {
   const f = battle.state.field;
+  const W = Object.fromEntries(WEATHERS), T = Object.fromEntries(TERRAINS);
   return (
     <div class="ar-field">
-      <label>天候 <select class="input sm" value={f.weather} onChange={e => mut(b => { setWeather(b, e.currentTarget.value); })}>{WEATHERS.map(([v, l]) => <option value={v}>{l}</option>)}</select></label>
-      <label>フィールド <select class="input sm" value={f.terrain} onChange={e => mut(b => { setTerrain(b, e.currentTarget.value); })}>{TERRAINS.map(([v, l]) => <option value={v}>{l}</option>)}</select></label>
-      <Toggle small on={f.trickRoom} onChange={v => mut(b => { setFieldFlag(b, 'trickRoom', v); })}>トリックルーム</Toggle>
-      <Toggle small on={f.gravity} onChange={v => mut(b => { setFieldFlag(b, 'gravity', v); })}>じゅうりょく</Toggle>
+      <span>天候 <b class={cx(f.weather && 'on')}>{W[f.weather || '']}</b></span>
+      <span>フィールド <b class={cx(f.terrain && 'on')}>{T[f.terrain || '']}</b></span>
+      {f.trickRoom && <span class="tag accent">トリックルーム</span>}
+      {f.gravity && <span class="tag accent">じゅうりょく</span>}
       <span class="tag">ターン {turnNumber(battle)}</span>
     </div>
   );
@@ -174,8 +247,6 @@ function SidePanels({side, battle, ...rest}) {
 }
 
 function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
-  const [pickItem, setPickItem] = useState(false);
-  const [pickMove, setPickMove] = useState(false);
   const build = ctx.build(side, idx);
   const raw = condOf(battle, side, idx);
   const cond = ctx.cond(side, idx);
@@ -184,7 +255,6 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
   const view = side === 'opp' ? ctx.views[idx] : null;
   const opp = side === 'opp' ? battle.opp[idx] : null;
   const sd = battle.state.sides[side];
-  const set = fn => mut(b => fn(condOf(b, side, idx), b));
   const est = useMemo(() => (opp ? estimateStats(opp, sid) : null), [opp, sid]);
   const myStats = side === 'me' ? statsOf(sid, build.sp, build.nature) : null;
   const maxHP = myStats ? myStats[0] : null;
@@ -204,7 +274,6 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
     rows.sort((a, b) => b.v - a.v || (a.mine ? 1 : -1));
     return {mine, rows, o};
   }, [ctx]);
-  const megaOptions = side === 'me' ? [megaTarget(battle, side, idx)].filter(Boolean) : (opp.item ? [megaTarget(battle, side, idx)].filter(Boolean) : (dex.species[build.species].megas || []));
   const isMega = !!dex.species[raw.forme]?.mega;
   const moves = side === 'me' ? (build.moves || []) : (opp.moves || []);
   // 補正なしで説明がつくならその範囲を、つかなければ補正あり(↑)/下降(↓)の範囲を出す
@@ -225,12 +294,15 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
         <span class={cx('side-tag', side)}>{SIDE_JA[side]}</span>
         <button class="mp-name" onClick={() => setSheet({side, idx})}>{s.j}</button>
         <span class="types">{s.t.map(t => <TypeChip type={t} />)}</span>
-        {side === 'opp'
-          ? <button class="input sm as-btn mp-item" onClick={() => setPickItem(true)}>{opp.item ? itemName(opp.item) : `${itemName(view?.build.item) || '持ち物'}?`} ▾</button>
-          : <span class={cx('mp-item-txt', raw.itemGone && 'strike')}>{itemName(build.item) || '持ち物なし'}</span>}
+        <span class={cx('mp-item-txt', raw.itemGone && 'strike', side === 'opp' && !opp.item && 'guess')}>
+          {side === 'opp' ? (opp.item ? itemName(opp.item) : `${itemName(view?.build.item) || '持ち物'}?`) : itemName(build.item) || '持ち物なし'}{raw.itemGone ? ' (消費)' : ''}
+        </span>
         <span class="muted mp-ab">{abilityName(currentAbility(build, cond))}{side === 'opp' && view?.abilityGuess && !s.mega ? '?' : ''}</span>
       </div>
-      <HPControl hp={raw.hp} maxHP={maxHP} onSet={v => mut(b => { setHP(b, side, idx, v); })} />
+      <div class="mp-hp">
+        <div class="hpbar"><div class={cx('hpfill', raw.hp > 50 ? 'g' : raw.hp > 20 ? 'y' : 'r')} style={{width: `${raw.hp}%`}} /></div>
+        <b class="num">{raw.fainted ? 'ひんし' : maxHP ? `${Math.round((maxHP * raw.hp) / 100)}/${maxHP}` : `${raw.hp > 0 && raw.hp < 1 ? 1 : Math.round(raw.hp)}%`}</b>
+      </div>
       <div class="mp-body">
         <table class="mp-table">
           <thead><tr><th></th>{STAT_JA.map(l => <th>{l}</th>)}</tr></thead>
@@ -242,13 +314,7 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
             <tr><th>能力上昇</th><td></td>
               {BOOST_KEYS.map(k => {
                 const v = raw.boosts[k] || 0;
-                return (
-                  <td class="rank">
-                    <button onClick={() => set(c => { c.boosts[k] = Math.min(6, v + 1); })} aria-label={`${k} を上げる`}>＋</button>
-                    <b class={cx('num', v > 0 && 'pos', v < 0 && 'neg')}>{v > 0 ? `+${v}` : v}</b>
-                    <button onClick={() => set(c => { c.boosts[k] = Math.max(-6, v - 1); })} aria-label={`${k} を下げる`}>−</button>
-                  </td>
-                );
+                return <td class={cx('num rankv', v > 0 && 'pos', v < 0 && 'neg')}>{v > 0 ? `+${v}` : v}</td>;
               })}
             </tr>
             <tr class="real"><th>実数値</th>
@@ -271,25 +337,18 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
           {[0, 1, 2, 3].map(i => {
             const m = moves[i];
             if (m) return <span class="mv-box"><TypeChip type={dex.moves[m]?.t} small />{moveName(m)}</span>;
-            return side === 'opp' ? <button class="mv-box empty" onClick={() => setPickMove(true)}>＋ わざ</button> : <span class="mv-box empty">—</span>;
+            return <span class="mv-box empty">{side === 'opp' ? '未判明' : '—'}</span>;
           })}
         </div>
         <div class="mp-state">
           <div class="cap">場の状態</div>
-          <select class="input sm" value={raw.status} aria-label="状態異常" onChange={e => set(c => { c.status = e.currentTarget.value; c.toxicCounter = 1; })}>
-            {STATUSES.map(([v, l]) => <option value={v}>{v ? l : '状態異常なし'}</option>)}
-          </select>
-          {megaOptions.length > 0 && (isMega || !sd.megaUsed) && megaOptions.map(m => (
-            <Toggle small on={raw.forme === m} onChange={v => mut(b => { const c = condOf(b, side, idx); if (v) megaEvolve(b, side, idx, m, {resolveAbility: ctx.strictAbility}); else { c.forme = null; b.state.sides[side].megaUsed = false; } })}>{megaOptions.length > 1 ? speciesName(m) : 'メガシンカ'}</Toggle>
-          ))}
-          <Toggle small on={raw.itemGone} onChange={v => set(c => { c.itemGone = v; })}>持ち物なし</Toggle>
-          {FLAGS.map(([k, l]) => <Toggle small on={sd[k]} onChange={v => mut(b => { setSideFlag(b, side, k, v); })}>{l}</Toggle>)}
+          {raw.status && <span class="tag bad">{Object.fromEntries(STATUSES)[raw.status]}</span>}
+          {isMega && <span class="tag accent">メガシンカ</span>}
+          {FLAGS.filter(([k]) => sd[k]).map(([, l]) => <span class="tag accent">{l}</span>)}
+          {sd.spikes > 0 && <span class="tag accent">まきびし×{sd.spikes}</span>}
+          {!raw.status && !isMega && !FLAGS.some(([k]) => sd[k]) && !sd.spikes && <span class="muted">なし</span>}
         </div>
       </div>
-      {pickItem && <Picker kind="items" title="相手の持ち物" allowClear clearLabel="不明に戻す" rank={view?.items?.length ? Object.fromEntries(view.items) : null} onClose={() => setPickItem(false)}
-        filter={id => !dex.items[id].ms || !!dex.items[id].ms[opp.species]} onPick={id => { mut(b => { b.opp[idx].item = id; }); setPickItem(false); }} />}
-      {pickMove && <Picker kind="moves" title="判明した技" prefer={dex.learn[opp.species]} preferLabel="覚えない技も表示" rank={view ? Object.fromEntries(view.moves.filter(m => !m.known).map(m => [m.id, m.rate])) : null} onClose={() => setPickMove(false)}
-        onPick={id => { mut(b => { const o = b.opp[idx]; if (!o.moves.includes(id) && o.moves.length < 4) o.moves.push(id); }); setPickMove(false); }} />}
     </section>
   );
 }

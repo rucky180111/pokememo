@@ -617,3 +617,58 @@ test('時系列入力: メガ想定の相手でも盤面の姿で逆算でき、
   assert.ok(b.opp[0].statOk?.spd, 'HP・とくぼうが絞り込まれる');
   assert.equal(b.opp[0].statOk.spd[0 * 99 + cOf(0.9, 0)], '1', '真の H0 D下降 が候補に残る');
 });
+
+import {addEvent} from '../src/engine/flow.js';
+
+test('持ち物の発動: きあいのタスキ・オボンのみ・出来事の記録', () => {
+  // きあいのタスキで耐えた → HP1、持ち物確定・消費、耐久の上限が分かる
+  let b = makeBattle();
+  sendOut(b, 'me', 0, 0); sendOut(b, 'opp', 0, 2); // ガブリアス vs ゲンガー
+  let log = addAct(b, {side: 'me', type: 'move', move: 'earthquake', defItem: {item: 'focussash'}}, usage);
+  assert.equal(b.opp[2].item, 'focussash');
+  assert.ok(b.state.mons.opp[2].itemGone);
+  assert.equal(b.state.mons.opp[2].hp, 1);
+  assert.ok(!b.state.mons.opp[2].fainted);
+  assert.ok(b.opp[2].statOk?.def, `タスキ発動から耐久を推定: ${log.join('/')}`);
+  assert.match(actLine(b, b.turns[0].acts[0]), /きあいのタスキ 発動/);
+  // 「じしんで倒れる配分」だけが残る: ゲンガーは無振りなら確実に倒れるので候補に残る
+  assert.equal(b.opp[2].statOk.def[0 * 99 + cOf(1, 0)], '1');
+
+  // オボンのみ: 攻撃後に回復した最終HPを入れても、回復前に戻して逆算する
+  b = makeBattle();
+  sendOut(b, 'me', 0, 5); sendOut(b, 'opp', 0, 1);
+  b.opp[1].ability = 'sandstream';
+  const truth = {species: 'tyranitar', item: 'sitrusberry', ability: 'sandstream', nature: 'Careful', sp: [32, 0, 0, 0, 32, 2], moves: []};
+  const dealt = calcDamage({build: b.my[5], cond: b.state.mons.me[5]}, {build: truth, cond: b.state.mons.opp[1]}, 'hydropump', {field: b.state.field});
+  const afterHit = 100 - (dealt.rolls[8] / dealt.defMaxHP) * 100;
+  log = addAct(b, {side: 'me', type: 'move', move: 'hydropump', hpAfter: Math.round(afterHit + 25), defItem: {item: 'sitrusberry'}}, usage);
+  assert.equal(b.opp[1].item, 'sitrusberry');
+  assert.ok(b.state.mons.opp[1].itemGone);
+  assert.ok(b.opp[1].statOk?.spd, log.join('/'));
+  assert.equal(b.opp[1].statOk.spd[32 * 99 + cOf(1.1, 32)], '1', '真の HD特化 が候補に残る');
+  assert.equal(b.opp[1].statOk.spd[0 * 99 + cOf(1, 0)], '0', '無振りは否定される');
+
+  // 出来事: 持ち物・状態異常・ランク・場
+  addEvent(b, {side: 'opp', kind: 'status', status: 'brn'}, usage);
+  addEvent(b, {side: 'me', kind: 'boost', stat: 'spa', delta: 2}, usage);
+  addEvent(b, {side: 'opp', kind: 'side', key: 'reflect', value: true}, usage);
+  addEvent(b, {side: 'me', kind: 'field', key: 'weather', value: 'Rain'}, usage);
+  addEvent(b, {side: 'me', kind: 'hp', hpAfter: 50}, usage);
+  assert.equal(b.state.mons.opp[1].status, 'brn');
+  assert.equal(b.state.mons.me[5].boosts.spa, 2);
+  assert.ok(b.state.sides.opp.reflect);
+  assert.equal(b.state.field.weather, 'Rain');
+  assert.equal(b.state.mons.me[5].hp, 50);
+  assert.equal(b.turns.length, 1, '出来事ではターンが進まない');
+  // 出来事のあとでも、同じターンに相手の行動を足せる
+  addAct(b, {side: 'opp', type: 'move', move: 'crunch'}, usage);
+  assert.equal(b.turns.length, 1);
+  // 単独の持ち物発動 (オボン): +25%
+  const c = makeBattle();
+  sendOut(c, 'me', 0, 2); sendOut(c, 'opp', 0, 0);
+  c.state.mons.opp[0].hp = 40;
+  addEvent(c, {side: 'opp', kind: 'item', item: 'sitrusberry', consumed: true}, usage);
+  assert.equal(c.state.mons.opp[0].hp, 65);
+  assert.equal(c.opp[0].item, 'sitrusberry');
+  assert.ok(c.state.mons.opp[0].itemGone);
+});

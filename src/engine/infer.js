@@ -21,7 +21,7 @@ function rangeText(speciesId, mask) {
  */
 export function inferSpeeds(b, draft, opts = {}) {
   const log = [];
-  const acts = draft.acts || [];
+  const acts = (draft.acts || []).filter(a => a.type !== 'event');
   const res = opts.resolveAbility || defaultAbilityResolver;
   // 行動順が決まる時点の盤面: 交代とメガシンカを済ませた状態
   const sim = clone(b);

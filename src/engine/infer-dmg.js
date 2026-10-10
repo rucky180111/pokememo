@@ -41,7 +41,7 @@ export function inferFromTaken(ctx, oppIdx, myIdx, moveId, damage, opts = {}) {
     for (const item of items) {
       const alt = {...base, item, nature: natureOf(stat, mod), sp: spArr};
       const r = attackTable(withBuild(ctx, oppIdx, alt), 'opp', oppIdx, {...opts, only: {def: myIdx, move: moveId}})?.targets[0]?.results[moveId];
-      if (r?.ok && damage + tol >= r.min && damage - tol <= r.max) { ok = true; break; }
+      if (r?.ok && (opts.atLeast ? r.max + tol >= damage : damage + tol >= r.min && damage - tol <= r.max)) { ok = true; break; }
     }
     mask += ok ? '1' : '0';
   }
@@ -63,7 +63,8 @@ function summarize(ctx, oppIdx, stat, mask) {
  * 戻り値: {stat, mask (33×99), count, hpRange, defRange}
  */
 export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts = {}) {
-  if (!inferable(moveId) || !(before > after) || after <= 0) return null;
+  if (!inferable(moveId)) return null;
+  if (!opts.atLeast && (!(before > after) || after <= 0)) return null;
   const tol = opts.tol ?? 1;
   const stat = dex.moves[moveId].c === 'P' ? 'def' : 'spd';
   const si = STAT_KEYS.indexOf(stat);
@@ -94,7 +95,8 @@ export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts =
     const maxHP = statValue(bs[0], h, 1, true);
     for (let c = 0; c < SPE_COMBOS; c++) {
       const r = rolls(c);
-      const ok = !!r && (r[1] / maxHP) * 100 >= lost - tol && (r[0] / maxHP) * 100 <= lost + tol;
+      // atLeast: 「少なくとも lost% は入った」(きあいのタスキで耐えた = 本来は倒れていた)
+      const ok = !!r && (r[1] / maxHP) * 100 >= lost - tol && (opts.atLeast || (r[0] / maxHP) * 100 <= lost + tol);
       mask += ok ? '1' : '0';
       if (ok) { count++; hLo = Math.min(hLo, h); hHi = Math.max(hHi, h); const v = statValue(bs[si], comboSP(c), comboMod(c), false); dLo = Math.min(dLo, v); dHi = Math.max(dHi, v); }
     }

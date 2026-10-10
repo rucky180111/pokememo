@@ -479,3 +479,13 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 @media (max-width: 620px) { .mp-body { grid-template-columns: 1fr; } .mp-speed ol { flex-direction: row; flex-wrap: wrap; gap: 2px 8px; } .mp-lower { grid-template-columns: 1fr; } }
 
 .mp-table tr.est td { font-size: 11px; line-height: 1.25; word-break: keep-all; }
+
+.mp-hp { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.mp-hp .hpbar { grid-column: auto; height: 12px; border-radius: 6px; }
+.mp-hp b { font-size: 15px; min-width: 64px; text-align: right; }
+.mp-item-txt.guess { color: var(--muted); font-weight: 400; }
+.mp-table td.rankv { font-weight: 700; }
+.ar-field b { color: var(--text); font-weight: 600; } .ar-field b.on { color: var(--accent); }
+.mp-state .tag { margin-left: 0; }
+.ev .hint { margin: 2px 0; }
+.btn.primary.sm { min-height: 32px; }

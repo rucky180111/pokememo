@@ -123,7 +123,17 @@ check(Math.round(b.state.mons.me[0].hp) === Math.round(70 / 185 * 100) && b.stat
 check(b.state.mons.me[0].boosts.spe === -1, 'がんせきふうじで S-1');
 check(b.turns[1].acts.some(a => (a.auto || []).some(x => /実数値|説明がつきません/.test(x))), 'ダメージからの絞り込み結果が時系列に出る');
 await page.getByRole('button', {name: 'ターン終了'}).click();
+// 出来事: 相手のオボンのみ発動 (+25%)
+await page.locator('.composer .cp-head .seg button', {hasText: '出来事'}).click();
+await page.locator('.composer .seg button', {hasText: '相手'}).last().click();
+await page.locator('.ev .chip', {hasText: 'オボンのみ'}).click();
+await page.locator('.ev .btn.primary', {hasText: '追加'}).click();
+b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
+check(b.opp[1].item === 'sitrusberry' && b.state.mons.opp[1].itemGone && b.state.mons.opp[1].hp === 45, `オボン発動で持ち物確定・消費・HP+25% (${b.state.mons.opp[1].hp})`);
+check(await page.locator('.tl-act', {hasText: 'オボンのみ 発動'}).count() === 1, '時系列に持ち物の発動が出る');
+await page.locator('.composer .cp-head .seg button', {hasText: '行動'}).click();
 await pane('盤面');
+check(await page.locator('.mon-panel input, .mon-panel select, .ar-field select').count() === 0, '中央は表示専用 (入力欄なし)');
 await shot(page, 'arena-center');
 check(await page.locator('.mon-panel.opp .mp-table tbody tr').count() === 4, '相手の表に 種族値/推定Pt/能力上昇/実数値');
 check(await page.locator('.mon-panel.opp .mp-speed li').count() >= 5, '素早さ一覧に自分の位置が入る');
@@ -134,6 +144,7 @@ await shot(page, 'arena-damage');
 check(await page.locator('.dp-move .dp-bar').count() >= 8, '無振り/全振りの2本ずつ帯が出る');
 // 取り消し
 await pane('入力');
+await page.getByRole('button', {name: '戻す'}).click();
 await page.getByRole('button', {name: '戻す'}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.turns.length === 1 && b.state.mons.opp[1].hp === 100, '取り消しでターンごと戻る');
