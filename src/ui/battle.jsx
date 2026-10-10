@@ -285,7 +285,7 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
           )}
         </div>
 
-        <div class="field"><span>計算に使う配分 <em class="guess">{v ? `${spreadLabel(v.build.nature, v.build.sp)} (${v.spreadSource}${v.spreadRate != null ? ` ${rate(v.spreadRate, 1)}` : ''})` : ''}</em></span>
+        <div class="field"><span>観測のない能力に使う初期の想定 (ダメージや行動順で絞れた能力は、その結果を優先します) <em class="guess">{v ? `${spreadLabel(v.build.nature, v.build.sp)} (${v.spreadSource}${v.spreadRate != null ? ` ${rate(v.spreadRate, 1)}` : ''})` : ''}</em></span>
           <div class="chips">
             {(v?.spreads || []).slice(0, 6).map((sp, i) => (
               <button class={cx('chip', as.kind === 'usage' && (as.idx || 0) === i && 'on')} onClick={() => set(x => { x.assume = {kind: 'usage', idx: i}; })}>
@@ -312,7 +312,7 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
         )}
         {o.statOk && (
           <div class="field"><span>ダメージから絞り込んだ能力</span>
-            <p class="hint">{Object.keys(o.statOk).map(k => ({atk: 'こうげき', spa: 'とくこう', def: 'HP・ぼうぎょ', spd: 'HP・とくぼう'}[k])).join('、')} を絞り込み済み。合わない配分は下の候補に ✕ が付きます。
+            <p class="hint">{Object.keys(o.statOk).map(k => ({atk: 'こうげき', spa: 'とくこう', def: 'HP・ぼうぎょ', spd: 'HP・とくぼう'}[k])).join('、')} を観測から絞り込み済み。
               <button class="btn ghost sm" onClick={() => set(x => { x.statOk = null; })}>絞り込みをリセット</button></p>
           </div>
         )}

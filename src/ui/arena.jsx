@@ -219,7 +219,7 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
           <thead><tr><th></th>{STAT_JA.map(l => <th>{l}</th>)}</tr></thead>
           <tbody>
             <tr><th>種族値</th>{s.bs.map(v => <td class="num">{v}</td>)}</tr>
-            <tr class="est"><th>{side === 'opp' ? '推定能力Pt' : '能力Pt'}</th>
+            <tr class="est"><th title="H・B・D は与えたダメージ、A・C は受けたダメージ、S は行動順から推定">{side === 'opp' ? '推定能力Pt' : '能力Pt'}</th>
               {side === 'opp' ? est.rows.map(r => <td class={cx('num', r.known && 'known')}>{fmtSp(r)}</td>) : build.sp.map(v => <td class="num">{v}</td>)}
             </tr>
             <tr><th>能力上昇</th><td></td>
@@ -248,7 +248,7 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
           )}
         </div>
       </div>
-      {side === 'opp' && <p class="hint mp-remain">未確定の残り能力Pt: <b class="num">{est.remain}</b> / 66{speeds.o?.pFaster != null ? ` ・ 先手率 自分 ${rate(speeds.o.pSlower)}` : ''}</p>}
+      {side === 'opp' && <p class="hint mp-remain">H・B・D = 与えたダメージ、A・C = 受けたダメージ、S = 行動順 から推定 (青字が推定済み)。未確定の残り能力Pt: <b class="num">{est.remain}</b> / 66{speeds.o?.pFaster != null ? ` ・ 先手率 自分 ${rate(speeds.o.pSlower)}` : ''}</p>}
       <div class="mp-lower">
         <div class="mp-moves">
           {[0, 1, 2, 3].map(i => {

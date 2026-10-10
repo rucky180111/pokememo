@@ -499,7 +499,9 @@ test('ダメージからの逆算: 実際の配分が候補に残り、想定が
   assert.match(msg, /こうげきの実数値/);
   ctx = boardContext(b, usage);
   assert.ok(spreadFits(b.opp[1], ctx.views[1].build.nature, ctx.views[1].build.sp), '切り替え後の想定は矛盾しない');
-  assert.notEqual(b.opp[1].assume.key, 'none');
+  assert.equal(b.opp[1].assume.key, 'none', '型の選び直しはしない');
+  assert.equal(ctx.views[1].build.sp[1] >= 28 || ctx.views[1].build.nature === 'Adamant', true, 'こうげきだけ観測に合わせて補正される');
+  assert.deepEqual([ctx.views[1].build.sp[0], ctx.views[1].build.sp[3]], [0, 0], '観測のない能力はそのまま');
 
   // 与えたダメージ: 相手 HP 100% → after%
   const dealt = calcDamage({build: b.my[5], cond: b.state.mons.me[5]}, {build: truth, cond: b.state.mons.opp[1]}, 'hydropump', {field: b.state.field});

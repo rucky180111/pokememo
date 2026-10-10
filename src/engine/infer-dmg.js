@@ -120,31 +120,7 @@ export function applyInference(opp, view, res) {
   const merged = prev ? and(prev, res.mask) : res.mask;
   if (!merged.includes('1')) return `これまでの絞り込みと矛盾します。保存していません (相手の情報から絞り込みをリセットできます)。`;
   opp.statOk[res.stat] = merged;
-  let msg = res.range ? `${names[res.stat]}の実数値は ${res.range[0]}〜${res.range[1]}` : `HPの能力ポイント ${res.hpRange[0]}〜${res.hpRange[1]}・${names[res.stat]}の実数値 ${res.defRange[0]}〜${res.defRange[1]}`;
-  // 想定配分の見直し
-  const cur = view.build;
-  if (spreadFits(opp, cur.nature, cur.sp)) return `${msg}。いまの想定配分と矛盾しません。`;
-  const idx = (view.spreads || []).findIndex(s => spreadFits(opp, s.nature, s.sp));
-  if (idx >= 0) { opp.assume = {kind: 'usage', idx}; return `${msg}。想定配分を使用率${idx + 1}位の型に切り替えました。`; }
-  // 使用率の型に合うものが無ければ、いまの配分にいちばん近い候補を手入力として採用
-  const sp = cur.sp.slice();
-  let nature = cur.nature;
-  const si = STAT_KEYS.indexOf(res.stat);
-  let best = null;
-  const total = res.stat === 'atk' || res.stat === 'spa' ? 1 : 33;
-  for (let h = 0; h < total; h++) for (let c = 0; c < SPE_COMBOS; c++) {
-    if (merged[h * (total > 1 ? SPE_COMBOS : 0) + c] !== '1') continue;
-    const mod = comboMod(c);
-    const cost = Math.abs(comboSP(c) - sp[si]) + (total > 1 ? Math.abs(h - sp[0]) : 0) + (mod === natureMod(cur.nature, res.stat) ? 0 : 20);
-    if (!best || cost < best.cost) best = {cost, h, c};
-  }
-  if (best) {
-    sp[si] = comboSP(best.c);
-    if (total > 1) sp[0] = best.h;
-    if (comboMod(best.c) !== natureMod(cur.nature, res.stat)) nature = natureOf(res.stat, comboMod(best.c));
-    opp.assume = {kind: 'custom', nature, sp};
-    return `${msg}。使用率の型に合うものがないため、近い配分を手入力として設定しました。`;
-  }
-  return msg;
+  const msg = res.range ? `${names[res.stat]}の実数値は ${res.range[0]}〜${res.range[1]}` : `HPの能力ポイント ${res.hpRange[0]}〜${res.hpRange[1]}・${names[res.stat]}の実数値 ${res.defRange[0]}〜${res.defRange[1]}`;
+  return `${msg}。`;
 }
 export {parseSpread, ALL};

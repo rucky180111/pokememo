@@ -1,5 +1,5 @@
 // 相手の能力ポイントの推定: 絞り込めた範囲と、まだ分からない残りポイントを使った最良/最悪ケース
-import {dex, statValue, STAT_KEYS, SP_TOTAL} from './dex.js';
+import {dex, statValue, STAT_KEYS, SP_TOTAL, natureMod} from './dex.js';
 import {SPE_COMBOS, comboMod, comboSP} from './assume.js';
 import {natureOf} from './infer-dmg.js';
 
@@ -80,4 +80,42 @@ export function scenarioBuild(opp, baseBuild, speciesId, kind, cat) {
   const r = by[stat];
   const mod = max ? r.modHi : (r.known ? r.modLo : 1);
   return {...baseBuild, nature: natureOf(stat, mod), sp};
+}
+
+/**
+ * 計算に使う相手の配分を、観測結果に合わせて能力ごとに補正する。
+ * 観測のない能力は元の値のまま。観測のある能力は、許される範囲のうち元の値にいちばん近いところへ寄せる。
+ * (使用率の型を丸ごと選び直すことはしない)
+ */
+export function fitBuild(opp, build, speciesId) {
+  if (!opp.statOk && !opp.speOk) return build;
+  const sp = build.sp.slice();
+  const need = {}; // 能力ごとに必要な性格補正
+  const h = hpAllowed(opp);
+  if (h.known) sp[0] = Math.max(h.lo, Math.min(h.hi, sp[0]));
+  for (const stat of ['atk', 'def', 'spa', 'spd', 'spe']) {
+    const m = allowed(opp, stat);
+    if (!m) continue;
+    const i = STAT_KEYS.indexOf(stat);
+    const curMod = natureMod(build.nature, stat);
+    let best = null;
+    for (let c = 0; c < SPE_COMBOS; c++) {
+      if (m[c] !== '1') continue;
+      const cost = Math.abs(comboSP(c) - sp[i]) + (comboMod(c) === curMod ? 0 : 12);
+      if (!best || cost < best.cost) best = {cost, c};
+    }
+    if (!best) continue;
+    sp[i] = comboSP(best.c);
+    if (comboMod(best.c) !== curMod) need[stat] = comboMod(best.c);
+  }
+  let nature = build.nature;
+  if (Object.keys(need).length) {
+    const cur = dex.natures[build.nature] || {};
+    let up = Object.keys(need).find(k => need[k] > 1) || (need[cur.p] ? null : cur.p) || null;
+    let down = Object.keys(need).find(k => need[k] < 1) || (need[cur.m] ? null : cur.m) || null;
+    if (up && !down) down = ['atk', 'spa', 'def', 'spd', 'spe'].find(k => k !== up && !(need[k] >= 1) && !opp.statOk?.[k]) || null;
+    if (down && !up) up = ['atk', 'spa', 'def', 'spd', 'spe'].find(k => k !== down && !need[k] && !opp.statOk?.[k]) || null;
+    nature = (up && down && Object.keys(dex.natures).find(n => dex.natures[n].p === up && dex.natures[n].m === down)) || 'Serious';
+  }
+  return {...build, nature, sp};
 }

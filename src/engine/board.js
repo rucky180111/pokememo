@@ -3,6 +3,7 @@ import {dex} from './dex.js';
 import {calcDamage, finalSpeed, currentSpecies, currentAbility, defaultHits, newCond, movePriority} from './calc.js';
 import {oppView, oppCond, speedOutlook} from './assume.js';
 import {buildOf, condOf, other, faintedCount, defaultAbilityResolver} from './battle.js';
+import {fitBuild} from './estimate.js';
 
 const WEATHER_ABILITY = {drizzle: 'Rain', drought: 'Sun', sandstream: 'Sand', snowwarning: 'Snow'};
 const TERRAIN_ABILITY = {electricsurge: 'Electric', grassysurge: 'Grassy', psychicsurge: 'Psychic', mistysurge: 'Misty'};
@@ -17,7 +18,14 @@ export function boardContext(b, usage) {
   const views = b.opp.map((o, i) => {
     const c = b.state.mons.opp[i] || newCond();
     const selfMega = c.forme && dex.species[c.forme]?.mega;
-    return oppView(o, usage, {megaBlocked: megaBlocked && !selfMega});
+    const v = oppView(o, usage, {megaBlocked: megaBlocked && !selfMega});
+    if (v && (o.statOk || o.speOk)) {
+      // 観測 (ダメージ・行動順) がある能力は、その範囲に合わせる
+      v.build = fitBuild(o, v.build, c.forme || v.megaForme || o.species);
+      v.fitted = true;
+      if (o.scarfLikely && !o.item) v.build.item = 'choicescarf';
+    }
+    return v;
   });
   const build = (side, i) => (side === 'me' ? b.my[i] : views[i]?.build);
   const cond = (side, i) => (side === 'me' ? b.state.mons.me[i] : oppCond(b.state.mons.opp[i], views[i]));
