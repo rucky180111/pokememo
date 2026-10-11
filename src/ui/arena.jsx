@@ -53,6 +53,7 @@ function Timeline({battle, ctx, mut, usage, toast}) {
   const [pick, setPick] = useState(false);
   const [mode, setMode] = useState('act');
   const [defItem, setDefItem] = useState('');
+  const [noOrder, setNoOrder] = useState(false);
   const [atkItem, setAtkItem] = useState('');
   const [ev, setEv] = useState({kind: 'item'});
   const act0 = alive(battle, side);
@@ -75,7 +76,7 @@ function Timeline({battle, ctx, mut, usage, toast}) {
     if (!act) { toast('技か交代先を選んでください'); return; }
     // 自分のHPは実数で入力 → 割合に直す。相手のHPは割合のまま
     const hpPct = hpMax ? (Number(hp) / hpMax) * 100 : Number(hp);
-    const log = mut(b => addAct(b, {side, mon, ...act, mega: !!flags.mega, crit: !!flags.crit, miss: !!flags.miss, protect: !!flags.protect, exact: !!hpMax,
+    const log = mut(b => addAct(b, {side, mon, ...act, mega: !!flags.mega, crit: !!flags.crit, miss: !!flags.miss, protect: !!flags.protect, exact: !!hpMax, endured: !!flags.endured, hits: flags.hits || undefined,
       defItem: defItem ? {item: defItem} : null, atkItem: atkItem ? {item: atkItem} : null,
       target: double ? tgt : null, hpAfter: needHP && hp !== '' && !flags.miss && !flags.protect ? hpPct : null}, usage));
     if (log?.length) toast(log[log.length - 1]);
@@ -149,7 +150,7 @@ function Timeline({battle, ctx, mut, usage, toast}) {
           {act?.type === 'move' && (
             <div class="chips">
               {double && foes.length > 1 && mv && !mv.sp && foes.map(i => <button class={cx('chip', tgt?.mon === i && 'on')} onClick={() => setTarget({side: other(side), mon: i})}>→ {speciesName(buildOf(battle, other(side), i).species)}</button>)}
-              {needHP && defItem !== 'focussash' && (
+              {needHP && defItem !== 'focussash' && !flags.endured && (
                 <label class="cp-hp">{speciesName(buildOf(battle, tgt.side, tgt.mon).species)}の残りHP
                   <input class="input sm num" type="number" inputMode="decimal" min={0} max={hpMax || 100} value={hp} placeholder={`${Math.round(hpMax ? (condOf(battle, tgt.side, tgt.mon).hp * hpMax) / 100 : condOf(battle, tgt.side, tgt.mon).hp)}`} onInput={e => setHp(e.currentTarget.value)} />{hpMax ? `/${hpMax}` : '%'}
                 </label>
@@ -163,7 +164,14 @@ function Timeline({battle, ctx, mut, usage, toast}) {
               <span class="muted">受けた側の持ち物:</span>
               {[['focussash', 'タスキで耐えた'], ['sitrusberry', 'オボンで回復']].map(([k, l]) => <button class={cx('chip', defItem === k && 'on')} onClick={() => setDefItem(defItem === k ? '' : k)}>{l}</button>)}
               <button class={cx('chip', defItem && !['focussash', 'sitrusberry'].includes(defItem) ? 'on' : 'add')} onClick={() => setPick('def')}>{defItem && !['focussash', 'sitrusberry'].includes(defItem) ? `${itemName(defItem)} 発動` : 'ほかの持ち物…'}</button>
+              <button class={cx('chip', flags.endured && 'on')} onClick={() => setFlags({...flags, endured: !flags.endured})}>がんじょう・こらえるで耐えた</button>
               <button class={cx('chip', atkItem ? 'on' : 'add')} onClick={() => (atkItem ? setAtkItem('') : setPick('atk'))}>{atkItem ? `攻撃側: ${itemName(atkItem)}` : '攻撃側の持ち物が判明…'}</button>
+            </div>
+          )}
+          {needHP && Array.isArray(mv.mh) && (
+            <div class="chips">
+              <span class="muted">当たった回数:</span>
+              {Array.from({length: mv.mh[1] - mv.mh[0] + 1}, (_, k) => mv.mh[0] + k).map(n => <button class={cx('chip', flags.hits === n && 'on')} onClick={() => setFlags({...flags, hits: flags.hits === n ? 0 : n})}>{n}回</button>)}
             </div>
           )}
           {defItem === 'sitrusberry' && <p class="hint">残りHPには、オボンで回復したあとの値を入れてください (回復前に戻して計算します)。</p>}
@@ -211,9 +219,10 @@ function Timeline({battle, ctx, mut, usage, toast}) {
           </div>
         )}
         {mon == null && emptySlot < 0 && <p class="muted">場にポケモンがいません。</p>}
+        {open && <label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" checked={noOrder} onChange={e => setNoOrder(e.currentTarget.checked)} />このターンの行動順は素早さの推定に使わない (せんせいのツメ・クイックドロウなどが発動)</label>}
         <div class="btnrow">
           {mode === 'act' && <button class="btn primary grow" onClick={add} disabled={!act}>追加</button>}
-          <button class="btn" disabled={!open} onClick={() => { mut(b => { endTurn(b, usage); }); }}>ターン終了</button>
+          <button class="btn" disabled={!open} onClick={() => { mut(b => { endTurn(b, usage, {noOrder}); }); setNoOrder(false); }}>ターン終了</button>
           <button class="btn" disabled={!battle.turns.length || !battle.turns[battle.turns.length - 1].before} onClick={() => { mut(b => { undoTurn(b); }); toast('直前のターンを取り消しました'); }}>戻す</button>
         </div>
       </div>
@@ -229,11 +238,13 @@ function Timeline({battle, ctx, mut, usage, toast}) {
 function FieldRow({battle}) {
   const f = battle.state.field;
   const W = Object.fromEntries(WEATHERS), T = Object.fromEntries(TERRAINS);
+  const now = turnNumber(battle);
+  const el = k => (f[k] && f.since?.[k] != null ? <small class="muted"> {Math.max(1, now - f.since[k] + 1)}ターン目</small> : null);
   return (
     <div class="ar-field">
-      <span>天候 <b class={cx(f.weather && 'on')}>{W[f.weather || '']}</b></span>
-      <span>フィールド <b class={cx(f.terrain && 'on')}>{T[f.terrain || '']}</b></span>
-      {f.trickRoom && <span class="tag accent">トリックルーム</span>}
+      <span>天候 <b class={cx(f.weather && 'on')}>{W[f.weather || '']}</b>{el('weather')}</span>
+      <span>フィールド <b class={cx(f.terrain && 'on')}>{T[f.terrain || '']}</b>{el('terrain')}</span>
+      {f.trickRoom && <span class="tag accent">トリックルーム{el('trickRoom')}</span>}
       {f.gravity && <span class="tag accent">じゅうりょく</span>}
       <span class="tag">ターン {turnNumber(battle)}</span>
     </div>

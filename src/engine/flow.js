@@ -1,6 +1,6 @@
 // 時系列での入力: 行動を1つずつ追加していく。追加のたびに盤面・判明情報・能力の絞り込みへ反映する。
 import {dex, speciesName, moveName, statsOf, itemName, abilityName} from './dex.js';
-import {currentSpecies} from './calc.js';
+import {currentSpecies, currentAbility} from './calc.js';
 import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA} from './battle.js';
 import {boardContext} from './board.js';
 import {inferFromTaken, inferFromDealt, applyInference, inferable} from './infer-dmg.js';
@@ -19,12 +19,12 @@ function ensureTurn(b) {
 }
 
 // ターンを締める: 行動順から素早さを絞り込み、ターン終了時の特性を処理する
-export function endTurn(b, usage) {
+export function endTurn(b, usage, opts = {}) {
   const t = openTurn(b);
   if (!t) return [];
   const log = [];
   const res = boardContext(b, usage).strictAbility;
-  if (t.before && t.acts.filter(a => a.type === 'move').length >= 2) {
+  if (!opts.noOrder && !t.noOrder && t.before && t.acts.filter(a => a.type === 'move').length >= 2) {
     try {
       const sim = clone(b);
       sim.state = clone(t.before.state); sim.pick = clone(t.before.pick);
@@ -39,10 +39,39 @@ export function endTurn(b, usage) {
     if (i == null || condOf(b, side, i).fainted || entered.has(`${side}${i}`)) continue;
     if (res(b, side, i) === 'speedboost') applyBoosts(b, side, i, {spe: 1}, {log, resolveAbility: () => ''});
   }
+  // おいかぜ (4ターン) とトリックルーム (5ターン) は延長できないので自動で終了させる
+  for (const side of ['me', 'opp']) {
+    const sd = b.state.sides[side];
+    if (sd.tailwind && sd.since?.tailwind != null && t.n - sd.since.tailwind + 1 >= 4) { setSideFlag(b, side, 'tailwind', false); log.push(`${side === 'me' ? '自分' : '相手'}のおいかぜが終了 (4ターン)`); }
+  }
+  if (b.state.field.trickRoom && b.state.field.since?.trickRoom != null && t.n - b.state.field.since.trickRoom + 1 >= 5) { setFieldFlag(b, 'trickRoom', false); log.push('トリックルームが終了 (5ターン)'); }
+  // 天候・フィールド・トリックルームの残りターンの目安
+  const f = b.state.field;
+  for (const [key, label, base, ext] of [['weather', '天候', 5, 8], ['terrain', 'フィールド', 5, 8]]) {
+    if (!f[key] || f.since?.[key] == null) continue;
+    const n = t.n - f.since[key] + 1;
+    if (n === base) log.push(`${label}が${base}ターン目を終えました${ext ? ` (延長する持ち物がなければここで終了。あれば${ext}ターン)` : ' (ここで終了)'}。切れたら「出来事」で解除してください`);
+  }
   t.open = false;
   t.auto.push(...log);
   b.updatedAt = Date.now();
   return log;
+}
+
+// ダメージからの逆算が当てにならない状況 (理由の文を返す)
+function unsafeForInference(b, t, side, mon, tgt, move, res, crit) {
+  const ac = condOf(b, side, mon), tc = condOf(b, tgt.side, tgt.mon);
+  if (ac?.tricked || tc?.tricked) return '持ち物が入れ替わっている';
+  if (tc?.glaive) return 'きょけんとつげきの直後で受けるダメージが2倍になっている';
+  if (t.acts.some(x => x.type === 'move' && x.move === 'roost' && x.side === tgt.side && x.mon === tgt.mon && !x.flags?.miss && !x.flags?.cant)) return 'はねやすめでタイプが変わっている';
+  if (crit && dex.moves[move]?.mh) return '連続技の急所は1発ごとに決まる';
+  const ab = buildOf(b, side, mon);
+  const sp = dex.species[currentSpecies(ab, ac)];
+  const known = res(b, side, mon);
+  const abs = known ? [known] : (sp?.ab || []);
+  if (abs.includes('analytic')) return 'アナライズの補正が行動順で変わる';
+  if (dex.moves[move]?.t === 'Electric' && (abs.includes('electromorphosis') || abs.includes('windpower') || (ab.moves || []).includes('charge'))) return 'じゅうでん状態かどうかで威力が変わる';
+  return '';
 }
 
 /**
@@ -56,7 +85,7 @@ export function addAct(b, input, usage) {
   if (mon == null) return ['場にポケモンがいません'];
   // 同じポケモンが同じターンに2回目の行動 → 前のターンを締めて次のターンへ
   let t = openTurn(b);
-  if (t && t.acts.some(a => a.type !== 'event' && a.side === side && (a.mon === mon || a.to === mon))) { endTurn(b, usage); t = null; }
+  if (t && !input.sameTurn && t.acts.some(a => a.type !== 'event' && a.side === side && (a.mon === mon || a.to === mon))) { endTurn(b, usage); t = null; }
   t = ensureTurn(b);
   const log = [];
   let ctx = boardContext(b, usage);
@@ -69,6 +98,7 @@ export function addAct(b, input, usage) {
   if (a.type === 'switch') {
     if (a.to == null || slot < 0) return ['交代先がありません'];
     a.toSp = buildOf(b, side, a.to)?.species;
+    condOf(b, side, mon).glaive = false;
     sendOut(b, side, slot, a.to, {log, resolveAbility: res});
   } else {
     if (a.mega) { megaEvolve(b, side, mon, null, {log, resolveAbility: res}); ctx = boardContext(b, usage); }
@@ -81,10 +111,12 @@ export function addAct(b, input, usage) {
     if (atkItem && side === 'opp') build.item = atkItem;
     if (defItem && tgt.side === 'opp') buildOf(b, 'opp', tgt.mon).item = defItem;
     if (atkItem || defItem) ctx = boardContext(b, usage);
-    const sash = defItem === 'focussash';
+    // きあいのタスキ・がんじょう・こらえる等で「本来は倒れるダメージを耐えた」
+    const sash = defItem === 'focussash' || !!input.endured;
     const heal = defItem === 'sitrusberry' ? 25 : defItem === 'oranberry' ? null : 0;
     let hp = input.hpAfter;
     if (sash && !failed && tgt) hp = tgt.side === 'me' ? 100 / statsOf(currentSpecies(buildOf(b, 'me', tgt.mon), condOf(b, 'me', tgt.mon)), buildOf(b, 'me', tgt.mon).sp, buildOf(b, 'me', tgt.mon).nature)[0] : 1;
+    if (input.hits) a.hits = input.hits;
     if (atkItem) a.atkItem = atkItem;
     if (defItem) a.defItem = defItem;
     if (!failed && tgt && hp != null && Number.isFinite(hp)) {
@@ -94,15 +126,22 @@ export function addAct(b, input, usage) {
       // ダメージから相手の能力を絞り込む (自分↔相手の技のみ)
       if (tgt.side !== side && a.hpAfter <= 0 && dex.moves[a.move]?.c !== 'Z') log.push('倒した/倒された場合は、ダメージからの推定はできません');
       // 回復実が発動していたら、回復前のHPに戻してからダメージを逆算する
-      const hitAfter = heal ? Math.max(0.1, a.hpAfter - heal) : a.hpAfter;
+      let healPct = heal;
+      if (heal && tgt.side === 'me') { const tb0 = buildOf(b, 'me', tgt.mon); const mx = statsOf(currentSpecies(tb0, tc), tb0.sp, tb0.nature)[0]; healPct = (Math.floor(mx / 4) / mx) * 100; }
+      const hitAfter = heal ? Math.max(0.1, a.hpAfter - healPct) : a.hpAfter;
       if (heal === null) log.push('オレンのみの回復量は割合に直せないため、このダメージからの推定は見送り');
-      if (tgt.side !== side && inferable(a.move) && heal !== null && a.hpAfter > 0 && (sash || before > hitAfter)) {
+      const unsafe = tgt.side !== side ? unsafeForInference(b, t, side, mon, tgt, a.move, res, a.flags.crit) : '';
+      if (unsafe && tgt.side !== side && inferable(a.move) && a.hpAfter > 0) log.push(`${unsafe}ため、このダメージからの推定は見送り`);
+      if (!unsafe && tgt.side !== side && inferable(a.move) && heal !== null && a.hpAfter > 0 && (sash || before > hitAfter)) {
         try {
           const oppIdx = side === 'opp' ? mon : tgt.mon, myIdx = side === 'opp' ? tgt.mon : mon;
           // 逆算は「いま盤面にある姿」で行う (メガシンカの想定は使わない)
           const ictx = {...ctx, cond: (sd, i) => b.state.mons[sd][i]};
+          ictx.ability = (sd, i) => { const bd = ictx.build(sd, i); return bd ? currentAbility(bd, ictx.cond(sd, i)) : ''; };
           // きあいのタスキで耐えた = 満タンから倒れるだけのダメージが入っていた (下限だけ分かる)
-          const iopt = {crit: a.flags.crit, itemUnknown: !b.opp[oppIdx].item, atLeast: sash};
+          const os = dex.species[b.opp[oppIdx].species];
+          const iopt = {crit: a.flags.crit, itemUnknown: !b.opp[oppIdx].item, abilityUnknown: !b.opp[oppIdx].ability && os.ab.length > 1, atLeast: sash, ...(heal && side === 'me' ? {tol: 2} : {}),
+            hits: input.hits ? {[a.move]: input.hits} : undefined};
           let r;
           if (side === 'opp') {
             const tb = buildOf(b, 'me', myIdx);
@@ -115,13 +154,25 @@ export function addAct(b, input, usage) {
       }
       a.target = tgt;
     }
+    condOf(b, side, mon).glaive = !failed && a.move === 'glaiverush';
     if (!failed) applyMoveEffects(b, {...a, target: tgt}, {log, resolveAbility: res});
+    if (!failed && tgt && (a.move === 'trick' || a.move === 'switcheroo')) {
+      // 持ち物が入れ替わると、以後の持ち物は確定できない
+      condOf(b, side, mon).tricked = true; condOf(b, tgt.side, tgt.mon).tricked = true;
+      log.push('持ち物が入れ替わったため、この2体は以後の推定 (ダメージ・行動順) の対象から外します');
+    }
     if (a.hpAfter != null && tgt) setHP(b, tgt.side, tgt.mon, a.hpAfter);
     if (!failed && defItem && input.defItem.consumed !== false && tgt) condOf(b, tgt.side, tgt.mon).itemGone = true;
     if (atkItem && input.atkItem.consumed) condOf(b, side, mon).itemGone = true;
     if (a.to != null && !failed) {
       const s2 = b.state.sides[side].active.indexOf(mon);
-      if (s2 >= 0) { a.toSp = buildOf(b, side, a.to)?.species; sendOut(b, side, s2, a.to, {log, resolveAbility: res}); }
+      if (s2 >= 0) {
+        a.toSp = buildOf(b, side, a.to)?.species;
+        // バトンタッチはランク変化を引き継ぐ
+        const passed = a.move === 'batonpass' ? {...condOf(b, side, mon).boosts} : null;
+        sendOut(b, side, s2, a.to, {log, resolveAbility: res});
+        if (passed && Object.values(passed).some(Boolean)) { condOf(b, side, a.to).boosts = passed; log.push('バトンタッチ: ランク変化を引き継ぎ'); }
+      }
     }
   }
   a.auto = log;

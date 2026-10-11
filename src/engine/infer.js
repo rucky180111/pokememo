@@ -42,6 +42,7 @@ export function inferSpeeds(b, draft, opts = {}) {
     const ob = buildOf(sim, 'opp', oi), oc = condOf(sim, 'opp', oi);
     const target = buildOf(b, 'opp', oi);
     if (!ob || !oc || !target) continue;
+    if (oc.tricked) continue;
     const sid = currentSpecies(ob, oc);
     const s = dex.species[sid];
     const abilityKnown = !!ob.ability || s.ab.length === 1 || !!s.mega;
@@ -54,6 +55,12 @@ export function inferSpeeds(b, draft, opts = {}) {
     if (itemKnown && !oc.itemGone && ob.item === 'quickclaw') continue;
 
     let plain = target.speOk?.plain ?? ALL, scarf = target.speOk?.scarf ?? ALL;
+    // 持ち物がなくなった (はたきおとす等): それまで「スカーフあり/なし」で分けていた候補を1本にまとめる
+    if (oc.itemGone && target.speOk && !target.speOk.merged) {
+      if (ob.item === 'choicescarf') plain = scarf;
+      else if (!ob.item) plain = [...plain].map((ch, i) => (ch === '1' || scarf[i] === '1' ? '1' : '0')).join('');
+      scarf = NONE;
+    }
     if (!scarfBranches.includes(true)) scarf = NONE;
     if (!scarfBranches.includes(false)) plain = NONE;
     let used = false;
@@ -61,6 +68,7 @@ export function inferSpeeds(b, draft, opts = {}) {
     for (const m of movers.filter(x => x.a.side === 'me')) {
       const mb = buildOf(sim, 'me', m.a.mon), mc = condOf(sim, 'me', m.a.mon);
       if (!mb || !mc) continue;
+      if (mc.tricked) continue;
       const first = Math.min(m.idx, o.idx);
       if (speedChangeBefore(first)) continue;
       const myAb = res(sim, 'me', m.a.mon);
@@ -93,7 +101,7 @@ export function inferSpeeds(b, draft, opts = {}) {
       log.push(`相手の${name}: 行動順がこれまでの情報と矛盾するため、素早さの絞り込みは見送り`);
       continue;
     }
-    target.speOk = {plain, scarf};
+    target.speOk = oc.itemGone ? {plain, scarf, merged: true} : {plain, scarf};
     const rp = rangeText(sid, plain), rs = rangeText(sid, scarf);
     if (!rp && rs) {
       target.scarfLikely = true;

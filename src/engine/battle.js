@@ -58,7 +58,8 @@ export function normalizeBattle(b) {
   return b;
 }
 
-export const turnNumber = b => b.turns.length + 1;
+// いまのターン番号 (入力途中のターンがあればその番号)
+export const turnNumber = b => (b.turns.length && b.turns[b.turns.length - 1].open ? b.turns.length : b.turns.length + 1);
 export const buildOf = (b, side, i) => (side === 'me' ? b.my[i] : b.opp[i]);
 export const condOf = (b, side, i) => b.state.mons[side][i];
 export const faintedCount = (b, side) => b.state.mons[side].filter(c => c.fainted).length;
@@ -246,16 +247,16 @@ export const MOVE_BOOSTS = {
   tailglow: B({spa: 3}), shiftgear: B({spe: 2, atk: 1}), victorydance: B({atk: 1, def: 1, spe: 1}), noretreat: B({atk: 1, def: 1, spa: 1, spd: 1, spe: 1}),
   howl: B({atk: 1}), meditate: B({atk: 1}), sharpen: B({atk: 1}), harden: B({def: 1}), withdraw: B({def: 1}), defensecurl: B({def: 1}),
   stockpile: B({def: 1, spd: 1}), tidyup: B({atk: 1, spe: 1}), bellydrum: B({atk: 12}), filletaway: B({atk: 2, spa: 2, spe: 2}),
-  clangoroussoul: B({atk: 1, def: 1, spa: 1, spd: 1, spe: 1}), geomancy: B({spa: 2, spd: 2, spe: 2}), shelter: B({def: 2}),
+  clangoroussoul: B({atk: 1, def: 1, spa: 1, spd: 1, spe: 1}), geomancy: B({spa: 2, spd: 2, spe: 2}), shelter: B({def: 2}), electroshot: B({spa: 1}), meteorbeam: B({spa: 1}), charge: B({spd: 1}), toxicthread: B(null, {spe: -2}),
   // 使用者が下がる攻撃技 (追加効果ではないので ちからずく の影響を受けない)
   closecombat: B({def: -1, spd: -1}), superpower: B({atk: -1, def: -1}), dracometeor: B({spa: -2}), overheat: B({spa: -2}),
-  leafstorm: B({spa: -2}), psychoboost: B({spa: -2}), fleurcannon: B({spa: -2}), makeitrain: B({spa: -1}), hammerarm: B({spe: -1}),
+  leafstorm: B({spa: -2}), psychoboost: B({spa: -2}), fleurcannon: B({spa: -2}), makeitrain: B({spa: -2}), hammerarm: B({spe: -1}),
   icehammer: B({spe: -1}), vcreate: B({def: -1, spd: -1, spe: -1}), armorcannon: B({def: -1, spd: -1}), headlongrush: B({def: -1, spd: -1}),
   scaleshot: B({def: -1, spe: 1}), spinout: B({spe: -2}), clangingscales: B({def: -1}), dragonascent: B({def: -1, spd: -1}),
   // 100% の追加効果で使用者が上がる技
   poweruppunch: B({atk: 1}, null, {sec: 1}), flamecharge: B({spe: 1}, null, {sec: 1}), trailblaze: B({spe: 1}, null, {sec: 1}),
   aquastep: B({spe: 1}, null, {sec: 1}), torchsong: B({spa: 1}, null, {sec: 1}), rapidspin: B({spe: 1}, null, {sec: 1}),
-  chargebeam: B({spa: 1}, null, {sec: 1}), mysticalpower: B({spa: 1}, null, {sec: 1}), esperwing: B({spe: 1}, null, {sec: 1}),
+  aurawheel: B({spe: 1}, null, {sec: 1}), psyshieldbash: B({def: 1}, null, {sec: 1}), mysticalpower: B({spa: 1}, null, {sec: 1}), esperwing: B({spe: 1}, null, {sec: 1}),
   // 相手を下げる技
   icywind: B(null, {spe: -1}, {sec: 1}), electroweb: B(null, {spe: -1}, {sec: 1}), bulldoze: B(null, {spe: -1}, {sec: 1}),
   rocktomb: B(null, {spe: -1}, {sec: 1}), lowsweep: B(null, {spe: -1}, {sec: 1}), mudshot: B(null, {spe: -1}, {sec: 1}),
@@ -307,8 +308,8 @@ export function applyMoveEffects(b, act, opts = {}) {
   if (move === 'tailwind' && setSideFlag(b, side, 'tailwind', true)) log.push(`${who}のおいかぜ`);
   if (move === 'trickroom') { setFieldFlag(b, 'trickRoom', !st.field.trickRoom); log.push(`トリックルーム${st.field.trickRoom ? '発動' : '解除'}`); }
   if (move === 'gravity' && setFieldFlag(b, 'gravity', true)) log.push('じゅうりょく発動');
-  if (move === 'stealthrock' && setSideFlag(b, foe, 'sr', true)) log.push(`${foe === 'me' ? '自分' : '相手'}の場にステルスロック`);
-  if (move === 'spikes' && st.sides[foe].spikes < 3) { st.sides[foe].spikes++; log.push(`${foe === 'me' ? '自分' : '相手'}の場にまきびし (${st.sides[foe].spikes}層)`); }
+  if ((move === 'stealthrock' || move === 'stoneaxe') && setSideFlag(b, foe, 'sr', true)) log.push(`${foe === 'me' ? '自分' : '相手'}の場にステルスロック`);
+  if ((move === 'spikes' || move === 'ceaselessedge') && st.sides[foe].spikes < 3) { st.sides[foe].spikes++; log.push(`${foe === 'me' ? '自分' : '相手'}の場にまきびし (${st.sides[foe].spikes}層)`); }
   const clearHazards = s => { const had = st.sides[s].sr || st.sides[s].spikes; st.sides[s].sr = false; st.sides[s].spikes = 0; return had; };
   const clearScreens = s => { const sd = st.sides[s]; const had = sd.reflect || sd.lightScreen || sd.auroraVeil; sd.reflect = sd.lightScreen = sd.auroraVeil = false; return had; };
   if (move === 'defog') {

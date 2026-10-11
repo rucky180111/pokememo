@@ -81,6 +81,8 @@ function moveProps(file, into) {
     if (tg) o.tg = tg[1];
     const fl = /\n\t\tflags: \{([^}]*)\}/.exec('\n' + body);
     if (fl) o.fl = fl[1].split(',').map(s => s.split(':')[0].trim()).filter(Boolean);
+    const pr = /\n\t\tpriority: (-?\d+)/.exec('\n' + body);
+    if (pr) o.pr = Number(pr[1]);
     const mh = /\n\t\tmultihit: (\[\d+, \d+\]|\d+)/.exec('\n' + body);
     if (mh) o.mh = JSON.parse(mh[1]);
   }
@@ -164,12 +166,15 @@ const TARGET_SPREAD = new Set(['allAdjacent', 'allAdjacentFoes']);
 const moves = {};
 for (const mv of gen.moves) {
   if (mv.id === 'noprobs' || mv.name === '(No Move)') continue;
+  if (!mv.type) continue; // 計算機のデータに定義が欠けている技 (チャンピオンズでは使えない技の名残り)
   const j = moveJa[mv.id];
   if (!j) missing.moves.push(mv.name);
   const p = sdMoves[mv.id] || {};
   const cat = mv.category || 'Status';
-  const o = {n: mv.name, j: j || mv.name, t: mv.type, c: cat[0] === 'P' ? 'P' : cat[0] === 'S' && cat !== 'Status' ? 'S' : 'Z', bp: mv.basePower || 0};
-  if (mv.priority) o.pr = mv.priority;
+  const o = {n: mv.name, j: j || mv.name, t: mv.id === 'growth' ? 'Grass' : mv.type, c: cat[0] === 'P' ? 'P' : cat[0] === 'S' && cat !== 'Status' ? 'S' : 'Z', bp: mv.basePower || 0};
+  // 優先度は Showdown の定義を正とする (計算機のデータにはマイナスの優先度が入っていない)
+  const pri = p.pr ?? mv.priority ?? 0;
+  if (pri) o.pr = pri;
   if (p.acc) o.acc = p.acc;
   const tg = mv.target || p.tg;
   if (tg && tg !== 'normal') o.tg = tg;

@@ -45,7 +45,8 @@ export function toCalcPokemon(build, cond = newCond(), extra = {}) {
     evs, boosts,
     status: cond.status || '',
     toxicCounter: cond.status === 'tox' ? Math.max(1, cond.toxicCounter || 1) : 0,
-    abilityOn: !!cond.abilityOn,
+    // かるわざは持ち物を失った時点で発動している扱い
+    abilityOn: !!cond.abilityOn || (ability === 'unburden' && !!cond.itemGone && !!build.item),
     alliesFainted: extra.alliesFainted || 0,
   });
   const max = p.maxHP();

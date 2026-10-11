@@ -701,3 +701,35 @@ test('耐久の推定: 観測に合う中で、使うポイントが最小の振
   assert.equal(fb.sp[4], eff.spd.sp);
   assert.equal(efficientBulk(newOpp('tyranitar')), null);
 });
+
+test('おいかぜは4ターンで自動終了し、経過ターンは入力中のターンから数える', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 4); sendOut(b, 'opp', 0, 4); // ペリッパー vs ミロカロス
+  addAct(b, {side: 'me', type: 'move', move: 'tailwind'}, usage);
+  assert.equal(b.state.sides.me.tailwind, true);
+  assert.equal(b.state.sides.me.since.tailwind, 1);
+  for (let i = 0; i < 3; i++) { endTurn(b, usage); assert.equal(b.state.sides.me.tailwind, true, `${i + 1}ターン目の終わりではまだ続く`); addAct(b, {side: 'me', type: 'move', move: 'uturn', miss: true}, usage); }
+  endTurn(b, usage);
+  assert.equal(b.state.sides.me.tailwind, false);
+});
+
+test('バトンタッチはランク変化を引き継ぎ、持ち物の入れ替え後は推定の対象から外す', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 0); sendOut(b, 'opp', 0, 4);
+  addAct(b, {side: 'me', type: 'move', move: 'swordsdance'}, usage);
+  endTurn(b, usage);
+  addAct(b, {side: 'me', type: 'move', move: 'batonpass', to: 3}, usage);
+  assert.equal(b.state.mons.me[3].boosts.atk, 2);
+  assert.equal(b.state.mons.me[0].boosts.atk, 0);
+  endTurn(b, usage);
+  addAct(b, {side: 'opp', type: 'move', move: 'trick'}, usage);
+  assert.equal(b.state.mons.me[3].tricked, true);
+  const log = addAct(b, {side: 'me', type: 'move', move: 'ironhead', hpAfter: 60}, usage);
+  assert.ok(log.some(l => l.includes('見送り')), log.join('/'));
+  assert.equal(b.opp[4].statOk, undefined);
+});
+
+test('チャンピオンズ仕様: ゴールドラッシュは特攻が2段階下がる', () => {
+  assert.deepEqual(MOVE_BOOSTS.makeitrain.self, {spa: -2});
+  assert.equal(MOVE_BOOSTS.chargebeam, undefined);
+});

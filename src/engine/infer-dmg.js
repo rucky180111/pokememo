@@ -2,6 +2,7 @@
 // 結果は「性格補正×SP」の可否 (99通り) や「HPのSP × 防御側の補正×SP」の可否 (33×99通り) として相手に保存する。
 import {dex, statValue, natureMod, STAT_KEYS} from './dex.js';
 import {attackTable} from './board.js';
+import {currentAbility} from './calc.js';
 import {SPE_COMBOS, comboMod, comboSP, comboOf, parseSpread} from './assume.js';
 
 const ALL = n => '1'.repeat(n);
@@ -12,10 +13,51 @@ const NATURE_FOR = {
   def: {up: 'Bold', down: 'Hasty'}, spd: {up: 'Calm', down: 'Naive'},
 };
 export const natureOf = (stat, mod) => (mod > 1 ? NATURE_FOR[stat].up : mod < 1 ? NATURE_FOR[stat].down : 'Serious');
-const withBuild = (ctx, oppIdx, alt) => ({...ctx, build: (side, i) => (side === 'opp' && i === oppIdx ? alt : ctx.build(side, i))});
+const TYPE_ITEM = {Normal: 'silkscarf', Fire: 'charcoal', Water: 'mysticwater', Electric: 'magnet', Grass: 'miracleseed', Ice: 'nevermeltice', Fighting: 'blackbelt', Poison: 'poisonbarb',
+  Ground: 'softsand', Flying: 'sharpbeak', Psychic: 'twistedspoon', Bug: 'silverpowder', Rock: 'hardstone', Ghost: 'spelltag', Dragon: 'dragonfang', Dark: 'blackglasses', Steel: 'metalcoat', Fairy: 'fairyfeather'};
+const VISIBLE_DEF_ITEM = id => /berry$/.test(id || '') || id === 'focussash' || id === 'focusband';
+
+/**
+ * 相手の未判明の持ち物・特性について、ありうる候補を並べる。
+ * どれか1つでも観測に合えば「ありうる」と扱うので、決めつけで正しい配分を捨てることがない。
+ * role: 'atk' (相手が攻撃) / 'def' (相手が受ける)
+ */
+function hypotheses(base, speciesId, moveId, role, opts) {
+  const mv = dex.moves[moveId];
+  let items = [base.item || ''];
+  if (opts.itemUnknown) {
+    if (role === 'atk') items = ['', base.item, 'lifeorb', mv.c === 'P' ? 'muscleband' : 'wiseglasses', TYPE_ITEM[mv.t], 'expertbelt', mv.t === 'Normal' ? 'normalgem' : null];
+    // 受ける側の実やタスキは発動すれば画面に出るので、報告がなければ「発動する持ち物ではない」
+    else {
+      items = ['', VISIBLE_DEF_ITEM(base.item) ? null : base.item];
+      // 持ち物の有無で威力が変わる技: 「何か持っている」場合も候補に入れる (ポルターガイストは持ち物がないと失敗)
+      if (moveId === 'knockoff' || moveId === 'poltergeist') items.push('leftovers');
+      if (moveId === 'poltergeist') items = items.filter(Boolean);
+    }
+    items = [...new Set(items.filter(x => x === '' || (x && dex.items[x])))];
+  }
+  let abilities = [base.ability || ''];
+  const s = dex.species[speciesId];
+  if (opts.abilityUnknown && s && !s.mega && s.ab.length > 1) abilities = s.ab.slice();
+  const out = [];
+  for (const item of items) for (const ability of abilities) out.push({item, ability});
+  return out;
+}
+
+const withBuild = (ctx, oppIdx, alt) => {
+  const c = {...ctx, build: (side, i) => (side === 'opp' && i === oppIdx ? alt : ctx.build(side, i))};
+  // 特性も差し替えた型から引く (元の ctx.ability は差し替え前の型を見てしまう)
+  c.ability = (side, i) => { const bd = c.build(side, i); return bd ? currentAbility(bd, c.cond(side, i)) : ''; };
+  return c;
+};
 
 // 技がどの能力で計算されるか (特殊な参照をする技は対象外)
-const UNSUPPORTED = new Set(['foulplay', 'bodypress', 'psyshock', 'psystrike', 'secretsword', 'photongeyser', 'shellsidearm', 'seismictoss', 'nightshade', 'superfang', 'ruination', 'naturesmadness', 'endeavor', 'finalgambit', 'counter', 'mirrorcoat', 'metalburst', 'comeuppance', 'dragonrage', 'sonicboom', 'fissure', 'horndrill', 'guillotine', 'sheercold']);
+// 威力がその場の条件 (行動順・連続使用・残りHP・相手の素早さ など) で変わる技は、逆算に使わない
+const UNSUPPORTED = new Set(['gyroball', 'electroball', 'payback', 'avalanche', 'boltbeak', 'fishiousrend', 'assurance', 'furycutter', 'echoedvoice', 'rollout', 'iceball',
+  'stompingtantrum', 'retaliate', 'ragefist', 'revenge', 'lashout', 'temperflare', 'present', 'magnitude', 'reversal', 'flail', 'eruption', 'waterspout', 'dragonenergy',
+  'wringout', 'crushgrip', 'hardpress', 'triplekick', 'tripleaxel', 'populationbomb', 'beatup', 'pursuit', 'spitup', 'trumpcard', 'return', 'frustration', 'naturalgift', 'fling',
+  'storedpower', 'powertrip', 'punishment', 'lastrespects', 'terrainpulse', 'risingvoltage', 'expandingforce', 'mistyexplosion', 'psyblade', 'hydrosteam', 'electrodrift', 'collisioncourse',
+  'bide', 'metronome', 'naturepower', 'sleeptalk', 'copycat', 'mefirst', 'mirrormove', 'struggle', 'futuresight', 'doomdesire', 'selfdestruct', 'explosion','foulplay', 'bodypress', 'psyshock', 'psystrike', 'secretsword', 'photongeyser', 'shellsidearm', 'seismictoss', 'nightshade', 'superfang', 'ruination', 'naturesmadness', 'endeavor', 'finalgambit', 'counter', 'mirrorcoat', 'metalburst', 'comeuppance', 'dragonrage', 'sonicboom', 'fissure', 'horndrill', 'guillotine', 'sheercold']);
 export function inferable(moveId) {
   const mv = dex.moves[moveId];
   return !!mv && mv.c !== 'Z' && !UNSUPPORTED.has(moveId);
@@ -32,14 +74,15 @@ export function inferFromTaken(ctx, oppIdx, myIdx, moveId, damage, opts = {}) {
   const base = ctx.build('opp', oppIdx);
   const tol = opts.tol || 0;
   // 持ち物が未判明なら「推定の持ち物」「持ち物の補正なし」のどちらかで説明がつけば候補に残す
-  const items = opts.itemUnknown ? [...new Set([base.item, ''])] : [base.item];
+  const cond0 = ctx.cond('opp', oppIdx);
+  const hyps = hypotheses(base, cond0.forme && dex.species[cond0.forme] ? cond0.forme : base.species, moveId, 'atk', opts);
   let mask = '';
   for (let c = 0; c < SPE_COMBOS; c++) {
     const mod = comboMod(c), sp = comboSP(c);
     const spArr = [0, 0, 0, 0, 0, 0]; spArr[si] = sp;
     let ok = false;
-    for (const item of items) {
-      const alt = {...base, item, nature: natureOf(stat, mod), sp: spArr};
+    for (const hy of hyps) {
+      const alt = {...base, ...hy, nature: natureOf(stat, mod), sp: spArr};
       const r = attackTable(withBuild(ctx, oppIdx, alt), 'opp', oppIdx, {...opts, only: {def: myIdx, move: moveId}})?.targets[0]?.results[moveId];
       if (r?.ok && (opts.atLeast ? r.max + tol >= damage : damage + tol >= r.min && damage - tol <= r.max)) { ok = true; break; }
     }
@@ -73,15 +116,15 @@ export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts =
   const sid = cond.forme && dex.species[cond.forme] ? cond.forme : base.species;
   const bs = dex.species[sid].bs;
   const byVal = new Map();
-  const items = opts.itemUnknown ? [...new Set([base.item, ''])] : [base.item];
+  const hyps = hypotheses(base, sid, moveId, 'def', opts);
   const rolls = c => {
     const mod = comboMod(c), sp = comboSP(c);
     const val = statValue(bs[si], sp, mod, false);
     if (!byVal.has(val)) {
       const spArr = [0, 0, 0, 0, 0, 0]; spArr[si] = sp;
       let lo = Infinity, hi = -Infinity;
-      for (const item of items) {
-        const alt = {...base, item, nature: natureOf(stat, mod), sp: spArr};
+      for (const hy of hyps) {
+        const alt = {...base, ...hy, nature: natureOf(stat, mod), sp: spArr};
         const r = attackTable(withBuild(ctx, oppIdx, alt), 'me', myIdx, {...opts, only: {def: oppIdx, move: moveId}})?.targets[0]?.results[moveId];
         if (r?.ok) { lo = Math.min(lo, r.min); hi = Math.max(hi, r.max); }
       }
