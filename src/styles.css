@@ -489,3 +489,5 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .mp-state .tag { margin-left: 0; }
 .ev .hint { margin: 2px 0; }
 .btn.primary.sm { min-height: 32px; }
+
+.mp-table tr.real td small { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }

@@ -318,7 +318,15 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
               })}
             </tr>
             <tr class="real"><th>実数値</th>
-              {side === 'opp' ? est.rows.map(r => <td class={cx('num', r.known && 'known')}>{fmtVal(r)}</td>) : myStats.map(v => <td class="num">{v}</td>)}
+              {STAT_KEYS.map((k, i) => {
+                const st = raw.boosts[k] || 0;
+                const r = side === 'opp' ? est.rows[i] : {valLo: myStats[i], valHi: myStats[i]};
+                const base = fmtVal(r);
+                // 能力上昇があれば補正後の値を出し、元の値をかっこで添える
+                if (!st) return <td class={cx('num', r.known && 'known')}>{base}</td>;
+                const up = v => Math.floor(st > 0 ? (v * (2 + st)) / 2 : (v * 2) / (2 - st));
+                return <td class={cx('num', r.known && 'known', st > 0 ? 'pos' : 'neg')}>{fmtVal({valLo: up(r.valLo), valHi: up(r.valHi)})}<small>({base})</small></td>;
+              })}
             </tr>
           </tbody>
         </table>
