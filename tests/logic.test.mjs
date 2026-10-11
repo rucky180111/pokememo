@@ -672,3 +672,32 @@ test('持ち物の発動: きあいのタスキ・オボンのみ・出来事の
   assert.equal(c.opp[0].item, 'sitrusberry');
   assert.ok(c.state.mons.opp[0].itemGone);
 });
+
+import {efficientBulk, fitBuild} from '../src/engine/estimate.js';
+
+test('耐久の推定: 観測に合う中で、使うポイントが最小の振り方を想定する', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 5); sendOut(b, 'opp', 0, 1);
+  b.opp[1].ability = 'sandstream'; b.opp[1].item = 'leftovers';
+  const truth = {species: 'tyranitar', item: 'leftovers', ability: 'sandstream', nature: 'Careful', sp: [32, 0, 0, 0, 32, 2], moves: []};
+  const dealt = calcDamage({build: b.my[5], cond: b.state.mons.me[5]}, {build: truth, cond: b.state.mons.opp[1]}, 'hydropump', {field: b.state.field});
+  addAct(b, {side: 'me', type: 'move', move: 'hydropump', hpAfter: Math.round(100 - (dealt.rolls[8] / dealt.defMaxHP) * 100)}, usage);
+  const eff = efficientBulk(b.opp[1]);
+  assert.ok(eff && eff.spd && eff.def === null);
+  // 想定した組み合わせは観測に合っている
+  const ci = cOf(eff.spd.mod, eff.spd.sp);
+  assert.equal(b.opp[1].statOk.spd[eff.h * 99 + ci], '1');
+  // それより合計が少ない組み合わせは観測に合わない (同じ補正の範囲で)
+  const total = eff.h + eff.spd.sp;
+  for (let h = 0; h <= 32; h++) for (let c = 0; c < 99; c++) if (b.opp[1].statOk.spd[h * 99 + c] === '1') assert.ok(h + (c % 33) >= Math.floor(total) - 0, `H${h} + D${c % 33} は ${total} 以上`);
+  const e = estimateStats(b.opp[1], 'tyranitar');
+  assert.deepEqual([e.rows[0].spLo, e.rows[0].spHi], [eff.h, eff.h], 'HP は1点に決まる');
+  assert.deepEqual([e.rows[4].spLo, e.rows[4].spHi], [eff.spd.sp, eff.spd.sp]);
+  assert.ok(e.rows[4].eff);
+  assert.equal(e.remain, 66 - e.rows.reduce((a, r) => a + r.spLo, 0));
+  // 計算に使う配分もこの振り方になる
+  const fb = fitBuild(b.opp[1], {species: 'tyranitar', item: 'leftovers', ability: 'sandstream', nature: 'Adamant', sp: [0, 32, 0, 0, 0, 32], moves: []}, 'tyranitar');
+  assert.equal(fb.sp[0], eff.h);
+  assert.equal(fb.sp[4], eff.spd.sp);
+  assert.equal(efficientBulk(newOpp('tyranitar')), null);
+});

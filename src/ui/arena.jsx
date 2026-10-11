@@ -349,7 +349,7 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
           )}
         </div>
       </div>
-      {side === 'opp' && <p class="hint mp-remain">H・B・D = 与えたダメージ、A・C = 受けたダメージ、S = 行動順 から推定 (空欄は未推定、× はその性格補正では説明がつかない)。未確定の残り能力Pt: <b class="num">{est.remain}</b> / 66{speeds.o?.pFaster != null ? ` ・ 先手率 自分 ${rate(speeds.o.pSlower)}` : ''}</p>}
+      {side === 'opp' && <p class="hint mp-remain">H・B・D = 与えたダメージ、A・C = 受けたダメージ、S = 行動順 から推定 (空欄は未推定、× はその性格補正では説明がつかない)。H・B・D は観測に合う中で使うポイントが最小の振り方です。未確定の残り能力Pt: <b class="num">{est.remain}</b> / 66{speeds.o?.pFaster != null ? ` ・ 先手率 自分 ${rate(speeds.o.pSlower)}` : ''}</p>}
       <div class="mp-lower">
         <div class="mp-moves">
           {[0, 1, 2, 3].map(i => {

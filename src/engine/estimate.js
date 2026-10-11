@@ -33,6 +33,44 @@ function hpAllowed(opp) {
 }
 
 /**
+ * 耐久 (HP と ぼうぎょ/とくぼう) の「いちばん効率のいい振り方」。
+ * 与えたダメージからは HP と防御側の組み合わせが何通りも残るので、
+ * 観測に合う組み合わせのうち、使う能力ポイントの合計が最小のものを想定する。
+ * 戻り値: {h, def: {mod, sp} | null, spd: {mod, sp} | null, alt: {def: {補正: sp}, spd: {...}}} / 観測がなければ null
+ */
+export function efficientBulk(opp) {
+  const k = opp.statOk || {};
+  if (!k.def && !k.spd) return null;
+  // minSp[stat][h][modIndex] = その HP と補正で観測に合う最小の SP (なければ -1)
+  const table = stat => {
+    const m = k[stat];
+    if (!m) return null;
+    const out = [];
+    for (let h = 0; h <= 32; h++) {
+      const row = [-1, -1, -1];
+      for (let c = 0; c < SPE_COMBOS; c++) if (m[h * SPE_COMBOS + c] === '1') { const mi = Math.floor(c / 33); if (row[mi] < 0) row[mi] = comboSP(c); }
+      out.push(row);
+    }
+    return out;
+  };
+  const D = table('def'), S = table('spd');
+  const MODS = [0.9, 1, 1.1];
+  const opts = (t, h) => (t ? [0, 1, 2].filter(i => t[h][i] >= 0).map(i => ({mi: i, sp: t[h][i]})) : [{mi: 1, sp: 0, none: true}]);
+  let best = null;
+  for (let h = 0; h <= 32; h++) {
+    for (const d of opts(D, h)) for (const s2 of opts(S, h)) {
+      if (d.mi === s2.mi && d.mi !== 1 && !d.none && !s2.none) continue; // 1つの性格で両方に同じ向きの補正はかからない
+      // 補正なしで説明がつくならそちらを優先 (同点のとき)
+      const cost = h + d.sp + s2.sp + (d.mi !== 1 ? 0.25 : 0) + (s2.mi !== 1 ? 0.25 : 0);
+      if (!best || cost < best.cost) best = {cost, h, d, s: s2};
+    }
+  }
+  if (!best) return null;
+  const alt = (t) => (t ? Object.fromEntries([0, 1, 2].filter(i => t[best.h][i] >= 0).map(i => [MODS[i], t[best.h][i]])) : null);
+  return {h: best.h, def: D ? {mod: MODS[best.d.mi], sp: best.d.sp} : null, spd: S ? {mod: MODS[best.s.mi], sp: best.s.sp} : null, alt: {def: alt(D), spd: alt(S)}};
+}
+
+/**
  * 6能力それぞれの推定。
  * 戻り値: [{key, base, spLo, spHi, valLo, valHi, modLo, modHi, known}] と remain (未確定の残りポイント)
  */
@@ -56,6 +94,18 @@ export function estimateStats(opp, speciesId) {
     if (spHi < 0) return {key, base, spLo: 0, spHi: 32, valLo: statValue(base, 0, 0.9, false), valHi: statValue(base, 32, 1.1, false), modLo: 0.9, modHi: 1.1, known: false};
     return {key, base, spLo, spHi, valLo, valHi, modLo, modHi, known: !!m, byMod: m ? byMod : null};
   });
+  // 耐久は効率のいい振り方に寄せる
+  const eff = efficientBulk(opp);
+  if (eff) {
+    const set = (r, sp, mod) => { r.spLo = r.spHi = sp; r.modLo = r.modHi = mod; r.valLo = r.valHi = statValue(r.base, sp, mod, r.key === 'hp'); r.eff = true; };
+    set(rows[0], eff.h, 1);
+    for (const key of ['def', 'spd']) {
+      if (!eff[key]) continue;
+      const r = rows[STAT_KEYS.indexOf(key)];
+      set(r, eff[key].sp, eff[key].mod);
+      r.byMod = Object.fromEntries(Object.entries(eff.alt[key]).map(([m, sp]) => [m, [sp, sp]]));
+    }
+  }
   const used = rows.reduce((a, r) => a + r.spLo, 0);
   const remain = Math.max(0, SP_TOTAL - used);
   for (const r of rows) r.spHi = Math.min(r.spHi, r.spLo + remain);
@@ -93,9 +143,13 @@ export function fitBuild(opp, build, speciesId) {
   if (!opp.statOk && !opp.speOk) return build;
   const sp = build.sp.slice();
   const need = {}; // 能力ごとに必要な性格補正
-  const h = hpAllowed(opp);
-  if (h.known) sp[0] = Math.max(h.lo, Math.min(h.hi, sp[0]));
+  const eff = efficientBulk(opp);
+  if (eff) {
+    sp[0] = eff.h;
+    for (const key of ['def', 'spd']) if (eff[key]) { sp[STAT_KEYS.indexOf(key)] = eff[key].sp; if (eff[key].mod !== natureMod(build.nature, key)) need[key] = eff[key].mod; }
+  }
   for (const stat of ['atk', 'def', 'spa', 'spd', 'spe']) {
+    if (eff && eff[stat]) continue;
     const m = allowed(opp, stat);
     if (!m) continue;
     const i = STAT_KEYS.indexOf(stat);
@@ -113,8 +167,9 @@ export function fitBuild(opp, build, speciesId) {
   let nature = build.nature;
   if (Object.keys(need).length) {
     const cur = dex.natures[build.nature] || {};
-    let up = Object.keys(need).find(k => need[k] > 1) || (need[cur.p] ? null : cur.p) || null;
-    let down = Object.keys(need).find(k => need[k] < 1) || (need[cur.m] ? null : cur.m) || null;
+    // 補正なしが必要な能力に、元の性格の補正が残らないようにする
+    let up = Object.keys(need).find(k => need[k] > 1) || (need[cur.p] !== undefined ? null : cur.p) || null;
+    let down = Object.keys(need).find(k => need[k] < 1) || (need[cur.m] !== undefined ? null : cur.m) || null;
     if (up && !down) down = ['atk', 'spa', 'def', 'spd', 'spe'].find(k => k !== up && !(need[k] >= 1) && !opp.statOk?.[k]) || null;
     if (down && !up) up = ['atk', 'spa', 'def', 'spd', 'spe'].find(k => k !== down && !need[k] && !opp.statOk?.[k]) || null;
     nature = (up && down && Object.keys(dex.natures).find(n => dex.natures[n].p === up && dex.natures[n].m === down)) || 'Serious';
