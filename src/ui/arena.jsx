@@ -277,15 +277,15 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
   const isMega = !!dex.species[raw.forme]?.mega;
   const moves = side === 'me' ? (build.moves || []) : (opp.moves || []);
   // 補正なしで説明がつくならその範囲を、つかなければ補正あり(↑)/下降(↓)の範囲を出す
-  const fmtSp = r => {
-    if (!r.byMod) return r.spLo === r.spHi ? `${r.spLo}` : `${r.spLo}〜${r.spHi}`;
-    const rg = e => (e[0] === e[1] ? `${e[0]}` : `${e[0]}〜${e[1]}`);
-    const out = [];
-    if (r.byMod[1]) out.push(rg(r.byMod[1]));
-    if (r.byMod[1.1]) out.push(`↑${rg(r.byMod[1.1])}`);
-    if (r.byMod[0.9] && !r.byMod[1]) out.push(`↓${rg(r.byMod[0.9])}`);
-    return out.join(' ');
-  };
+  const rg = e => (e[0] === e[1] ? `${e[0]}` : `${e[0]}〜${e[1]}`);
+  // 推定能力Pt の段: 推定済みの能力に出てくる性格補正のパターンぶんだけ出す
+  const estRows = (() => {
+    if (!est) return [];
+    const mods = new Set();
+    for (const r of est.rows) if (r.known && r.byMod) for (const m of Object.keys(r.byMod)) mods.add(Number(m));
+    const all = [[1, '推定Pt 補正なし'], [1.1, '推定Pt 補正↑'], [0.9, '推定Pt 補正↓']].filter(([m]) => mods.has(m));
+    return all.length ? all : [[1, '推定能力Pt']];
+  })();
   const fmtVal = r => (r.valLo === r.valHi ? `${r.valLo}` : `${r.valLo}〜${r.valHi}`);
   const tr = battle.state.field.trickRoom;
   return (
@@ -308,9 +308,19 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
           <thead><tr><th></th>{STAT_JA.map(l => <th>{l}</th>)}</tr></thead>
           <tbody>
             <tr><th>種族値</th>{s.bs.map(v => <td class="num">{v}</td>)}</tr>
-            <tr class="est"><th title="H・B・D は与えたダメージ、A・C は受けたダメージ、S は行動順から推定">{side === 'opp' ? '推定能力Pt' : '能力Pt'}</th>
-              {side === 'opp' ? est.rows.map(r => <td class={cx('num', r.known && 'known')}>{fmtSp(r)}</td>) : build.sp.map(v => <td class="num">{v}</td>)}
-            </tr>
+            {side === 'me' && <tr class="est"><th>能力Pt</th>{build.sp.map(v => <td class="num">{v}</td>)}</tr>}
+            {side === 'opp' && estRows.map(([mod, label]) => (
+              <tr class="est" key={mod}>
+                <th title="H・B・D は与えたダメージ、A・C は受けたダメージ、S は行動順から推定">{label}</th>
+                {est.rows.map(r => {
+                  // 推定できていない能力は空欄。性格補正のパターンごとに段を分ける
+                  if (!r.known) return <td></td>;
+                  if (r.key === 'hp') return <td class="num known">{mod === estRows[0][0] ? rg([r.spLo, r.spHi]) : ''}</td>;
+                  const e = r.byMod?.[mod];
+                  return <td class={cx('num', e && 'known')}>{e ? rg(e) : '×'}</td>;
+                })}
+              </tr>
+            ))}
             <tr><th>能力上昇</th><td></td>
               {BOOST_KEYS.map(k => {
                 const v = raw.boosts[k] || 0;
@@ -339,7 +349,7 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
           )}
         </div>
       </div>
-      {side === 'opp' && <p class="hint mp-remain">H・B・D = 与えたダメージ、A・C = 受けたダメージ、S = 行動順 から推定 (青字が推定済み。↑ は性格補正ありの場合)。未確定の残り能力Pt: <b class="num">{est.remain}</b> / 66{speeds.o?.pFaster != null ? ` ・ 先手率 自分 ${rate(speeds.o.pSlower)}` : ''}</p>}
+      {side === 'opp' && <p class="hint mp-remain">H・B・D = 与えたダメージ、A・C = 受けたダメージ、S = 行動順 から推定 (空欄は未推定、× はその性格補正では説明がつかない)。未確定の残り能力Pt: <b class="num">{est.remain}</b> / 66{speeds.o?.pFaster != null ? ` ・ 先手率 自分 ${rate(speeds.o.pSlower)}` : ''}</p>}
       <div class="mp-lower">
         <div class="mp-moves">
           {[0, 1, 2, 3].map(i => {

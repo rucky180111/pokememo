@@ -94,6 +94,8 @@ check(spNow.reduce((a, b) => a + b, 0) <= 66, `能力ポイント合計は66を�
 await shot(page, 'mon-editor');
 // 編集パネルの中で選択パネルを開いて、外側ごと閉じても背景が固まらない
 await page.locator('.editor .field', {hasText: '持ち物'}).locator('button').click();
+await page.waitForSelector('.picker-bar');
+await page.waitForTimeout(250);
 await page.keyboard.press('Escape');
 await page.waitForTimeout(100);
 await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
