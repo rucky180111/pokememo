@@ -8,7 +8,7 @@ import {speedOutlook} from '../engine/assume.js';
 import {addAct, addEvent, endTurn, openTurn, actLine} from '../engine/flow.js';
 import {estimateStats, scenarioBuild} from '../engine/estimate.js';
 import {Picker, Seg, Toggle, TypeChip, Sprite, Empty, cx, fmtPct, rate} from './common.jsx';
-import {OppSheet, dmgClass} from './battle.jsx';
+import {OppSheet, dmgClass, LogTab} from './battle.jsx';
 import {MonEditor} from './teams.jsx';
 import {HPControl, DmgBar} from './board.jsx';
 import {PredictTab} from './analysis.jsx';
@@ -18,10 +18,10 @@ const SIDE_JA = {me: '自分', opp: '相手'};
 const FLAGS = [['reflect', 'リフレクター'], ['lightScreen', 'ひかりのかべ'], ['auroraVeil', 'オーロラベール'], ['tailwind', 'おいかぜ'], ['sr', 'ステルスロック']];
 const alive = (battle, side) => battle.state.sides[side].active.filter(i => i != null && !condOf(battle, side, i)?.fainted);
 
-export function Arena({battle, ctx, mut, usage, toast, wide}) {
+export function Arena({battle, ctx, mut, usage, toast, wide, onDelete}) {
   const [pane, setPane] = useState('center');
   const [sheet, setSheet] = useState(null);
-  const p = {battle, ctx, mut, usage, toast, setSheet};
+  const p = {battle, ctx, mut, usage, toast, setSheet, onDelete};
   return (
     <div class={cx('arena', wide && 'wide')}>
       {!wide && <div class="arena-tabs"><Seg value={pane} options={[['left', '入力・時系列'], ['center', '盤面'], ['right', 'ダメージ表']]} onChange={setPane} /></div>}
@@ -197,8 +197,10 @@ function RightPane(props) {
   const [tab, setTab] = useState('dmg');
   return (
     <div class="ar-right">
-      <Seg value={tab} options={[['dmg', 'ダメージ表'], ['stat', '統計']]} onChange={setTab} />
-      {tab === 'dmg' ? <DamagePane {...props} /> : <PredictTab battle={props.battle} ctx={props.ctx} />}
+      <Seg value={tab} options={[['dmg', 'ダメージ'], ['stat', '統計'], ['log', 'ログ']]} onChange={setTab} />
+      {tab === 'dmg' && <DamagePane {...props} />}
+      {tab === 'stat' && <PredictTab battle={props.battle} ctx={props.ctx} />}
+      {tab === 'log' && <LogTab battle={props.battle} mut={props.mut} onDelete={props.onDelete} />}
     </div>
   );
 }

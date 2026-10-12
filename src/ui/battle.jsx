@@ -13,7 +13,7 @@ import {Arena} from './arena.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
 import {DamageTab, SpeedTab, PredictTab} from './analysis.jsx';
 
-const TABS = [['setup', '① 選出'], ['board', '② 対戦'], ['dmg', 'ダメージ表'], ['speed', '素早さ'], ['predict', '予測'], ['log', 'ログ']];
+const TABS = [['setup', '① 選出'], ['board', '② 対戦'], ['dmg', '③ ダメージ表']];
 const RESULT_OPTS = [['', '未決'], ['win', '勝ち'], ['lose', '負け'], ['draw', '引分']];
 
 function useWide() {
@@ -46,15 +46,12 @@ export function BattleScreen({id}) {
     store.saveBattle(b);
     return out;
   };
-  const props = {battle, ctx, mut, usage, setTab, toast};
+  const props = {battle, ctx, mut, usage, setTab, toast, onDelete: () => setConfirm(true)};
   const body = t => {
     switch (t) {
       case 'setup': return <SelectTab {...props} />;
       case 'board': return <Arena {...props} wide={wide} />;
       case 'dmg': return <DamageTab {...props} />;
-      case 'speed': return <SpeedTab {...props} />;
-      case 'predict': return <PredictTab {...props} />;
-      case 'log': return <LogTab {...props} onDelete={() => setConfirm(true)} />;
       default: return null;
     }
   };
@@ -353,14 +350,10 @@ function speedRangeText(o, v, battle, idx) {
 }
 
 // ---- ログ ----
-function LogTab({battle, mut, onDelete, toast}) {
+export function LogTab({battle, mut, onDelete}) {
   return (
     <div class="page-in">
-      <div class="btnrow">
-        <button class="btn" disabled={!battle.turns.length || !battle.turns[battle.turns.length - 1].before}
-          onClick={() => { mut(b => { undoTurn(b); }); toast('直前のターンを取り消しました'); }}>直前のターンを取り消す</button>
-      </div>
-      {!battle.turns.length && <Empty>まだターンの記録がありません。盤面の「ターンを記録」から入力します。</Empty>}
+      {!battle.turns.length && <Empty>まだターンの記録がありません。左の入力欄から記録します。記録の修正は時系列の行をタップしてください。</Empty>}
       <ol class="log">
         {battle.turns.map((t, ti) => (
           <li key={t.n}>

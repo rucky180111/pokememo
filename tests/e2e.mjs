@@ -210,13 +210,18 @@ const allDragon = await page.locator('.overlay .picker-list .row .type').evaluat
 check(rows > 5 && allDragon, `技をタイプで絞り込める (${rows}件)`);
 await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
 // 既存の詳細タブ
-await page.getByRole('tab', {name: 'ダメージ表'}).click();
+await page.getByRole('tab', {name: '③ ダメージ表'}).click();
 await page.waitForSelector('table.dmg');
 check(await page.locator('table.dmg thead th').count() === 7, 'ダメージ表タブは相手6体ぶん');
-await page.getByRole('tab', {name: '素早さ'}).click();
-await page.waitForSelector('.spd');
-await page.getByRole('tab', {name: 'ログ'}).click();
-check(await page.locator('.log li').count() >= 3, 'ログにターンが並ぶ');
+check(await page.locator('table.dmg td .dbar').count() > 0, 'ダメージ表にゲージが出る');
+await shot(page, 'dmg-tab');
+check(await page.getByRole('tab').count() === 3, '大きいタブは 選出・対戦・ダメージ表 の3つ');
+await page.getByRole('tab', {name: '② 対戦'}).click();
+await pane('ダメージ表');
+await page.locator('.ar-right > .seg button', {hasText: 'ログ'}).click();
+check(await page.locator('.ar-right .log li').count() >= 3, '右側のログにターンが並ぶ');
+await page.locator('.ar-right > .seg button', {hasText: '統計'}).click();
+await page.locator('.ar-right > .seg button', {hasText: 'ダメージ'}).click();
 await page.getByRole('tab', {name: '② 対戦'}).click();
 // 勝敗をつけて統計へ
 await page.locator('.battle-head .seg button', {hasText: '勝ち'}).click();
@@ -251,7 +256,7 @@ for (const h of ['#/battles', '#/teams', '#/stats', '#/settings']) {
 const bid = await page.evaluate(() => window.__pokememo.store.battles()[0].id);
 await page.goto(`${url}#/battle/${bid}`);
 await page.waitForSelector('.battle');
-for (const t of ['① 選出', '② 対戦', 'ダメージ表', '素早さ', '予測', 'ログ']) {
+for (const t of ['① 選出', '② 対戦', '③ ダメージ表']) {
   await page.getByRole('tab', {name: t}).click();
   await page.waitForTimeout(120);
   await scrollOK(page, `対戦/${t}`);

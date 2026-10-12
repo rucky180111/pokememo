@@ -7,8 +7,9 @@ import {PRESETS, spreadLabel, leadRate} from '../engine/assume.js';
 import {matchupActions, oppSpeciesStats, sortCounts, pct} from '../engine/predict.js';
 import {condOf, other, setHP} from '../engine/battle.js';
 import {inferFromTaken, inferFromDealt, applyInference, inferable} from '../engine/infer-dmg.js';
-import {useApp, Sheet, Seg, Toggle, TypeChip, Empty, cx, fmtPct, rate} from './common.jsx';
+import {useApp, Sheet, Seg, Toggle, TypeChip, Sprite, Empty, cx, fmtPct, rate} from './common.jsx';
 import {dmgClass} from './battle.jsx';
+import {DmgBar} from './board.jsx';
 
 const CAT_JA = {P: '物理', S: '特殊', Z: '変化'};
 const SIDE_JA = {me: '自分', opp: '相手'};
@@ -62,6 +63,7 @@ export function DamageTab({battle, ctx, mut, toast}) {
                   const c = ctx.cond(t.side, t.idx);
                   return (
                     <th class={cx(t.active ? 'col-active' : 'col-bench')}>
+                      <Sprite id={t.species} size={40} />
                       <div class="th-name">{speciesName(t.species)}</div>
                       <div class="th-sub">{t.active ? '場' : '控え'}・{Math.round(c.hp)}%</div>
                       {t.notes.length > 0 && <div class="th-note">{t.notes.join('・')}</div>}
@@ -98,6 +100,7 @@ export function DamageTab({battle, ctx, mut, toast}) {
                           <button class="cell" onClick={() => setDetail({dir, atk, def: t.idx, move: m.id, active: t.active})}>
                             {r.immune ? <span class="pc">無効</span> : <>
                               <span class="pc num">{fmtPct(r.minPct)}–{fmtPct(r.maxPct)}%</span>
+                              <DmgBar r={r} hp={ctx.cond(t.side, t.idx).hp ?? 100} />
                               <span class="ko">{r.koText}</span>
                             </>}
                           </button>
