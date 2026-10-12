@@ -226,6 +226,8 @@ export function addAct(b, input, usage) {
     if (a.hpAfter != null && tgt) setHP(b, tgt.side, tgt.mon, a.hpAfter);
     // 被弾時の特性は「判明している特性」だけで反映する (使用率からの推測で能力ランクを動かさない)
     if (!failed && tgt && tgt.side !== side) onHitEffects(b, {side, mon, move: a.move, crit: a.flags.crit, tgt, before: hpBeforeHit, defItem}, defaultAbilityResolver, log);
+    // 攻撃した側のHPの変化 (いのちのたま・反動・ゴツゴツメット・さめはだ・吸収)
+    if (!failed && tgt && tgt.side !== side && input.selfFx?.length) attackerHpEffects(b, {side, mon, tgt, move: a.move, fx: input.selfFx, hpAfter: input.atkHpAfter, tgtBefore: hpBeforeHit, a}, log);
     // 追加効果・変化技で相手が状態異常になった
     if (!failed && tgt && input.inflict && !condOf(b, tgt.side, tgt.mon).fainted) {
       const tc2 = condOf(b, tgt.side, tgt.mon);
@@ -763,6 +765,9 @@ function stepHp(step, h, max) {
     case 'dryskin': return step.rain ? Math.min(max, h + dmg(max / 8)) : h - dmg(max / 8);
     case 'leechheal': return Math.min(max, h + (step.amount || 0));
     case 'hazard': return h - dmg(max * step.frac);
+    case 'frac': return h - dmg(max * step.f);
+    case 'fixed': return Math.min(max, h + step.amount);
+    case 'halfround': return h - Math.round(max / 2);
     default: return h;
   }
 }
@@ -810,4 +815,72 @@ function stepOf(b, side, mon, key) {
     else return null; // 吸い取った量が分からない
   }
   return st;
+}
+
+// ---- 攻撃した側のHPの変化 ----
+// 反動 (与えたダメージ × 割合 の四捨五入、最低1) / 吸収 (与えたダメージ × 割合 の四捨五入)
+export const RECOIL = {bravebird: [33, 100], doubleedge: [33, 100], flareblitz: [33, 100], headsmash: [1, 2], lightofruin: [1, 2], volttackle: [33, 100], wavecrash: [33, 100], wildcharge: [1, 4], woodhammer: [33, 100], takedown: [1, 4], submission: [1, 4], headcharge: [1, 4]};
+export const HALF_RECOIL = new Set(['steelbeam', 'mindblown', 'chloroblast']);
+export const DRAIN = {bitterblade: [1, 2], drainpunch: [1, 2], drainingkiss: [3, 4], gigadrain: [1, 2], hornleech: [1, 2], leechlife: [1, 2], matchagotcha: [1, 2], paraboliccharge: [1, 2]};
+export const SELF_FX_JA = {lifeorb: 'いのちのたまの反動', recoil: '反動ダメージ', drain: '吸収で回復', helmet: 'ゴツゴツメット', roughskin: 'さめはだ・てつのトゲ', shellbell: 'かいがらのすず'};
+
+function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a}, log) {
+  const ab = condOf(b, side, mon), abd = buildOf(b, side, mon);
+  const tb = buildOf(b, tgt.side, tgt.mon), tc = condOf(b, tgt.side, tgt.mon);
+  // 判明したこと
+  if (side === 'opp' && fx.includes('lifeorb') && !abd.item) abd.item = 'lifeorb';
+  if (tgt.side === 'opp' && fx.includes('helmet') && !tb.item) tb.item = 'rockyhelmet';
+  if (tgt.side === 'opp' && fx.includes('roughskin') && !tb.ability) { const s0 = dex.species[tb.species]?.ab || []; tb.ability = s0.includes('roughskin') ? 'roughskin' : s0.includes('ironbarbs') ? 'ironbarbs' : tb.ability; }
+  // 与えたダメージの実数 (受けたのが自分なら正確に分かる)
+  const dealtReal = tgt.side === 'me' && tgtBefore != null ? Math.round(((tgtBefore - tc.hp) / 100) * maxHPOf(b, 'me', tgt.mon)) : null;
+  const steps = [];
+  if (fx.includes('drain') && DRAIN[move]) steps.push(dealtReal != null ? {k: 'fixed', amount: Math.round((dealtReal * DRAIN[move][0]) / DRAIN[move][1])} : null);
+  if (fx.includes('helmet')) steps.push({k: 'frac', f: 1 / 6});
+  if (fx.includes('roughskin')) steps.push({k: 'frac', f: 1 / 8});
+  if (fx.includes('recoil')) steps.push(HALF_RECOIL.has(move) ? {k: 'halfround'} : RECOIL[move] && dealtReal != null ? {k: 'fixed', amount: -Math.max(1, Math.round((dealtReal * RECOIL[move][0]) / RECOIL[move][1]))} : null);
+  if (fx.includes('lifeorb')) steps.push({k: 'frac', f: 1 / 10});
+  const before = ab.hp;
+  if (hpAfter != null) {
+    // 相手が攻撃した: 表示の変化から最大HPを絞り込む
+    if (side === 'opp' && steps.every(Boolean) && Number.isInteger(before)) { const m = inferHpFromDisplay(b, mon, before, Math.round(hpAfter), steps); if (m) log.push(m); }
+    // 自分が攻撃した: 反動・吸収の実数から、相手に与えたダメージの実数 → 相手の最大HPを絞り込む
+    // (満タンまで回復した・倒れた場合は量が頭打ちになるので使わない)
+    if (side === 'me' && tgt.side === 'opp' && hpAfter < 100 - 1e-9 && hpAfter > 0 && (fx.includes('recoil') || fx.includes('drain')) && Number.isInteger(tgtBefore) && Number.isInteger(tc.hp)) {
+      const max = maxHPOf(b, 'me', mon);
+      let change = Math.round((hpAfter / 100) * max) - Math.round((before / 100) * max);
+      if (fx.includes('lifeorb')) change += Math.max(1, Math.floor(max / 10));
+      if (fx.includes('helmet')) change += Math.max(1, Math.floor(max / 6));
+      if (fx.includes('roughskin')) change += Math.max(1, Math.floor(max / 8));
+      const ratio = fx.includes('recoil') ? RECOIL[move] : DRAIN[move];
+      const amount = Math.abs(change);
+      if (ratio && amount > 0 && !(fx.includes('recoil') && fx.includes('drain'))) {
+        const o = b.opp[tgt.mon];
+        const sid = currentSpecies(o, tc);
+        const d0 = tgtBefore, d1 = tc.hp;
+        const okSP = sp => {
+          const tmax = statsOf(sid, [sp, 0, 0, 0, 0, 0], 'Serious')[0];
+          const lo = d0 === 100 ? tmax : d0 === 1 ? 1 : Math.ceil((d0 * tmax) / 100);
+          const hi = d0 === 100 ? tmax : Math.min(tmax, Math.ceil(((d0 + 1) * tmax) / 100) - 1);
+          for (let h = lo; h <= hi; h++) for (let dm = 1; dm <= h; dm++) {
+            const r = Math.round((dm * ratio[0]) / ratio[1]);
+            if ((fx.includes('recoil') ? Math.max(1, r) : r) !== amount) continue;
+            if (dispPct(h - dm, tmax) === d1) return true;
+          }
+          return false;
+        };
+        let n = 0;
+        for (let sp = 0; sp <= 32; sp++) if (okSP(sp)) n++;
+        if (n > 0 && n < 33) log.push(`相手の${speciesName(o.species)}: ${SELF_FX_JA[fx.includes('recoil') ? 'recoil' : 'drain']}の量 ${amount} から ${applyHpConstraint(o, okSP)}`);
+      }
+    }
+    setHP(b, side, mon, hpAfter);
+  } else {
+    // HPを入れなかった: 分かる範囲で計算する (相手の最大HPは見込み)
+    const max = maxHPOf(b, side, mon);
+    let h = Math.round((before / 100) * max);
+    for (const st of steps) if (st) h = Math.max(0, stepHp(st, h, max));
+    setHP(b, side, mon, (h / max) * 100);
+  }
+  a.selfFx = fx;
+  log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(abd.species)}: ${fx.map(k => SELF_FX_JA[k]).join('・')}`);
 }

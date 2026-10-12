@@ -920,3 +920,24 @@ test('HP表示 (切り捨て) から最大HPを絞り込む: ステルスロッ�
   assert.equal(dispPct(1, 300), 1);
   assert.equal(dispPct(299, 300), 99);
 });
+
+test('いのちのたま・反動: 攻撃した側のHPと、持ち物の判明・最大HPの絞り込み', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 2); sendOut(b, 'opp', 0, 4); // ガオガエン vs ミロカロス
+  // 相手のミロカロスが いのちのたま で攻撃 → 表示 100% → 90% (たま 1/10)
+  const log = addAct(b, {side: 'opp', type: 'move', move: 'scald', hpAfter: 60, exact: true, selfFx: ['lifeorb'], atkHpAfter: 90}, usage);
+  assert.equal(b.opp[4].item, 'lifeorb', log.join('/'));
+  assert.equal(b.state.mons.opp[4].hp, 90);
+  // 自分のガオガエンの フレアドライブ: 反動の実数から相手に与えたダメージ → 相手の最大HP
+  const b2 = makeBattle();
+  b2.my[2].moves.push('flareblitz');
+  sendOut(b2, 'me', 0, 2); sendOut(b2, 'opp', 0, 4);
+  const max = statsOf('incineroar', b2.my[2].sp, b2.my[2].nature)[0];
+  const trueMax = statsOf('milotic', [20, 0, 0, 0, 0, 0], 'Serious')[0];
+  const dealt = trueMax - Math.ceil(trueMax * 0.4); // 相手を 40% 台に
+  const shown = Math.floor((100 * (trueMax - dealt)) / trueMax);
+  const recoil = Math.max(1, Math.round((dealt * 33) / 100));
+  addAct(b2, {side: 'me', type: 'move', move: 'flareblitz', hpAfter: shown, selfFx: ['recoil'], atkHpAfter: ((max - recoil) / max) * 100}, usage);
+  const m = b2.opp[4].statOk?.hp;
+  assert.ok(!m || m[20] === '1', '本当のSP20が候補に残る');
+});

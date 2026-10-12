@@ -234,6 +234,7 @@ function runOne(n) {
     const before = tgtIdx != null ? T[foe].mons[tgtIdx].hp : null;
     const wasTaint = T.taint;
     let end = start + 1;
+    const selfFx = []; let selfHp = null, selfOdd = false;
     const flags = {}; let hits = 0, lastHp = null, defItem = '', endured = false, weird = called, mega = false, sub = false, healed = false;
     const foeTag = `${foe === 'me' ? 'p1' : 'p2'}a: `;
     for (; end < lines.length; end++) {
@@ -259,6 +260,13 @@ function runOne(n) {
       }
       if (q[1] === '-heal' && onFoe) { if (/Sitrus Berry/.test(l)) lastHp = hpOf(q[3]); else healed = true; }
       if (q[1] === '-hitcount') hits = Number(q[3]) || hits;
+      // 攻撃した側のHPの変化
+      const onSelf = q[2]?.startsWith(`${sid}a: `);
+      if (onSelf && q[1] === '-damage') {
+        const fx = /item: Life Orb/.test(l) ? 'lifeorb' : /\[from\] Recoil/.test(l) ? 'recoil' : /item: Rocky Helmet/.test(l) ? 'helmet' : /ability: (Rough Skin|Iron Barbs)/.test(l) ? 'roughskin' : null;
+        if (fx) { selfFx.push(fx); selfHp = hpOf(q[3]); } else if (l.includes('[from]')) selfOdd = true;
+      }
+      if (onSelf && q[1] === '-heal') { if (/\[from\] drain/.test(l)) { selfFx.push('drain'); selfHp = hpOf(q[3]); } else selfOdd = true; }
       apply(l);
     }
     if (!dex.moves[moveId]) return end; // アプリに無い技 (わるあがき等)
@@ -268,6 +276,7 @@ function runOne(n) {
     const input = {side, mon, type: 'move', move: moveId, crit: !!flags.crit, miss: !!flags.miss, protect: !!flags.protect, sameTurn: true,
       hits: hits > 1 ? hits : undefined, defItem: defItem ? {item: defItem} : null, endured,
       exact: foe === 'me', hpAfter: visible ? seen(foe, lastHp) : null};
+    if (visible && selfFx.length && !selfOdd && selfHp != null && selfHp > 0) { input.selfFx = [...new Set(selfFx)]; input.atkHpAfter = seen(side, selfHp); stats.selfFx = (stats.selfFx || 0) + 1; }
     const oi = side === 'opp' ? mon : tgtIdx;
     const prev = oi != null ? JSON.stringify(b.opp[oi].statOk || null) : null;
     stats.acts++;
@@ -378,7 +387,7 @@ console.log(`素早さ推定が本当の値を外した: ${stats.speedUnsound.le
 console.log(`ターン終了時の処理: HPが合った ${stats.resOk} / ずれた ${stats.resHp.length}`); console.log(stats.resHp.slice(0, 12).join('\n'));
 console.log('ターン終了時の処理で候補に出なかったもの:'); console.log(top(stats.resMissing, 15));
 console.log('確実として出したのに起きなかったもの:'); console.log(top(stats.resFalse, 15));
-console.log(`HPの絞り込みが本当の値を外した: ${stats.hpUnsound.length} / 絞り込んだ相手 ${stats.hpNarrowed}`); console.log(stats.hpUnsound.slice(0, 10).join('\n'));
+console.log(`HPの絞り込みが本当の値を外した: ${stats.hpUnsound.length} / 絞り込んだ相手 ${stats.hpNarrowed} / 攻撃側のHP変化を入れた行動 ${stats.selfFx || 0}`); console.log(stats.hpUnsound.slice(0, 10).join('\n'));
 console.log(`入れ直しの不具合: ${stats.replayBad.length}`); console.log(stats.replayBad.slice(0, 8).join('\n'));
 console.log('自動反映のずれ (多い順):'); console.log(top(stats.mismatch));
 process.exit(stats.crashes.length ? 1 : 0);

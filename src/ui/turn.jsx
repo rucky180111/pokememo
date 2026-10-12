@@ -5,6 +5,7 @@ import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engine/calc.js';
 import {megaTarget, buildOf, condOf, other, PIVOT_MOVES} from '../engine/battle.js';
+import {RECOIL, HALF_RECOIL, DRAIN, SELF_FX_JA} from '../engine/flow.js';
 import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn, replay, expiryCandidates, hazardDamage, dispOf} from '../engine/flow.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, cx} from './common.jsx';
 
@@ -358,7 +359,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
     }
     return {type: i.type || null, move: i.move || '', to: i.to ?? null, target: t, mega: !!i.mega, megaForme: i.megaForme || '',
       outcome: i.cant ? 'cant' : i.miss ? 'miss' : i.protect ? 'protect' : 'hit', hp, crit: !!i.crit, hits: i.hits || 0,
-      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, healedBy: i.healedBy || [], hpMode: 'left', secFx: i.secFx || [], inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
+      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, healedBy: i.healedBy || [], hpMode: 'left', secFx: i.secFx || [], selfFx: i.selfFx || [], atkHp: '', inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
   };
   const [f, setF] = useState(fromInit);
   const [pick, setPick] = useState(null);
@@ -411,6 +412,8 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
       atkItem: ff.atkItem ? {item: ff.atkItem, consumed: consumable(ff.atkItem)} : null,
       secFx: h && ff.secFx?.length ? ff.secFx : undefined,
       hpUnknown: h && ff.hpUnknown && hpAfter == null ? true : undefined,
+      selfFx: h && ff.selfFx?.length ? ff.selfFx : undefined,
+      atkHpAfter: h && ff.selfFx?.length && ff.atkHp !== '' && ff.atkHp != null ? (side === 'me' ? (Number(ff.atkHp) / maxHPOf(battle, mon)) * 100 : Number(ff.atkHp)) : undefined,
       target: double ? tgt : null, hpAfter, healedBy: h && hpAfter != null && ff.healedBy.length ? ff.healedBy : undefined, inflict: h && ff.inflict ? ff.inflict : '',
       to: m2 && PIVOT_MOVES.has(ff.move) && h && ff.to != null ? ff.to : null,
     });
@@ -446,9 +449,33 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
     return out;
   };
   // 記録する前に、追加効果の確認が要るならその画面へ
+  // 攻撃した側のHPが変わりうるもの (いのちのたま・反動・吸収・ゴツゴツメット・さめはだ)
+  const selfList = ff => {
+    const m = dex.moves[ff.move];
+    if (!m || m.c === 'Z' || ff.outcome !== 'hit' || !tgt || tgt.side === side) return [];
+    const out = [];
+    const ab = buildOf(battle, side, mon), ac = condOf(battle, side, mon);
+    const tb = buildOf(battle, tgt.side, tgt.mon), tcd = condOf(battle, tgt.side, tgt.mon);
+    const rates = s2 => (s2 === 'opp' ? Object.fromEntries(ctx.views[s2 === side ? mon : tgt.mon]?.items || []) : {});
+    const aItem = ac.itemGone ? 'none' : ab.item;
+    if (aItem === 'lifeorb') out.push({k: 'lifeorb', sure: true});
+    else if (side === 'opp' && !ab.item && (rates('opp').lifeorb || 0) > 0) out.push({k: 'lifeorb'});
+    if (RECOIL[ff.move] || HALF_RECOIL.has(ff.move)) out.push({k: 'recoil', sure: true});
+    if (DRAIN[ff.move]) out.push({k: 'drain', sure: true});
+    if (m.fl?.includes('contact')) {
+      const tItem = tcd.itemGone ? 'none' : tb.item;
+      if (tItem === 'rockyhelmet') out.push({k: 'helmet', sure: true});
+      else if (tgt.side === 'opp' && !tb.item) { const r = Object.fromEntries(ctx.views[tgt.mon]?.items || []); if ((r.rockyhelmet || 0) > 0) out.push({k: 'helmet'}); }
+      const tAbs = tgt.side === 'me' ? [tb.ability] : tb.ability ? [tb.ability] : dex.species[tb.species]?.ab || [];
+      if (tAbs.some(x => x === 'roughskin' || x === 'ironbarbs')) out.push({k: 'roughskin', sure: tAbs.length === 1});
+    }
+    return out;
+  };
+  // 記録する前に、追加効果・攻撃した側のHPの確認が要るならその画面へ
   const finish = (patch = {}) => {
     const ff = {...f, ...patch};
-    if (wizard && secList(ff).length && !patch.secDone) { set(patch); goStep('sec'); return; }
+    if (wizard && secList(ff).length && !ff.secDone) { set(patch); goStep('sec'); return; }
+    if (wizard && selfList(ff).length && !ff.selfDone) { set({...patch, selfFx: selfList(ff).filter(x => x.sure).map(x => x.k)}); goStep('self'); return; }
     submit(patch);
   };
   const chooseOutcome = o => {
@@ -569,8 +596,8 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
           <div class="sec-ask">
             <div class="wz-sub">追加効果で「{list[0].label}」は発生しましたか? <small class="muted">({list[0].ch}%)</small></div>
             <div class="outcome-grid two">
-              <button class="oc-btn" onClick={() => submit({secFx: [list[0].e], secDone: true})}>発生した</button>
-              <button class="oc-btn" onClick={() => submit({secFx: [], secDone: true})}>発生しなかった</button>
+              <button class="oc-btn" onClick={() => finish({secFx: [list[0].e], secDone: true})}>発生した</button>
+              <button class="oc-btn" onClick={() => finish({secFx: [], secDone: true})}>発生しなかった</button>
             </div>
           </div>
         );
@@ -586,8 +613,32 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
               </div>
             ))}
             <div class="btnrow">
-              <button class="btn grow" onClick={() => submit({secFx: [], secDone: true})}>発生しなかった</button>
-              <button class="btn primary grow" disabled={!f.secFx.length} onClick={() => submit({secDone: true})}>発生した効果で記録</button>
+              <button class="btn grow" onClick={() => finish({secFx: [], secDone: true})}>発生しなかった</button>
+              <button class="btn primary grow" disabled={!f.secFx.length} onClick={() => finish({secDone: true})}>発生した効果で次へ</button>
+            </div>
+          </div>
+        );
+      })()}
+      {wizard && step === 'self' && (() => {
+        const list = selfList(f);
+        const amax = side === 'me' ? maxHPOf(battle, mon) : null;
+        const now = condOf(battle, side, mon).hp;
+        return (
+          <div class="sec-ask">
+            <div class="wz-sub">攻撃した{SIDE_JA[side]}の{monName(battle, side, mon)}のHPは変わりましたか?</div>
+            <div class="chips">
+              {list.map(x => { const on = f.selfFx.includes(x.k); return <button class={cx('chip', on && 'on')} onClick={() => set({selfFx: on ? f.selfFx.filter(y => y !== x.k) : [...f.selfFx, x.k]})}>{SELF_FX_JA[x.k]}{x.sure ? '' : ' (起きていたら)'}</button>; })}
+            </div>
+            {f.selfFx.length > 0 && (
+              <label class="af-hp">
+                <span>そのあとの{monName(battle, side, mon)}のHP {amax ? '(実数値)' : '(%)'} <small class="muted">入れると相手の最大HPなどを絞り込めます</small></span>
+                <input class="input num" type="number" inputMode="decimal" min={0} max={amax || 100} value={f.atkHp} placeholder={amax ? String(Math.round((now * amax) / 100)) : String(dispOf(now))} onInput={e => set({atkHp: e.currentTarget.value})} />
+                <span class="muted">{amax ? `/ ${amax}` : '%'}</span>
+              </label>
+            )}
+            <div class="btnrow">
+              <button class="btn grow" onClick={() => submit({selfFx: [], selfDone: true})}>変わらなかった</button>
+              <button class="btn primary grow" disabled={!f.selfFx.length} onClick={() => submit({selfDone: true})}>記録する</button>
             </div>
           </div>
         );
@@ -601,7 +652,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
         <div class="btnrow">
           {onCancel && <button class="btn" onClick={onCancel}>やめる</button>}
           {onDelete && <button class="btn danger" onClick={onDelete}>削除</button>}
-          <button class="btn primary grow" disabled={!ready} onClick={() => (wizard ? finish() : submit())}>{wizard && secList(f).length ? '次へ' : submitLabel}</button>
+          <button class="btn primary grow" disabled={!ready} onClick={() => (wizard ? finish() : submit())}>{wizard && (secList(f).length || selfList(f).length) ? '次へ' : submitLabel}</button>
         </div>
       )}
       {pick === 'move' && <Picker kind="moves" title="使った技" onClose={() => setPick(null)} prefer={dex.learn[build.species]} preferLabel="覚えない技も表示"
