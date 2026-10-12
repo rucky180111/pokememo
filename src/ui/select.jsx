@@ -5,7 +5,7 @@ import {newOpp, sendOut, activeCount, pickCount} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {finalSpeed, newCond} from '../engine/calc.js';
 import {oppCond, leadRate} from '../engine/assume.js';
-import {oppSpeciesStats, similarTeams, leadsOf} from '../engine/predict.js';
+import {oppSpeciesStats, similarTeams, leadsOf, matchupMatrix} from '../engine/predict.js';
 import {useApp, Picker, Seg, TypeChip, cx, rate, fmtPct} from './common.jsx';
 import {MonEditor, FORMAT_OPTS} from './teams.jsx';
 import {OppSheet, dmgClass} from './battle.jsx';
@@ -23,6 +23,10 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
     give: battle.my.map((_, i) => attackTable(ctx, 'me', i)),
     take: battle.opp.map((_, i) => attackTable(ctx, 'opp', i)),
   }), [ctx]);
+  // 自分の記録: 相手のポケモンごとの 選出率・勝率・初手率 と、自分×相手 の 選出率・勝率
+  const colStats = useMemo(() => battle.opp.map(o => oppSpeciesStats(others, o.species, {format: battle.format})), [others, battle.opp, battle.format]);
+  const mx = useMemo(() => matchupMatrix(others, battle.my.map(m => m.species), battle.opp.map(o => o.species), {format: battle.format}), [others, battle.my, battle.opp, battle.format]);
+  const pr = (a, b) => (b ? rate(a / b) : '-');
   const sim = useMemo(() => similarTeams(others, battle.opp.map(o => o.species), {format: battle.format}), [others, battle.opp, battle.format]);
 
   // 相手の初手予想: 使用率の初手率を6体で正規化し、自分の記録があれば併記
@@ -110,12 +114,15 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
         <h3>自分の選出 <span class="muted">{battle.pick.me.length}/{nPick}・タップした順。先頭{nLead}体が初手</span></h3>
       </div>
       {battle.opp.length > 0 && battle.my.length > 0 && (
-        <p class="legend"><span class="lg v-win">有利</span><span class="lg v-lose">不利</span><span class="muted">各マス: 上 = 自分の最大打点 / 下 = 相手の最大打点。「先」は素早さで上を取れる相手。相手は推定型です。</span></p>
+        <p class="legend"><span class="lg v-win">有利</span><span class="lg v-lose">不利</span><span class="muted">各マス: 上 = 自分の最大打点 / 下 = 相手の最大打点。「先」は素早さで上を取れる相手。相手は推定型です。表の上の3段と、各マスの「選・勝」は自分の過去の対戦記録 (同じルール) から: 選 = その相手がいた対戦で自分がそのポケモンを選出した率、勝 = 選出したときの勝率。</span></p>
       )}
       <div class="scroll-x">
         <table class="sel-table">
           <thead>
             <tr><th></th>{battle.opp.map(o => <th>{speciesName(o.species)}</th>)}</tr>
+            <tr class="rec"><th class="rec-l">選出率</th>{colStats.map(c => <td class={cx('num', c.seen && c.picked / c.seen >= 0.6 && 'hi')} title={`見せ合い ${c.seen}回中 ${c.picked}回選出`}>{pr(c.picked, c.seen)}</td>)}</tr>
+            <tr class="rec"><th class="rec-l">勝率</th>{colStats.map(c => <td class="num" title={`相手が選出した対戦 ${c.pickedWin}勝${c.pickedLose}敗`}>{pr(c.pickedWin, c.pickedWin + c.pickedLose)}</td>)}</tr>
+            <tr class="rec"><th class="rec-l">初手率</th>{colStats.map(c => <td class={cx('num', c.picked && c.lead / c.picked >= 0.6 && 'hi')} title={`選出 ${c.picked}回中 初手 ${c.lead}回`}>{pr(c.lead, c.picked)}</td>)}</tr>
           </thead>
           <tbody>
             {battle.my.map((m, mi) => {
@@ -129,14 +136,21 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
                       <span class="no">{order >= 0 ? order + 1 : ''}</span>
                       <span class="nm">{speciesName(m.species)}</span>
                       {battle.opp.length > 0 && <span class="wl"><b class="w">有利{wins}</b> <b class="l">不利{loses}</b></span>}
+                      {mx.row[m.species]?.n > 0 && <span class="rec-s">選出{pr(mx.row[m.species].picked, mx.row[m.species].n)} 勝{pr(mx.row[m.species].win, mx.row[m.species].win + mx.row[m.species].lose)}</span>}
                     </button>
                   </th>
-                  {cells.map(c => (
-                    <td class={`v-${verdict(c)}`}>
-                      <span class={cx('mx', dmgClass(c.g))}>{c.g ? (c.g.immune ? '無効' : `${fmtPct(c.g.maxPct)}%`) : '—'}{c.first === 'me' && <i>先</i>}</span>
-                      <span class={cx('mx', dmgClass(c.t))}>{c.t ? (c.t.immune ? '無効' : `${fmtPct(c.t.maxPct)}%`) : '—'}</span>
-                    </td>
-                  ))}
+                  {cells.map((c, oi) => {
+                    const r = mx.cell[m.species]?.[battle.opp[oi].species];
+                    return (
+                      <td class={`v-${verdict(c)}`}>
+                        <span class={cx('mx', dmgClass(c.g))}>{c.g ? (c.g.immune ? '無効' : `${fmtPct(c.g.maxPct)}%`) : '—'}{c.first === 'me' && <i>先</i>}</span>
+                        <span class={cx('mx', dmgClass(c.t))}>{c.t ? (c.t.immune ? '無効' : `${fmtPct(c.t.maxPct)}%`) : '—'}</span>
+                        {r?.n > 0 && <span class="rec-c" title={`この相手がいた ${r.n}戦: 選出 ${r.picked}回 (${r.win}勝${r.lose}敗)`}>
+                          <span>選{pr(r.picked, r.n)}</span><span class={cx(r.win + r.lose > 0 && (r.win / (r.win + r.lose) >= 0.6 ? 'good' : r.win / (r.win + r.lose) <= 0.4 ? 'bad' : ''))}>勝{pr(r.win, r.win + r.lose)}</span>
+                        </span>}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}

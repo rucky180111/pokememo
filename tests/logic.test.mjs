@@ -793,3 +793,14 @@ test('メガシンカは印をつけるまで通常の姿で計算し、持ち�
   addEvent(b, {kind: 'mega', side: 'opp', mon: 2, forme: 'gengarmega'}, usage);
   assert.equal(b.state.mons.opp[2].forme, 'gengarmega');
 });
+
+import {matchupMatrix} from '../src/engine/predict.js';
+test('選出表の記録: 自分×相手の選出率と勝率', () => {
+  const mk = (pick, result, oppSp) => { const b = makeBattle(); b.opp = oppSp.map(s => newOpp(s)); b.pick.me = pick; b.result = result; return b; };
+  const bs = [mk([0, 1, 2], 'win', ['salamence', 'gengar']), mk([0, 3, 4], 'lose', ['salamence']), mk([1, 2, 3], 'win', ['salamence', 'gengar'])];
+  const r = matchupMatrix(bs, ['garchomp', 'charizard'], ['salamence', 'gengar'], {format: 'single'});
+  assert.deepEqual(r.cell.garchomp.salamence, {n: 3, picked: 2, win: 1, lose: 1});
+  assert.deepEqual(r.cell.garchomp.gengar, {n: 2, picked: 1, win: 1, lose: 0});
+  assert.deepEqual(r.cell.charizard.gengar, {n: 2, picked: 2, win: 2, lose: 0});
+  assert.deepEqual(r.row.charizard, {n: 3, picked: 2, win: 2, lose: 0});
+});

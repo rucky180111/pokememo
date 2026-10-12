@@ -553,3 +553,13 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .tf.cat.on { opacity: 1; background: var(--accent-soft); border-color: var(--accent); }
 
 .mv-box { white-space: normal; word-break: break-all; }
+
+/* 選出表: 自分の記録 */
+.sel-table tr.rec td { text-align: center; font-size: 11px; font-weight: 700; background: var(--surface2); border-radius: 999px; padding: 2px 0; }
+.sel-table tr.rec td.hi { background: var(--accent); color: var(--accent-text); }
+.sel-table .rec-l { font-size: 10.5px; font-weight: 600; text-align: right; padding-right: 4px; white-space: nowrap; position: sticky; left: 0; background: var(--bg); }
+.sel-table .rec-c { display: flex; justify-content: space-between; gap: 2px; font-size: 9.5px; color: var(--muted); margin-top: 1px; padding: 0 2px; }
+.sel-table .rec-c .good { color: var(--ok); font-weight: 700; } .sel-table .rec-c .bad { color: var(--bad); font-weight: 700; }
+.sel-mon .rec-s { display: block; font-size: 10px; color: var(--muted); font-weight: 500; }
+.sel-mon .rec-s { grid-column: 1 / 3; white-space: nowrap; }
+@media (min-width: 700px) { .sel-mon { width: 128px; } .sel-mon .nm { font-size: 13.5px; } }

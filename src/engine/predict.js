@@ -139,3 +139,27 @@ export function oppRanking(battles, filter = {}) {
   }
   return Object.values(map).sort((a, b) => b.seen - a.seen);
 }
+
+/**
+ * 選出画面の表用: 自分の各ポケモン × 相手の各ポケモン の過去の記録。
+ * 相手の見せ合いに oppSpecies がいて、自分のパーティに mySpecies がいた対戦について
+ *   n = 対戦数, picked = 自分が mySpecies を選出した数, win/lose = 選出したときの勝敗
+ * row[mySpecies] = その種族の全体の {n, picked, win, lose}
+ */
+export function matchupMatrix(battles, mySpeciesList, oppSpeciesList, filter = {}) {
+  const mk = () => ({n: 0, picked: 0, win: 0, lose: 0});
+  const cell = {}, row = {};
+  for (const m of mySpeciesList) { cell[m] = {}; row[m] = mk(); for (const o of oppSpeciesList) cell[m][o] = mk(); }
+  for (const b of realBattles(battles, filter)) {
+    const oppHere = new Set(b.opp.map(o => o.species));
+    b.my.forEach((bd, i) => {
+      const m = bd?.species;
+      if (!row[m]) return;
+      const picked = (b.pick?.me || []).includes(i);
+      const add = e => { e.n++; if (picked) { e.picked++; if (b.result === 'win') e.win++; if (b.result === 'lose') e.lose++; } };
+      add(row[m]);
+      for (const o of oppSpeciesList) if (oppHere.has(o)) add(cell[m][o]);
+    });
+  }
+  return {cell, row};
+}
