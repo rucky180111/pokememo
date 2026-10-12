@@ -99,7 +99,7 @@ function choose(battle, sid) {
 const WEATHER = {RainDance: 'Rain', SunnyDay: 'Sun', Sandstorm: 'Sand', Snowscape: 'Snow', Snow: 'Snow', none: ''};
 const SIDEKEY = {reflect: 'reflect', lightscreen: 'lightScreen', auroraveil: 'auroraVeil', tailwind: 'tailwind', stealthrock: 'sr'};
 const DEBUG = process.env.DEBUG ? process.env.DEBUG.split(':').map(Number) : null;
-const stats = {resMissing: {}, resFalse: {}, resHp: [], resOk: 0, replayBad: [], battles: 0, turns: 0, acts: 0, infer: 0, unsound: [], unexplained: [], speedUnsound: [], crashes: [], mismatch: {}, checked: {}, tableCalls: 0};
+const stats = {hpUnsound: [], hpNarrowed: 0, resMissing: {}, resFalse: {}, resHp: [], resOk: 0, replayBad: [], battles: 0, turns: 0, acts: 0, infer: 0, unsound: [], unexplained: [], speedUnsound: [], crashes: [], mismatch: {}, checked: {}, tableCalls: 0};
 const bump = (o, k) => { o[k] = (o[k] || 0) + 1; };
 
 function runOne(n) {
@@ -123,7 +123,7 @@ function runOne(n) {
   const T = {me: {active: null, mons: t1.map(mk), megaUsed: false, flags: {}}, opp: {active: null, mons: t2.map(mk), megaUsed: false, flags: {}}, field: {weather: '', terrain: '', trickRoom: false, gravity: false}, taint: false, cause: {}, cur: ''};
   const hpOf = str => { if (/fnt/.test(str)) return 0; const [a, m] = str.split(' ')[0].split('/').map(Number); return (a / m) * 100; };
   // 相手のHPは割合 (整数%) でしか見えない
-  const seen = (side, pct) => (side === 'opp' ? (pct <= 0 ? 0 : Math.max(1, Math.round(pct))) : pct);
+  const seen = (side, pct) => (side === 'opp' ? (pct <= 0 ? 0 : Math.max(1, Math.floor(pct + 1e-9))) : pct);
 
   function sync(report) {
     // まず両者の繰り出しをアプリに反映 (登場時の特性はアプリに任せる) → そのあと実際の盤面と比べる
@@ -317,7 +317,9 @@ function runOne(n) {
           if (!pick.includes(c)) pick.push(c);
         }
         for (const c of cands) if (!firstTurn && c.checked && !T.lateIn?.has(`${c.side}${c.mon}`) && !resSeen.some(r => r.side === c.side && r.mon === c.mon && r.key === c.key)) { bump(stats.resFalse, `${c.key} (${nm(c.side, c.mon)})`); if (process.env.RF) console.log('RF', c.key, nm(c.side, c.mon), `対戦${n} T${battle.turn}`, b.state.mons[c.side][c.mon].hp, T[c.side].mons[c.mon].hp); }
-        try { finishTurn(b, usage, {residual: pick, noOrder}); } catch (e) { stats.crashes.push(`finishTurn 対戦${n}: ${e.stack.split('\n').slice(0, 3).join(' | ')}`); }
+        const finalHp = {};
+        for (const r of firstOf.values()) if (r.side === 'opp') { const last = resSeen.filter(x => x.side === r.side && x.mon === r.mon).pop(); finalHp[`opp${r.mon}`] = seen('opp', last.hp); }
+        try { finishTurn(b, usage, {residual: pick, noOrder, finalHp}); } catch (e) { stats.crashes.push(`finishTurn 対戦${n}: ${e.stack.split('\n').slice(0, 3).join(' | ')}`); }
         for (const r of resSeen) {
           const last = resSeen.filter(x => x.side === r.side && x.mon === r.mon).pop();
           if (last !== r) continue;
@@ -336,6 +338,8 @@ function runOne(n) {
           const scarf = real.item === 'choicescarf' && !b.opp[oi].speOk.merged;
           if ((scarf ? k.scarf : k.plain)[c] !== '1') { const lt = b.turns[b.turns.length - 1]; stats.speedUnsound.push(`${lt.acts.map(a => `${a.side}:${a.type === 'move' ? a.move : 'sw'}${a.flags?.miss ? '(miss)' : ''}`).join(' → ')} | 自分 ${lt.acts.find(a => a.side === 'me')?.sp} TR:${lt.before?.state.field.trickRoom} | ${dex.species[real.species].j} (${real.nature} S${real.sp[5]} ${dex.items[real.item]?.j || 'なし'}/${dex.abilities[real.ability].j}) [対戦${n} T${battle.turn}]`); b.opp[oi].speOk = null; b.opp[oi].scarfLikely = false; }
         });
+        // HP の絞り込みが本当のSPを外していないか
+        t2.forEach((real, oi) => { const m = b.opp[oi].statOk?.hp; if (!m) return; if (m[real.sp[0]] !== '1') { stats.hpUnsound.push(`${dex.species[real.species].j} SP${real.sp[0]} 候補 ${[...m].map((x, i) => (x === '1' ? i : null)).filter(x => x != null).join(',')} [対戦${n} T${battle.turn}]`); b.opp[oi].statOk.hp = null; } });
         // 画面が使う計算をひととおり呼んで、例外が出ないことを確かめる
         const ctx = boardContext(b, usage);
         for (const side of ['me', 'opp']) for (const idx of b.state.sides[side].active) if (idx != null) { attackTable(ctx, side, idx, {includeStatus: true}); stats.tableCalls++; }
@@ -358,6 +362,7 @@ function runOne(n) {
     const key = x => JSON.stringify({m: x.state.mons, f: x.state.field, s: x.state.sides, o: x.opp.map(o => [o.item, o.ability, o.moves, o.statOk, o.speOk])});
     if (key(r1) !== key(r2)) stats.replayBad.push(`対戦${n}: 2回の入れ直しで結果が違う`);
   } catch (e) { stats.replayBad.push(`対戦${n}: ${e.stack.split('\n').slice(0, 3).join(' | ')}`); }
+  stats.hpNarrowed += b.opp.filter(o => o.statOk?.hp && o.statOk.hp.includes('0')).length;
   stats.battles++;
 }
 
@@ -373,6 +378,7 @@ console.log(`素早さ推定が本当の値を外した: ${stats.speedUnsound.le
 console.log(`ターン終了時の処理: HPが合った ${stats.resOk} / ずれた ${stats.resHp.length}`); console.log(stats.resHp.slice(0, 12).join('\n'));
 console.log('ターン終了時の処理で候補に出なかったもの:'); console.log(top(stats.resMissing, 15));
 console.log('確実として出したのに起きなかったもの:'); console.log(top(stats.resFalse, 15));
+console.log(`HPの絞り込みが本当の値を外した: ${stats.hpUnsound.length} / 絞り込んだ相手 ${stats.hpNarrowed}`); console.log(stats.hpUnsound.slice(0, 10).join('\n'));
 console.log(`入れ直しの不具合: ${stats.replayBad.length}`); console.log(stats.replayBad.slice(0, 8).join('\n'));
 console.log('自動反映のずれ (多い順):'); console.log(top(stats.mismatch));
 process.exit(stats.crashes.length ? 1 : 0);

@@ -71,6 +71,7 @@ export function endTurn(b, usage, opts = {}) {
   // やどりぎのタネで吸い取った量 (自分の回復量) から、相手の最大HP → HPの能力ポイントが分かる
   for (const h of opts.hpFacts || []) {
     const o = b.opp[h.opp];
+    if (o && h.steps) { const m = inferHpFromDisplay(b, h.opp, h.d0, h.d1, h.steps); if (m) log.push(m); continue; }
     if (!o || !(h.drain > 0)) continue;
     const base = dex.species[currentSpecies(o, condOf(b, 'opp', h.opp))]?.bs[0];
     if (base == null) continue;
@@ -302,6 +303,11 @@ export function addEvent(b, ev, usage) {
     } else {
       const d = hazardDamage(b, side, mon);
       const hp = ev.hpAfter ?? (d ? Math.max(0, cond.hp - d.pct) : cond.hp);
+      // 相手: 表示の % (切り捨て) から最大HPを絞り込む
+      if (side === 'opp' && ev.hpAfter != null && d && Number.isInteger(cond.hp)) {
+        const msg = inferHpFromDisplay(b, mon, cond.hp, Math.round(ev.hpAfter), [{k: 'hazard', frac: d.pct / 100}]);
+        if (msg) log.push(msg);
+      }
       setHP(b, side, mon, hp);
       text = `設置技のダメージ → HP ${side === 'me' ? `${Math.round((hp * maxHPOf(b, side, mon)) / 100)}` : `${Math.round(hp)}%`}`;
     }
@@ -343,7 +349,7 @@ export function actLine(b, a) {
   const tags = [a.mega && 'メガ', f.crit && '急所', f.miss && '外れ', f.protect && 'まもる', f.cant && '行動不能'].filter(Boolean).join('・');
   const items = [a.atkItem && `${itemName(a.atkItem)}`, a.defItem && `相手側 ${itemName(a.defItem)} 発動`].filter(Boolean).join('・');
   if (a.type === 'move' && !a.move) return f.cant ? '行動できず' : '(技不明)';
-  return `${moveName(a.move)}${a.hpUnknown ? ' HP?' : ''}${a.inflict ? ` ${STATUS_JA[a.inflict]}` : ''}${a.secFx?.length ? ' 追加効果' : ''}${a.hpAfter != null ? ` ${a.hpAfter > 0 && a.hpAfter < 1 ? 1 : Math.round(a.hpAfter)}%` : ''}${tags ? ` ${tags}` : ''}${items ? ` (${items})` : ''}${a.toSp ? ` → ${speciesName(a.toSp)}` : ''}`;
+  return `${moveName(a.move)}${a.hpUnknown ? ' HP?' : ''}${a.inflict ? ` ${STATUS_JA[a.inflict]}` : ''}${a.secFx?.length ? ' 追加効果' : ''}${a.hpAfter != null ? ` ${dispOf(a.hpAfter)}%` : ''}${tags ? ` ${tags}` : ''}${items ? ` (${items})` : ''}${a.toSp ? ` → ${speciesName(a.toSp)}` : ''}`;
 }
 export {turnNumber, defaultAbilityResolver};
 
@@ -591,13 +597,23 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, finalHp = 
     const seeded = b.state.sides.opp.active.find(i => i != null && condOf(b, 'opp', i)?.seeded);
     if (drain > 0 && fin < max && seeded != null) hpFacts.push({opp: seeded, drain});
   }
+  // 相手: ターン終了時の処理の前後の表示 (%) から最大HPを絞り込む
+  for (const [k, val] of Object.entries(finalHp)) {
+    if (!k.startsWith('opp') || val == null) continue;
+    const mon = Number(k.slice(3));
+    const c = condOf(b, 'opp', mon);
+    const steps = residual.filter(r => r.side === 'opp' && r.mon === mon).map(r => stepOf(b, 'opp', mon, r.key));
+    if (!c || c.fainted || !steps.length || steps.some(x => !x) || !Number.isInteger(c.hp)) continue;
+    hpFacts.push({opp: mon, d0: c.hp, d1: Math.round(val), steps});
+  }
   for (const r of residual) log.push(...addEvent(b, {kind: 'residual', side: r.side, mon: r.mon, key: r.key}, usage));
   // 入力されたターン終了後のHPと計算が合わなければ、入力のほうに合わせる
   for (const [k, val] of Object.entries(finalHp)) {
     if (val == null || !Number.isFinite(val)) continue;
     const side = k.startsWith('me') ? 'me' : 'opp', mon = Number(k.replace(/^(me|opp)/, ''));
     const c = condOf(b, side, mon);
-    if (c && !c.fainted && Math.abs(c.hp - val) > (side === 'me' ? 0.7 : 1)) log.push(...addEvent(b, {kind: 'hp', side, mon, hpAfter: val, note: 'ターン終了後に確認'}, usage));
+    // 相手は表示 (整数%) をそのまま正とする (次の推定で表示の値が要るため)
+    if (c && !c.fainted && (side === 'me' ? Math.abs(c.hp - val) > 0.7 : Math.abs(c.hp - val) > 1e-6)) log.push(...addEvent(b, {kind: 'hp', side, mon, hpAfter: val, note: 'ターン終了後に確認'}, usage));
   }
   log.push(...endTurn(b, usage, {noOrder, resFirst, hpFacts, expiry}));
   return log;
@@ -727,4 +743,71 @@ export function hazardDamage(b, side, mon) {
   if (!frac) return null;
   if (side === 'me') { const max = maxHPOf(b, side, mon); const d = Math.floor(max * frac); return {pct: (d / max) * 100, hp: d, parts}; }
   return {pct: frac * 100, parts};
+}
+
+// ---- 相手のHP表示 (整数%・切り捨て) からHPの実数値を絞り込む ----
+// ゲームの表示は「HP割合の小数点以下切り捨て」。ただし 0% より大きく 1% 未満は 1% と表示される。
+export const dispPct = (hp, max) => (hp <= 0 ? 0 : Math.max(1, Math.floor((100 * hp) / max)));
+export const dispOf = pct => (pct <= 0 ? 0 : pct < 1 ? 1 : Math.floor(pct + 1e-9));
+
+// 最大HP max のとき、1回の処理で HP がどう変わるか (ダメージは切り捨てで最低1、回復も切り捨てで最低1)
+function stepHp(step, h, max) {
+  const dmg = n => Math.max(1, Math.floor(n));
+  switch (step.k) {
+    case 'sand': case 'brn': return h - dmg(max / 16);
+    case 'psn': case 'leechseed': case 'solarpower': return h - dmg(max / 8);
+    case 'tox': return h - Math.max(1, Math.floor(max / 16)) * (step.n || 1);
+    case 'leftovers': case 'grassy': case 'raindish': case 'icebody': return Math.min(max, h + dmg(max / 16));
+    case 'poisonheal': return Math.min(max, h + dmg(max / 8));
+    case 'blacksludge': return step.poison ? Math.min(max, h + dmg(max / 16)) : h - dmg(max / 8);
+    case 'dryskin': return step.rain ? Math.min(max, h + dmg(max / 8)) : h - dmg(max / 8);
+    case 'leechheal': return Math.min(max, h + (step.amount || 0));
+    case 'hazard': return h - dmg(max * step.frac);
+    default: return h;
+  }
+}
+
+/**
+ * 表示が d0% → d1% になったこと (間の処理は steps) から、相手のHPの能力ポイントを絞り込む。
+ * d0 は表示どおりの整数 (満タンは100 = HPが最大値ちょうど) であること。
+ */
+export function inferHpFromDisplay(b, oppIdx, d0, d1, steps) {
+  const o = b.opp[oppIdx];
+  if (!o || !steps.length || !Number.isInteger(d0) || !Number.isInteger(d1)) return '';
+  const sid = currentSpecies(o, condOf(b, 'opp', oppIdx));
+  const ok = sp => {
+    const max = statsOf(sid, [sp, 0, 0, 0, 0, 0], 'Serious')[0];
+    // 1% 表示は 0%より大きく2%未満 (1%未満も1%と表示される)
+    const lo = d0 === 100 ? max : d0 === 1 ? 1 : Math.max(1, Math.ceil((d0 * max) / 100));
+    const hi = d0 === 100 ? max : Math.min(max, Math.ceil(((d0 + 1) * max) / 100) - 1);
+    for (let h = lo; h <= hi; h++) {
+      if (dispPct(h, max) !== d0) continue;
+      let h2 = h;
+      for (const st of steps) h2 = Math.max(0, stepHp(st, h2, max));
+      if (dispPct(h2, max) === d1) return true;
+    }
+    return false;
+  };
+  // どのHPでも説明がつく (情報がない) ときは何もしない
+  let n = 0;
+  for (let sp = 0; sp <= 32; sp++) if (ok(sp)) n++;
+  if (n === 33) return '';
+  if (n === 0) return `相手の${speciesName(o.species)}: HPの表示 ${d0}% → ${d1}% に合うHPがありません (入力を確認してください)`;
+  return `相手の${speciesName(o.species)}: HPの表示 ${d0}% → ${d1}% から ${applyHpConstraint(o, ok)}`;
+}
+
+// 処理の種類 → HP計算の手順 (盤面の状態から必要な値を添える)
+function stepOf(b, side, mon, key) {
+  const bd = buildOf(b, side, mon), c = condOf(b, side, mon);
+  const types = dex.species[currentSpecies(bd, c)]?.t || [];
+  const st = {k: key};
+  if (key === 'tox') st.n = Math.min(15, c.toxicCounter || 1);
+  if (key === 'blacksludge') st.poison = types.includes('Poison');
+  if (key === 'dryskin') st.rain = b.state.field.weather === 'Rain';
+  if (key === 'leechheal') {
+    const fs = other(side), fm = b.state.sides[fs].active.find(i => i != null && condOf(b, fs, i)?.seeded);
+    if (fs === 'me' && fm != null) st.amount = Math.max(1, Math.floor(maxHPOf(b, 'me', fm) / 8));
+    else return null; // 吸い取った量が分からない
+  }
+  return st;
 }

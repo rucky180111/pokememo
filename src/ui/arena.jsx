@@ -13,6 +13,7 @@ import {MonEditor} from './teams.jsx';
 import {HPControl, DmgBar} from './board.jsx';
 import {PredictTab} from './analysis.jsx';
 import {Timeline, MegaButtons} from './turn.jsx';
+import {dispOf} from '../engine/flow.js';
 
 const SIDE_JA = {me: '自分', opp: '相手'};
 const FLAGS = [['reflect', 'リフレクター'], ['lightScreen', 'ひかりのかべ'], ['auroraVeil', 'オーロラベール'], ['tailwind', 'おいかぜ'], ['sr', 'ステルスロック']];
@@ -157,7 +158,7 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
       </div>
       <div class="mp-hp">
         <div class="hpbar"><div class={cx('hpfill', raw.hp > 50 ? 'g' : raw.hp > 20 ? 'y' : 'r')} style={{width: `${raw.hp}%`}} /></div>
-        <b class="num">{raw.fainted ? 'ひんし' : maxHP ? `${Math.round((maxHP * raw.hp) / 100)}/${maxHP}` : `${raw.hp > 0 && raw.hp < 1 ? 1 : Math.round(raw.hp)}%`}</b>
+        <b class="num">{raw.fainted ? 'ひんし' : maxHP ? `${Math.round((maxHP * raw.hp) / 100)}/${maxHP}` : `${dispOf(raw.hp)}%`}</b>
       </div>
       <div class="mp-body">
         <table class="mp-table">
@@ -283,7 +284,7 @@ function DamagePane({battle, ctx}) {
         <label>自分 <select class="input sm" value={mi} onChange={e => setMSel(Number(e.currentTarget.value))}>{livingMe.map(i => <option value={i}>{speciesName(battle.my[i].species)}{battle.state.sides.me.active.includes(i) ? ' (場)' : ''}</option>)}</select></label>
         <Toggle small on={crit} onChange={setCrit}>急所</Toggle>
       </div>
-      <h4 class="me">自分 → 相手 <span class="muted">残り{Math.round(oHP)}%</span></h4>
+      <h4 class="me">自分 → 相手 <span class="muted">残り{dispOf(oHP)}%</span></h4>
       {data.give.map(m => (
         <div class="dp-move">
           <div class="dp-name"><TypeChip type={dex.moves[m.id].t} small />{moveName(m.id)}</div>

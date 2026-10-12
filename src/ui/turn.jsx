@@ -5,7 +5,7 @@ import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engine/calc.js';
 import {megaTarget, buildOf, condOf, other, PIVOT_MOVES} from '../engine/battle.js';
-import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn, replay, expiryCandidates, hazardDamage} from '../engine/flow.js';
+import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn, replay, expiryCandidates, hazardDamage, dispOf} from '../engine/flow.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, cx} from './common.jsx';
 
 const SIDE_JA = {me: '自分', opp: '相手'};
@@ -65,7 +65,7 @@ function EntryHazardAsk({battle, mut, usage, toast}) {
       <div class="tc-box ask">
         <div class="tc-h">{SIDE_JA[side]}の{monName(battle, side, mon)}が場に出ました: {d ? d.parts.join('・') : '設置技'}のダメージ</div>
         <div class="chips">
-          {d && <button class="chip add" onClick={() => rec({})}>計算どおり → {max ? `${Math.round((after * max) / 100)}/${max}` : `${Math.round(after)}%`}</button>}
+          {d && <button class="chip add" onClick={() => rec(side === 'opp' ? {hpAfter: dispOf(after)} : {})}>計算どおり → {max ? `${Math.round((after * max) / 100)}/${max}` : `${dispOf(after)}%`}</button>}
           <label class="cp-hp">HPを入力
             <input class="input sm num" type="number" inputMode="decimal" value={val[k] ?? ''} onInput={e => setVal({...val, [k]: e.currentTarget.value})} />{max ? `/${max}` : '%'}
             <button class="btn sm" disabled={!val[k]} onClick={() => rec({hpAfter: max ? (Number(val[k]) / max) * 100 : Number(val[k])})}>記録</button>
@@ -513,7 +513,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
               {tgtMax && <Seg small value={f.hpMode} options={[['left', '残りHP'], ['dmg', 'ダメージ量']]} onChange={v => set({hpMode: v, hp: ''})} />}</span>
             {f.endured || f.defItem === 'focussash' ? <b class="num">1{tgtMax ? '' : '%'} (耐えた)</b> : <>
               <input class="input num" type="number" inputMode="decimal" min={0} max={tgtMax || 100} value={f.hp} autoFocus={wizard}
-                placeholder={tgtMax && f.hpMode === 'dmg' ? '0' : String(Math.round(tgtMax ? (tgtNow * tgtMax) / 100 : tgtNow))} onInput={e => set({hp: e.currentTarget.value})}
+                placeholder={tgtMax && f.hpMode === 'dmg' ? '0' : String(tgtMax ? Math.round((tgtNow * tgtMax) / 100) : dispOf(tgtNow))} onInput={e => set({hp: e.currentTarget.value})}
                 onKeyDown={e => { if (e.key === 'Enter' && ready) finish(); }} />
               <span class="muted">{tgtMax ? (f.hpMode === 'dmg' ? `(いま ${Math.round((tgtNow * tgtMax) / 100)}/${tgtMax})` : `/ ${tgtMax}`) : '%'}</span>
               <button class="chip" onClick={() => set(tgtMax && f.hpMode === 'dmg' ? {hp: String(Math.round((tgtNow * tgtMax) / 100))} : {hp: '0'})}>ひんし</button>
@@ -670,7 +670,7 @@ function EndTurn({battle, usage, onBack, onDone}) {
           )}
           <label class="rg-hp">
             <span>{g.unknown ? 'ターン終了後のHPは?' : g.leech ? 'ターン終了後のHP (やどりぎの回復量から相手のHPが分かります)' : 'ターン終了後のHP'}</span>
-            {g.calc != null && <span class="muted">計算 {g.max ? `${Math.round((g.calc * g.max) / 100)}/${g.max}` : `${Math.round(g.calc)}%`}</span>}
+            {g.calc != null && <span class="muted">計算 {g.max ? `${Math.round((g.calc * g.max) / 100)}/${g.max}` : `${dispOf(g.calc)}%`}</span>}
             <input class="input num" type="number" inputMode="decimal" min={0} max={g.max || 100} placeholder={g.unknown ? '入力' : '違えば入力'}
               value={show(fin[`${g.side}${g.mon}`])} onInput={e => setFin({...fin, [`${g.side}${g.mon}`]: e.currentTarget.value})} />
             <span class="muted">{g.max ? `/ ${g.max}` : '%'}</span>

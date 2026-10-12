@@ -898,3 +898,25 @@ test('5ターン目の天候が終わらなかったら、起こした相手の�
   assert.equal(b.opp[1].item, 'smoothrock');
   assert.equal(b.state.field.weather, 'Sand');
 });
+
+import {inferHpFromDisplay, dispPct} from '../src/engine/flow.js';
+import {statsOf} from '../src/engine/dex.js';
+test('HP表示 (切り捨て) から最大HPを絞り込む: ステルスロック 1/8・たべのこし', () => {
+  // どのSPでも本当のSPが候補に残り、少なくとも一部は外れる
+  let narrowed = 0;
+  for (const trueSp of [0, 4, 12, 20, 32]) {
+    const b = makeBattle();
+    const max = statsOf('milotic', [trueSp, 0, 0, 0, 0, 0], 'Serious')[0];
+    const after = max - Math.floor(max / 8);
+    inferHpFromDisplay(b, 4, 100, dispPct(after, max), [{k: 'hazard', frac: 1 / 8}]);
+    const m = b.opp[4].statOk?.hp;
+    if (m) { assert.equal(m[trueSp], '1', `SP${trueSp} が残る`); if (m.includes('0')) narrowed++; }
+    // さらにたべのこし
+    const h2 = Math.min(max, after + Math.floor(max / 16));
+    inferHpFromDisplay(b, 4, dispPct(after, max), dispPct(h2, max), [{k: 'leftovers'}]);
+    if (b.opp[4].statOk?.hp) assert.equal(b.opp[4].statOk.hp[trueSp], '1');
+  }
+  assert.ok(narrowed > 0, '絞り込めるケースがある');
+  assert.equal(dispPct(1, 300), 1);
+  assert.equal(dispPct(299, 300), 99);
+});

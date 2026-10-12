@@ -65,7 +65,7 @@ export function DamageTab({battle, ctx, mut, toast}) {
                     <th class={cx(t.active ? 'col-active' : 'col-bench')}>
                       <Sprite id={t.species} size={40} />
                       <div class="th-name">{speciesName(t.species)}</div>
-                      <div class="th-sub">{t.active ? '場' : '控え'}・{Math.round(c.hp)}%</div>
+                      <div class="th-sub">{t.active ? '場' : '控え'}・{Math.max(c.hp > 0 ? 1 : 0, Math.floor(c.hp))}%</div>
                       {t.notes.length > 0 && <div class="th-note">{t.notes.join('・')}</div>}
                     </th>
                   );
