@@ -3,7 +3,8 @@ import {useMemo, useState} from 'preact/hooks';
 import {dex, statsOf, STAT_JA, STAT_KEYS, SP_MAX, SP_TOTAL, spTotal, clampSP, speciesName, itemName, abilityName, moveName, natureName, megaFormeFor} from '../engine/dex.js';
 import {newTeam, newBuild, newBattle, clone, uid} from '../engine/battle.js';
 import {usageEntries, parseSpread, spreadLabel} from '../engine/assume.js';
-import {teamRecord} from '../engine/predict.js';
+import {teamRecord, realBattles} from '../engine/predict.js';
+import {TeamReport} from './stats.jsx';
 import {useApp, Sheet, Picker, Seg, MonName, TypeChip, Empty, Confirm, cx} from './common.jsx';
 
 export const FORMAT_OPTS = [['single', 'シングル'], ['double', 'ダブル']];
@@ -90,7 +91,8 @@ export function TeamList() {
                 <strong>{t.name || '(名前なし)'}</strong>
               </div>
               <div class="chips">{t.mons.map(m => <span class="chip">{speciesName(m.species)}</span>)}{!t.mons.length && <span class="muted">ポケモン未登録</span>}</div>
-              <div class="card-foot muted">{rec.n ? `${rec.win}勝 ${rec.lose}敗${rec.draw ? ` ${rec.draw}分` : ''} (勝率 ${Math.round((rec.win / rec.n) * 100)}%)` : '対戦記録なし'}</div>
+              <div class="card-foot muted">{rec.n ? `${rec.win}勝 ${rec.lose}敗${rec.draw ? ` ${rec.draw}分` : ''} (勝率 ${rec.win + rec.lose ? Math.round((rec.win / (rec.win + rec.lose)) * 100) : '-'}%)` : '対戦記録なし'}</div>
+              {rec.n > 0 && <span class="card-link" role="link" onClick={e => { e.stopPropagation(); nav(`#/stats/${t.id}`); }}>戦績と分析を見る ›</span>}
             </button>
           );
         })}
@@ -104,11 +106,13 @@ export function TeamEditor({id}) {
   const team = store.team(id);
   const [edit, setEdit] = useState(null); // 編集中のスロット番号
   const [confirm, setConfirm] = useState(false);
+  const [view, setView] = useState('mons');
   if (!team) return <div class="page"><Empty>この構築は見つかりません。</Empty><button class="btn" onClick={() => nav('#/teams')}>構築一覧へ</button></div>;
   const save = fn => { const t = clone(team); fn(t); store.saveTeam(t); };
   const usage = store.state.usage[team.format];
   const warnings = teamWarnings(team);
   const rec = teamRecord(store.battles(), team.id);
+  const nReal = realBattles(store.battles(), {format: 'single', teamId: team.id}).length;
   const startBattle = async kind => {
     if (!team.mons.length) { toast('先にポケモンを登録してください'); return; }
     const b = newBattle({team, kind});
@@ -135,7 +139,9 @@ export function TeamEditor({id}) {
           <input class="input" value={team.name} onChange={e => save(t => { t.name = e.currentTarget.value; })} />
         </label>
       </div>
-      {rec.n > 0 && <p class="muted pad-s">戦績: {rec.win}勝 {rec.lose}敗{rec.draw ? ` ${rec.draw}分` : ''} / 選出回数: {Object.entries(rec.picks).sort((a, b) => b[1] - a[1]).map(([s, n]) => `${speciesName(s)} ${n}`).join('、')}</p>}
+      <Seg value={view} options={[['mons', 'ポケモン'], ['report', `戦績と分析${nReal ? ` (${nReal}戦)` : ''}`]]} onChange={setView} />
+      {view === 'report' && <div class="team-report"><TeamReport teamId={team.id} /></div>}
+      {view === 'mons' && <>
       {warnings.length > 0 && <ul class="warn">{warnings.map(w => <li>{w}</li>)}</ul>}
 
       <div class="cards">
@@ -165,6 +171,7 @@ export function TeamEditor({id}) {
         <button class="btn" onClick={duplicate}>複製</button>
         <button class="btn danger" onClick={() => setConfirm(true)}>この構築を削除</button>
       </div>
+      </>}
 
       {edit != null && (
         <MonEditor build={team.mons[edit] || newBuild()} usage={usage} isNew={!team.mons[edit]}

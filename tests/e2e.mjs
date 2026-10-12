@@ -349,6 +349,17 @@ await shot(ipad, 'ipad-stats-pattern');
 await ipad.locator('.ta > .seg button', {hasText: '相手'}).click();
 check(await ipad.locator('.ta-opp').count() >= 5, '相手が選出したときの勝率');
 await shot(ipad, 'ipad-stats-opp');
+// 対戦の外 (構築画面) からも見られる
+await ipad.goto(`${url}#/teams`);
+await ipad.locator('.card-link').first().click();
+await ipad.waitForSelector('.ta-row');
+check(ipad.url().includes('#/stats/'), '構築一覧から戦績と分析へ');
+const tid = await ipad.evaluate(() => window.__pokememo.store.teams()[0].id);
+await ipad.goto(`${url}#/team/${tid}`);
+await ipad.locator('.seg button', {hasText: '戦績と分析'}).click();
+await ipad.waitForSelector('.ta-row');
+check(await ipad.locator('.ta-row:not(.head)').count() === 3, '構築画面の戦績と分析タブ');
+await shot(ipad, 'ipad-team-report');
 await browser.close();
 server.close();
 console.log(errors.length ? `\n問題 ${errors.length}件:\n${errors.join('\n')}` : '\nすべて通過');

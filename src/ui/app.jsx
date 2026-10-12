@@ -40,7 +40,7 @@ export function App({store, syncer}) {
     case 'battle': screen = <BattleScreen key={route.id} id={route.id} />; break;
     case 'teams': screen = <TeamList />; break;
     case 'team': screen = <TeamEditor key={route.id} id={route.id} />; break;
-    case 'stats': screen = <StatsScreen />; break;
+    case 'stats': screen = <StatsScreen key={route.id || ''} initialTeam={route.id} />; break;
     case 'settings': screen = <SettingsScreen />; break;
     default: screen = <BattleList />;
   }

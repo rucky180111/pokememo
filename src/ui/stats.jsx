@@ -5,25 +5,21 @@ import {realBattles, teamRecord, oppRanking, oppSpeciesStats, matchupActions, so
 import {usageEntries, parseSpread, spreadLabel, leadRate} from '../engine/assume.js';
 import {useApp, Sheet, Seg, Empty, MonName, Sprite, cx, rate} from './common.jsx';
 
-export function StatsScreen() {
+export function StatsScreen({initialTeam}) {
   const {store} = useApp();
   const fmt = 'single';
   const [teamId, setTeamId] = useState(() => {
+    if (initialTeam && store.team(initialTeam)) return initialTeam;
     // いちばん最近の対戦で使った構築を最初に出す
     const last = store.battles().filter(b => b.teamId && !b.deleted && b.kind !== 'sim').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
     return last?.teamId || '';
   });
-  const [sub, setSub] = useState('mons');
-  const [psort, setPsort] = useState('n');
   const [sort, setSort] = useState('seen');
   const [detail, setDetail] = useState(null);
   const [tab, setTab] = useState('mine');
   const battles = store.battles();
   const teams = store.teams();
   const filter = {format: fmt, teamId: teamId || undefined};
-  const real = realBattles(battles, filter);
-  const decided = real.filter(b => b.result);
-  const win = decided.filter(b => b.result === 'win').length, lose = decided.filter(b => b.result === 'lose').length;
   const ranking = useMemo(() => {
     const r = oppRanking(battles, filter);
     const wr = e => (e.win + e.lose ? e.win / (e.win + e.lose) : 2);
@@ -44,13 +40,7 @@ export function StatsScreen() {
             {teams.map(t => <option value={t.id}>{t.name}</option>)}
           </select>
         </label>
-        <div class="kpis">
-          <div class="kpi"><span class="kpi-v num">{real.length}</span><span class="kpi-l">記録した対戦</span></div>
-          <div class="kpi"><span class="kpi-v num">{win}-{lose}</span><span class="kpi-l">勝ち-負け</span></div>
-          <div class="kpi"><span class="kpi-v num">{win + lose ? `${Math.round((win / (win + lose)) * 100)}%` : '—'}</span><span class="kpi-l">勝率</span></div>
-        </div>
-        {!real.length && <Empty>このルールの対戦記録がまだありません。対戦を記録すると、相手の選出率・初手率・対面ごとの行動がここに貯まっていきます。</Empty>}
-        {real.length > 0 && <TeamAnalysis battles={battles} filter={filter} team={teams.find(t => t.id === teamId)} sub={sub} setSub={setSub} psort={psort} setPsort={setPsort} onOpp={setDetail} />}
+        <TeamReport teamId={teamId} />
       </>}
       {tab === 'usage' && <>
         <p class="hint pad-s">Pokémon Showdown の対戦から集計された使用率 ({usage?.month || '—'} / {usage?.source || '—'} / {usage?.battles?.toLocaleString() || '—'}戦)。ゲーム内ランクバトルとは母集団が違うので目安です。「設定」から最新に更新できます。</p>
@@ -71,6 +61,32 @@ export function StatsScreen() {
       </>}
       {detail && <SpeciesDetail species={detail} fmt={fmt} teamId={teamId} onClose={() => setDetail(null)} />}
     </div>
+  );
+}
+
+// 構築の戦績と分析 (統計画面・構築画面の両方で使う)
+export function TeamReport({teamId}) {
+  const {store} = useApp();
+  const fmt = 'single';
+  const [sub, setSub] = useState('mons');
+  const [psort, setPsort] = useState('n');
+  const [detail, setDetail] = useState(null);
+  const battles = store.battles();
+  const filter = {format: fmt, teamId: teamId || undefined};
+  const real = realBattles(battles, filter);
+  const decided = real.filter(b => b.result);
+  const win = decided.filter(b => b.result === 'win').length, lose = decided.filter(b => b.result === 'lose').length;
+  return (
+    <>
+      <div class="kpis">
+        <div class="kpi"><span class="kpi-v num">{real.length}</span><span class="kpi-l">記録した対戦</span></div>
+        <div class="kpi"><span class="kpi-v num">{win}-{lose}</span><span class="kpi-l">勝ち-負け</span></div>
+        <div class="kpi"><span class="kpi-v num">{win + lose ? `${Math.round((win / (win + lose)) * 100)}%` : '—'}</span><span class="kpi-l">勝率</span></div>
+      </div>
+      {!real.length && <Empty>この構築の対戦記録がまだありません。対戦を記録すると、選出率・勝率・選出パターン・相手ごとの勝率がここに貯まっていきます。</Empty>}
+      {real.length > 0 && <TeamAnalysis battles={battles} filter={filter} team={store.team(teamId)} sub={sub} setSub={setSub} psort={psort} setPsort={setPsort} onOpp={setDetail} />}
+      {detail && <SpeciesDetail species={detail} fmt={fmt} teamId={teamId} onClose={() => setDetail(null)} />}
+    </>
   );
 }
 
