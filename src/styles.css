@@ -710,3 +710,34 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
   .br-res { grid-area: res; } .br-date { grid-area: date; } .br-vs { grid-area: vs; } .br-turn { grid-area: turn; }
   .br-opp { grid-area: opp; } .br-mine { grid-area: mine; } .br-memo { grid-area: memo; }
 }
+
+/* ---- 戦績分析 ---- */
+.ta { margin-top: 10px; }
+.ta > .seg { display: flex; } .ta > .seg button { flex: 1; }
+.ta-sort { margin: 8px 0; }
+.ta-table { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.ta-row { display: grid; grid-template-columns: 64px repeat(4, minmax(0, 1fr)); gap: 6px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 6px 8px; }
+.ta-row.head { background: none; border: 0; padding: 0 8px; font-size: 12px; color: var(--muted); text-align: center; }
+.ta-mon { display: inline-flex; flex-direction: column; align-items: center; min-width: 0; }
+.ta-mon small { font-size: 10px; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ta-mon .sprite { margin: -4px 0 -2px; }
+.rc { display: flex; flex-direction: column; align-items: stretch; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; text-align: center; }
+.rc b { background: var(--surface2); font-size: 15px; padding: 2px 0; }
+.rc b small { font-size: 10px; margin-left: 1px; font-weight: 400; }
+.rc .num { font-size: 12px; padding: 1px 0; }
+.rc.hi b { background: var(--accent); color: var(--accent-text); }
+.rc.lo b { background: #e8457a; color: #fff; }
+.rc.none b { color: var(--muted); }
+.ta-list { display: flex; flex-direction: column; gap: 8px; }
+.ta-pat { display: grid; grid-template-columns: minmax(0, 1fr) 92px 92px; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 6px 8px; }
+.ta-pmons { display: flex; gap: 4px; }
+.ta-pstat { display: flex; flex-direction: column; gap: 2px; font-size: 11px; text-align: center; }
+.ta-og { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: start; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px; }
+.ta-ogwr { font-size: 22px; font-weight: 700; text-align: center; padding-top: 14px; }
+.ta-ogwr small { font-size: 12px; } .ta-ogwr.hi { color: var(--accent); } .ta-ogwr.lo { color: #e8457a; }
+.ta-ogmons { display: flex; flex-wrap: wrap; gap: 6px; }
+.ta-opp { position: relative; display: flex; flex-direction: column; align-items: center; width: 84px; padding: 16px 2px 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface2); }
+.ta-onm { font-size: 10.5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ta-ow { position: absolute; top: 2px; right: 6px; font-size: 11px; font-weight: 700; }
+.ta-opr { font-size: 10px; background: var(--accent); color: var(--accent-text); border-radius: 999px; padding: 0 6px; margin-top: 2px; }
+@media (max-width: 520px) { .ta-pat { grid-template-columns: minmax(0, 1fr) 76px 76px; } .ta-row { grid-template-columns: 54px repeat(4, minmax(0, 1fr)); } }

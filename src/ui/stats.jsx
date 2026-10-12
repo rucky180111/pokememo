@@ -1,14 +1,20 @@
 // 統計: 自分の戦績と、相手ポケモンごとの傾向
 import {useMemo, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, moveName, abilityName} from '../engine/dex.js';
-import {realBattles, teamRecord, oppRanking, oppSpeciesStats, matchupActions, sortCounts, pct} from '../engine/predict.js';
+import {realBattles, teamRecord, oppRanking, oppSpeciesStats, matchupActions, sortCounts, pct, teamAnalysis} from '../engine/predict.js';
 import {usageEntries, parseSpread, spreadLabel, leadRate} from '../engine/assume.js';
-import {useApp, Sheet, Seg, Empty, MonName, cx, rate} from './common.jsx';
+import {useApp, Sheet, Seg, Empty, MonName, Sprite, cx, rate} from './common.jsx';
 
 export function StatsScreen() {
   const {store} = useApp();
   const fmt = 'single';
-  const [teamId, setTeamId] = useState('');
+  const [teamId, setTeamId] = useState(() => {
+    // いちばん最近の対戦で使った構築を最初に出す
+    const last = store.battles().filter(b => b.teamId && !b.deleted && b.kind !== 'sim').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+    return last?.teamId || '';
+  });
+  const [sub, setSub] = useState('mons');
+  const [psort, setPsort] = useState('n');
   const [sort, setSort] = useState('seen');
   const [detail, setDetail] = useState(null);
   const [tab, setTab] = useState('mine');
@@ -44,45 +50,7 @@ export function StatsScreen() {
           <div class="kpi"><span class="kpi-v num">{win + lose ? `${Math.round((win / (win + lose)) * 100)}%` : '—'}</span><span class="kpi-l">勝率</span></div>
         </div>
         {!real.length && <Empty>このルールの対戦記録がまだありません。対戦を記録すると、相手の選出率・初手率・対面ごとの行動がここに貯まっていきます。</Empty>}
-        {teams.filter(t => !teamId || t.id === teamId).map(t => {
-          const rec = teamRecord(battles, t.id, fmt);
-          if (!rec.n) return null;
-          return (
-            <div class="box" key={t.id}>
-              <h4>{t.name} <span class="muted">{rec.win}勝 {rec.lose}敗 (勝率 {pct(rec.win, rec.win + rec.lose)}%)</span></h4>
-              <table class="mini">
-                <thead><tr><th>自分のポケモン</th><th>選出</th><th>初手</th><th>選出時の勝率</th></tr></thead>
-                <tbody>
-                  {sortCounts(rec.picks).map(([sp, n]) => (
-                    <tr><th>{speciesName(sp)}</th><td class="num">{n} ({pct(n, rec.n)}%)</td><td class="num">{rec.leads[sp] || 0}</td><td class="num">{pct(rec.pickWins[sp] || 0, n)}%</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
-        })}
-        {ranking.length > 0 && (
-          <div class="box">
-            <h4>相手のポケモン</h4>
-            <Seg small value={sort} options={[['seen', '遭遇順'], ['picked', '選出順'], ['weak', '勝率の低い順']]} onChange={setSort} />
-            <div class="scroll-x">
-              <table class="mini wide">
-                <thead><tr><th>ポケモン</th><th>遭遇</th><th>選出率</th><th>初手</th><th>選出時の勝敗</th></tr></thead>
-                <tbody>
-                  {ranking.slice(0, 80).map(e => (
-                    <tr class="clickable" onClick={() => setDetail(e.species)}>
-                      <th>{speciesName(e.species)}</th>
-                      <td class="num">{e.seen}</td>
-                      <td class="num">{pct(e.picked, e.seen)}%</td>
-                      <td class="num">{e.lead}</td>
-                      <td class="num">{e.win}-{e.lose}{e.win + e.lose ? ` (${pct(e.win, e.win + e.lose)}%)` : ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {real.length > 0 && <TeamAnalysis battles={battles} filter={filter} team={teams.find(t => t.id === teamId)} sub={sub} setSub={setSub} psort={psort} setPsort={setPsort} onOpp={setDetail} />}
       </>}
       {tab === 'usage' && <>
         <p class="hint pad-s">Pokémon Showdown の対戦から集計された使用率 ({usage?.month || '—'} / {usage?.source || '—'} / {usage?.battles?.toLocaleString() || '—'}戦)。ゲーム内ランクバトルとは母集団が違うので目安です。「設定」から最新に更新できます。</p>
@@ -142,5 +110,90 @@ function SpeciesDetail({species, fmt, teamId, onClose}) {
         ))}
       </div>
     </Sheet>
+  );
+}
+
+// 率のマス: 上に % (高いと青・低いと赤)、下に 分子/分母
+function RateCell({n, d, hi = 0.6, lo = 0.4, plain}) {
+  const r = d ? n / d : null;
+  return (
+    <span class={cx('rc', r == null ? 'none' : !plain && r >= hi ? 'hi' : !plain && r <= lo ? 'lo' : '')}>
+      <b>{r == null ? '-' : `${Math.round(r * 100)}`}<small>{r == null ? '' : '%'}</small></b>
+      <span class="num">{n} / {d}</span>
+    </span>
+  );
+}
+
+function TeamAnalysis({battles, filter, team, sub, setSub, psort, setPsort, onOpp}) {
+  const A = useMemo(() => teamAnalysis(battles, filter), [battles, filter.teamId]);
+  const dec = (w, l) => w + l;
+  // 構築の6体 (構築を選んでいなければ、選出したことのあるポケモン)
+  const mons = team ? team.mons.map(m => m.species).filter(Boolean) : Object.keys(A.mons);
+  const pats = Object.values(A.patterns).sort((a, b) => (psort === 'win' ? (b.win / Math.max(1, dec(b.win, b.lose))) - (a.win / Math.max(1, dec(a.win, a.lose))) || b.n - a.n : b.n - a.n));
+  const opps = Object.entries(A.opps).filter(([, e]) => e.picked > 0)
+    .map(([sp, e]) => ({sp, ...e, wr: dec(e.win, e.lose) ? e.win / dec(e.win, e.lose) : null}))
+    .sort((a, b) => (psort === 'win' ? (b.wr ?? -1) - (a.wr ?? -1) || b.picked - a.picked : b.picked - a.picked || (b.wr ?? -1) - (a.wr ?? -1)));
+  // 勝率ごとにまとめる (同じ勝率のポケモンを1段に)
+  const groups = [];
+  for (const o of opps) { const key = o.wr == null ? '-' : `${Math.round(o.wr * 100)}`; let g = groups.find(x => x.key === key); if (!g) groups.push(g = {key, list: []}); g.list.push(o); }
+  if (psort === 'win') groups.sort((a, b) => (b.key === '-' ? -1 : Number(b.key)) - (a.key === '-' ? -1 : Number(a.key)));
+  return (
+    <div class="ta">
+      <Seg value={sub} options={[['mons', '自分のポケモン'], ['pattern', '選出パターン'], ['opp', '相手 (敵分析)']]} onChange={setSub} />
+      {sub === 'mons' && (
+        <div class="ta-table">
+          <div class="ta-row head"><span></span><span>選出率</span><span>勝率</span><span>初手率</span><span>初手勝率</span></div>
+          {mons.map(sp => {
+            const m = A.mons[sp] || {picked: 0, win: 0, lose: 0, lead: 0, leadWin: 0, leadLose: 0};
+            return (
+              <div class="ta-row">
+                <span class="ta-mon"><Sprite id={sp} size={44} /><small>{speciesName(sp)}</small></span>
+                <RateCell n={m.picked} d={A.n} hi={0.5} lo={0.25} />
+                <RateCell n={m.win} d={dec(m.win, m.lose)} />
+                <RateCell n={m.lead} d={m.picked} plain />
+                <RateCell n={m.leadWin} d={dec(m.leadWin, m.leadLose)} />
+              </div>
+            );
+          })}
+          <p class="hint">選出率 = 対戦のうち選出した割合 / 勝率 = 選出した対戦の勝率 / 初手率 = 選出したうち初手だった割合 / 初手勝率 = 初手だった対戦の勝率 (勝率は勝ち負けをつけた対戦だけで計算)</p>
+        </div>
+      )}
+      {sub === 'pattern' && <>
+        <div class="ta-sort"><Seg small value={psort} options={[['n', '多い順'], ['win', '勝率順']]} onChange={setPsort} /></div>
+        <div class="ta-list">
+          {pats.map(p => (
+            <div class="ta-pat">
+              <span class="ta-pmons">{p.species.map(sp => <span class="ta-mon"><Sprite id={sp} size={44} /><small>{speciesName(sp)}</small></span>)}</span>
+              <span class="ta-pstat"><span class="muted">選出率</span><RateCell n={p.n} d={A.n} plain /></span>
+              <span class="ta-pstat"><span class="muted">勝率</span><RateCell n={p.win} d={dec(p.win, p.lose)} /></span>
+            </div>
+          ))}
+          {!pats.length && <Empty>選出を記録した対戦がまだありません。</Empty>}
+          <p class="hint">選出した3体の組み合わせごと (順番は区別しません)。</p>
+        </div>
+      </>}
+      {sub === 'opp' && <>
+        <div class="ta-sort"><Seg small value={psort} options={[['n', '選出された数順'], ['win', '勝率順']]} onChange={setPsort} /></div>
+        <div class="ta-list">
+          {groups.map(g => (
+            <div class="ta-og">
+              <span class={cx('ta-ogwr', g.key !== '-' && (Number(g.key) >= 60 ? 'hi' : Number(g.key) <= 40 ? 'lo' : ''))}>{g.key === '-' ? '-' : <>{g.key}<small>%</small></>}</span>
+              <span class="ta-ogmons">
+                {g.list.map(o => (
+                  <button class="ta-opp" onClick={() => onOpp(o.sp)} title={`${speciesName(o.sp)}: 選出された ${o.picked}回 (${o.win}勝${o.lose}敗) / 見せ合い ${o.seen}回`}>
+                    <Sprite id={o.sp} size={52} />
+                    <small class="ta-onm">{speciesName(o.sp)}</small>
+                    <span class="ta-ow num">{o.win}/{dec(o.win, o.lose)}</span>
+                    <span class="ta-opr num">選出{Math.round((o.picked / o.seen) * 100)}%</span>
+                  </button>
+                ))}
+              </span>
+            </div>
+          ))}
+          {!groups.length && <Empty>相手の選出を記録した対戦がまだありません。</Empty>}
+          <p class="hint">相手がそのポケモンを選出してきた対戦での自分の勝率 (左の大きな数字)。各ポケモンの「勝ち/勝敗のついた対戦」と、見せ合いにいたときに選出してきた率。タップで詳しい傾向。</p>
+        </div>
+      </>}
+    </div>
   );
 }

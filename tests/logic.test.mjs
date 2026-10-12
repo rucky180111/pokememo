@@ -941,3 +941,15 @@ test('いのちのたま・反動: 攻撃した側のHPと、持ち物の判明�
   const m = b2.opp[4].statOk?.hp;
   assert.ok(!m || m[20] === '1', '本当のSP20が候補に残る');
 });
+
+import {teamAnalysis} from '../src/engine/predict.js';
+test('構築の戦績分析: ポケモンごと・選出パターン (順不同)・相手が選出したときの勝率', () => {
+  const mk = (pick, oppPick, result) => { const b = makeBattle(); b.teamId = 'T'; b.pick.me = pick; b.pick.opp = oppPick; b.result = result; return b; };
+  const bs = [mk([0, 1, 2], [0, 1, 2], 'win'), mk([2, 0, 1], [0, 3, 4], 'lose'), mk([3, 4, 5], [1, 2, 3], 'win'), mk([0, 4, 5], [0], '')];
+  const A = teamAnalysis(bs, {teamId: 'T'});
+  assert.equal(A.n, 4); assert.equal(A.win, 2); assert.equal(A.lose, 1);
+  assert.deepEqual(A.mons.garchomp, {picked: 3, win: 1, lose: 1, lead: 2, leadWin: 1, leadLose: 0});
+  const key = ['garchomp', 'charizard', 'incineroar'].sort().join('+');
+  assert.equal(A.patterns[key].n, 2, '順不同で同じパターン');
+  assert.deepEqual(A.opps.salamence, {seen: 4, picked: 3, win: 1, lose: 1});
+});

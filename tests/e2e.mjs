@@ -332,6 +332,23 @@ check(await ipad.locator('.brow:not(.head)').count() === 2, '対戦の履歴に2
 check((await ipad.locator('.brow:not(.head) .br-turn').first().innerText()).startsWith('0'), '新しい対戦 (まだ0ターン) がいちばん上');
 await shot(ipad, 'ipad-history');
 
+// 戦績分析 (対戦を増やして見た目を確認)
+await ipad.evaluate(async () => {
+  const s = window.__pokememo.store;
+  const base = s.battles().find(b => b.turns.length >= 3);
+  const P = [[0, 1, 2], [0, 2, 1], [1, 2, 0], [0, 1, 2]], O = [[1, 0, 2], [3, 4, 5], [2, 1, 0], [1, 5, 4]];
+  for (let k = 0; k < 11; k++) { const b = JSON.parse(JSON.stringify(base)); b.id = 'x' + k; b.createdAt = base.createdAt - 1000 * (k + 1); b.pick.me = P[k % 4]; b.pick.opp = O[k % 4]; b.result = k % 3 ? 'win' : 'lose'; await s.saveBattle(b); }
+});
+await ipad.goto(`${url}#/stats`);
+await ipad.waitForSelector('.ta-row');
+check(await ipad.locator('.ta-row:not(.head)').count() === 3, '戦績分析: 構築のポケモンごとの行');
+await shot(ipad, 'ipad-stats-mons');
+await ipad.locator('.ta > .seg button', {hasText: '選出パターン'}).click();
+check(await ipad.locator('.ta-pat').count() >= 1, '選出パターンごとの行');
+await shot(ipad, 'ipad-stats-pattern');
+await ipad.locator('.ta > .seg button', {hasText: '相手'}).click();
+check(await ipad.locator('.ta-opp').count() >= 5, '相手が選出したときの勝率');
+await shot(ipad, 'ipad-stats-opp');
 await browser.close();
 server.close();
 console.log(errors.length ? `\n問題 ${errors.length}件:\n${errors.join('\n')}` : '\nすべて通過');

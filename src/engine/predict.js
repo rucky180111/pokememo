@@ -163,3 +163,37 @@ export function matchupMatrix(battles, mySpeciesList, oppSpeciesList, filter = {
   }
   return {cell, row};
 }
+
+/**
+ * 構築の戦績分析。
+ * mons: 自分のポケモンごと {picked, win, lose, lead, leadWin, leadLose}
+ * patterns: 選出の組み合わせ (順不同) ごと {species: [...], n, win, lose}
+ * opps: 相手のポケモンごと {seen, picked, win, lose} (勝敗は相手がそのポケモンを選出した対戦)
+ */
+export function teamAnalysis(battles, filter = {}) {
+  const list = realBattles(battles, filter);
+  const out = {n: 0, win: 0, lose: 0, draw: 0, mons: {}, patterns: {}, opps: {}};
+  for (const b of list) {
+    const picks = (b.pick?.me || []).map(i => b.my[i]?.species).filter(Boolean);
+    if (!picks.length) continue;
+    out.n++;
+    const w = b.result === 'win', l = b.result === 'lose';
+    if (w) out.win++; if (l) out.lose++; if (b.result === 'draw') out.draw++;
+    const leads = leadsOf(b, 'me').map(i => b.my[i]?.species);
+    for (const sp of picks) {
+      const m = (out.mons[sp] ||= {picked: 0, win: 0, lose: 0, lead: 0, leadWin: 0, leadLose: 0});
+      m.picked++; if (w) m.win++; if (l) m.lose++;
+      if (leads.includes(sp)) { m.lead++; if (w) m.leadWin++; if (l) m.leadLose++; }
+    }
+    const key = [...picks].sort().join('+');
+    const p = (out.patterns[key] ||= {species: [...picks].sort(), n: 0, win: 0, lose: 0});
+    p.n++; if (w) p.win++; if (l) p.lose++;
+    b.opp.forEach((o, i) => {
+      if (!o.species) return;
+      const e = (out.opps[o.species] ||= {seen: 0, picked: 0, win: 0, lose: 0});
+      e.seen++;
+      if ((b.pick?.opp || []).includes(i)) { e.picked++; if (w) e.win++; if (l) e.lose++; }
+    });
+  }
+  return out;
+}
