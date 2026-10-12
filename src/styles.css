@@ -591,3 +591,6 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .mp-head .sprite { margin: -6px 0 -6px -4px; }
 .picker-list .row .sprite { margin: -6px 0; }
 .row-mon { display: inline-flex; align-items: center; gap: 6px; }
+.cx-types { display: flex; flex-wrap: wrap; gap: 3px; min-height: 24px; align-content: flex-start; margin-bottom: 4px; }
+.sel-table td.sel-cell { min-width: 112px; }
+.sel-table td.sel-cell { vertical-align: middle; }

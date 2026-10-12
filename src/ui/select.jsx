@@ -2,13 +2,11 @@
 import {useMemo, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, moveName, typeEffect} from '../engine/dex.js';
 import {newOpp, sendOut, activeCount, pickCount} from '../engine/battle.js';
-import {attackTable} from '../engine/board.js';
-import {finalSpeed, newCond} from '../engine/calc.js';
-import {oppCond, leadRate} from '../engine/assume.js';
+import {leadRate} from '../engine/assume.js';
 import {oppSpeciesStats, similarTeams, leadsOf, matchupMatrix} from '../engine/predict.js';
 import {useApp, Picker, Seg, TypeChip, Sprite, cx, rate, fmtPct} from './common.jsx';
 import {MonEditor, FORMAT_OPTS} from './teams.jsx';
-import {OppSheet, dmgClass} from './battle.jsx';
+import {OppSheet} from './battle.jsx';
 
 export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
   const {store} = useApp();
@@ -19,10 +17,6 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
   const nLead = activeCount(battle.format), nPick = pickCount(battle.format);
   const others = useMemo(() => store.battles().filter(b => b.id !== battle.id), [store.version, battle.id]);
   const usageRank = useMemo(() => (usage?.pokemon ? Object.fromEntries(Object.entries(usage.pokemon).map(([k, v]) => [k, v.u])) : null), [usage]);
-  const data = useMemo(() => ({
-    give: battle.my.map((_, i) => attackTable(ctx, 'me', i)),
-    take: battle.opp.map((_, i) => attackTable(ctx, 'opp', i)),
-  }), [ctx]);
   // 自分の記録: 相手のポケモンごとの 選出率・勝率・初手率 と、自分×相手 の 選出率・勝率
   const colStats = useMemo(() => battle.opp.map(o => oppSpeciesStats(others, o.species, {format: battle.format})), [others, battle.opp, battle.format]);
   const mx = useMemo(() => matchupMatrix(others, battle.my.map(m => m.species), battle.opp.map(o => o.species), {format: battle.format}), [others, battle.my, battle.opp, battle.format]);
@@ -36,18 +30,6 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
     return rows.map(x => ({...x, p: total ? (x.r / total) * nLead : 0})).sort((a, b) => b.p - a.p);
   }, [ctx, others]);
 
-  const spd = (side, i) => {
-    const build = ctx.build(side, i);
-    if (!build) return 0;
-    const cond = side === 'me' ? newCond() : oppCond(newCond(), ctx.views[i]);
-    return finalSpeed({build, cond}, {format: battle.format});
-  };
-  const cell = (mi, oi) => {
-    const g = data.give[mi]?.targets.find(t => t.idx === oi)?.best;
-    const t = data.take[oi]?.targets.find(t2 => t2.idx === mi)?.best;
-    const ms = spd('me', mi), os = spd('opp', oi);
-    return {g, t, first: ms > os ? 'me' : ms < os ? 'opp' : 'tie'};
-  };
   // タイプの打点: 自分の攻撃技で弱点を突けるタイプ / 相手から弱点を突かれるタイプ (相手はタイプ一致 + 判明・推定の技)
   const typeHits = (moves, defTypes) => {
     const best = {};
@@ -60,16 +42,6 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
     return Object.entries(best).sort((a, b) => b[1] - a[1]);
   };
   const myHits = (mi, oi) => typeHits(battle.my[mi].moves || [], dex.species[battle.opp[oi].species]?.t || []);
-  const oppHits = (oi, mi) => {
-    const o = battle.opp[oi];
-    const s = dex.species[o.species];
-    const myTypes = dex.species[battle.my[mi].species]?.t || [];
-    const best = {};
-    for (const t of s?.t || []) { const e = typeEffect(t, myTypes); if (e >= 2) best[t] = e; }
-    const known = (ctx.views[oi]?.moves || []).filter(m => m.known || m.rate >= 0.3).map(m => m.id);
-    for (const [t, e] of typeHits(known, myTypes)) best[t] = Math.max(best[t] || 0, e);
-    return Object.entries(best).sort((a, b) => b[1] - a[1]);
-  };
   const togglePick = i => mut(b => {
     const list = b.pick.me;
     const at = list.indexOf(i);
@@ -131,9 +103,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
       </div>
       {battle.opp.length > 0 && battle.my.length > 0 && (
         <p class="hint sel-legend">
-          各マス: <b class="lg-me">弱点を突ける</b> = 自分の技で弱点を突けるタイプ (×2/×4)、<b class="lg-opp">突かれる</b> = 相手のタイプ一致・よく使う技で弱点を突かれるタイプ。
-          与/被 = 最大ダメージ (相手は推定型)、「先」 = 素早さで上を取れる。
-          選出率・勝率 = 自分の過去の対戦 (同じルール) で、その相手がいたときに自分がそのポケモンを選出した率と、選出したときの勝率。
+          各マス: 自分の技で弱点を突ける相手のタイプ。選出率・勝率 = 自分の過去の対戦 (同じルール) で、その相手がいたときに自分がそのポケモンを選出した率と、選出したときの勝率。
         </p>
       )}
       <div class="scroll-x">
@@ -147,7 +117,6 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
           <tbody>
             {battle.my.map((m, mi) => {
               const order = battle.pick.me.indexOf(mi);
-              const cells = battle.opp.map((_, oi) => cell(mi, oi));
               return (
                 <tr class={cx(order >= 0 && 'picked')}>
                   <th>
@@ -158,23 +127,14 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
                       {mx.row[m.species]?.n > 0 && <span class="rec-s">選出率 {pr(mx.row[m.species].picked, mx.row[m.species].n)}<br />勝率 {pr(mx.row[m.species].win, mx.row[m.species].win + mx.row[m.species].lose)}</span>}
                     </button>
                   </th>
-                  {cells.map((c, oi) => {
+                  {battle.opp.map((_, oi) => {
                     const r = mx.cell[m.species]?.[battle.opp[oi].species];
-                    const mine = myHits(mi, oi), theirs = oppHits(oi, mi);
+                    const mine = myHits(mi, oi);
                     const wr = r && r.win + r.lose > 0 ? r.win / (r.win + r.lose) : null;
                     return (
                       <td class="sel-cell">
-                        <div class="cx-row me">
-                          <span class="cx-lb">弱点を突ける</span>
-                          {mine.length ? mine.map(([t, e]) => <span class="eff"><TypeChip type={t} small /><b>×{e}</b></span>) : <span class="muted cx-none">なし</span>}
-                        </div>
-                        <div class="cx-row opp">
-                          <span class="cx-lb">突かれる</span>
-                          {theirs.length ? theirs.map(([t, e]) => <span class="eff"><TypeChip type={t} small /><b>×{e}</b></span>) : <span class="muted cx-none">なし</span>}
-                        </div>
-                        <div class="cx-dmg">
-                          <span class={cx('mx', dmgClass(c.g))}><small>与</small>{c.g ? (c.g.immune ? '無効' : `${fmtPct(c.g.maxPct)}%`) : '—'}{c.first === 'me' && <i>先</i>}</span>
-                          <span class={cx('mx', dmgClass(c.t))}><small>被</small>{c.t ? (c.t.immune ? '無効' : `${fmtPct(c.t.maxPct)}%`) : '—'}</span>
+                        <div class="cx-types">
+                          {mine.map(([t]) => <TypeChip type={t} />)}
                         </div>
                         <div class="cx-rec" title={r?.n ? `この相手がいた ${r.n}戦: 選出 ${r.picked}回 (${r.win}勝${r.lose}敗)` : '記録なし'}>
                           <span>選出率 <b>{r?.n ? pr(r.picked, r.n) : '-'}</b></span>

@@ -290,7 +290,7 @@ check(await ipad.locator('.sel-table tr.rec').count() === 3, '選出表の上に
 const recTxt = await ipad.locator('.sel-table tr.rec').nth(0).locator('td').nth(1).innerText();
 check(recTxt.trim() === '100%', `バンギラスの選出率 (1戦中1回) = ${recTxt}`);
 check(await ipad.locator('.sel-table .cx-rec', {hasText: '選出率 100%'}).count() >= 6, '自分×相手のマスに 選出率・勝率 (ラベル付き)');
-check(await ipad.locator('.sel-table .cx-row.me .eff').count() > 0, '弱点を突けるタイプが出る');
+check(await ipad.locator('.sel-table .cx-types .type').count() > 0, '弱点を突けるタイプが出る');
 check(await ipad.locator('.sel-table .sprite').count() >= 9, 'ポケモンの画像が出る');
 await shot(ipad, 'ipad-select-records');
 await ipad.locator('.sel-table tbody tr').last().scrollIntoViewIfNeeded();
