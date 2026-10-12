@@ -5,7 +5,7 @@ import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engine/calc.js';
 import {megaTarget, buildOf, condOf, other, PIVOT_MOVES} from '../engine/battle.js';
-import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn, replay} from '../engine/flow.js';
+import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn, replay, expiryCandidates, hazardDamage} from '../engine/flow.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, cx} from './common.jsx';
 
 const SIDE_JA = {me: '自分', opp: '相手'};
@@ -47,6 +47,34 @@ function MonBtn({battle, side, mon, on, onClick}) {
       {hp < 100 && <span class="mb-hp"><i style={{width: `${hp}%`}} /></span>}
     </button>
   );
+}
+
+// 場に出たとき: 設置技のダメージ・ふうせん
+function EntryHazardAsk({battle, mut, usage, toast}) {
+  const [val, setVal] = useState({});
+  const list = ['me', 'opp'].flatMap(side => battle.state.sides[side].active.filter(i => i != null && condOf(battle, side, i)?.hazard && !condOf(battle, side, i)?.fainted).map(mon => ({side, mon})));
+  if (!list.length) return null;
+  return list.map(({side, mon}) => {
+    const d = hazardDamage(battle, side, mon);
+    const max = side === 'me' ? maxHPOf(battle, mon) : null;
+    const c = condOf(battle, side, mon);
+    const after = d ? Math.max(0, c.hp - d.pct) : c.hp;
+    const k = `${side}${mon}`;
+    const rec = ev => { mut(b => addEvent(b, {kind: 'hazard', side, mon, ...ev}, usage)); setVal({...val, [k]: ''}); };
+    return (
+      <div class="tc-box ask">
+        <div class="tc-h">{SIDE_JA[side]}の{monName(battle, side, mon)}が場に出ました: {d ? d.parts.join('・') : '設置技'}のダメージ</div>
+        <div class="chips">
+          {d && <button class="chip add" onClick={() => rec({})}>計算どおり → {max ? `${Math.round((after * max) / 100)}/${max}` : `${Math.round(after)}%`}</button>}
+          <label class="cp-hp">HPを入力
+            <input class="input sm num" type="number" inputMode="decimal" value={val[k] ?? ''} onInput={e => setVal({...val, [k]: e.currentTarget.value})} />{max ? `/${max}` : '%'}
+            <button class="btn sm" disabled={!val[k]} onClick={() => rec({hpAfter: max ? (Number(val[k]) / max) * 100 : Number(val[k])})}>記録</button>
+          </label>
+          <button class="chip" onClick={() => rec({none: true})}>ダメージを受けなかった{side === 'opp' ? ' (あつぞこブーツ等)' : ''}</button>
+        </div>
+      </div>
+    );
+  });
 }
 
 // 場に出ただけで表示される特性 (かならず表示されるもの / 条件しだいで表示されるもの)
@@ -205,6 +233,7 @@ function Composer({battle, ctx, mut, usage, toast}) {
       ))}
 
       <EntryAbilityAsk battle={battle} mut={mut} usage={usage} toast={toast} />
+      <EntryHazardAsk battle={battle} mut={mut} usage={usage} toast={toast} />
 
       {mode === 'ev' && <EventForm battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} />}
 
@@ -268,8 +297,8 @@ function Composer({battle, ctx, mut, usage, toast}) {
 
         {page === 'end' && open && (
           <EndTurn battle={battle} usage={usage}
-            onDone={(residual, noOrder) => {
-              const log = mut(b => finishTurn(b, usage, {residual, noOrder}));
+            onDone={opts => {
+              const log = mut(b => finishTurn(b, usage, opts));
               toast(log?.length ? log[log.length - 1] : 'ターンを終了しました');
             }} />
         )}
@@ -381,6 +410,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
       defItem: h && ff.defItem ? {item: ff.defItem, consumed: consumable(ff.defItem)} : null,
       atkItem: ff.atkItem ? {item: ff.atkItem, consumed: consumable(ff.atkItem)} : null,
       secFx: h && ff.secFx?.length ? ff.secFx : undefined,
+      hpUnknown: h && ff.hpUnknown && hpAfter == null ? true : undefined,
       target: double ? tgt : null, hpAfter, healedBy: h && hpAfter != null && ff.healedBy.length ? ff.healedBy : undefined, inflict: h && ff.inflict ? ff.inflict : '',
       to: m2 && PIVOT_MOVES.has(ff.move) && h && ff.to != null ? ff.to : null,
     });
@@ -487,6 +517,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
                 onKeyDown={e => { if (e.key === 'Enter' && ready) finish(); }} />
               <span class="muted">{tgtMax ? (f.hpMode === 'dmg' ? `(いま ${Math.round((tgtNow * tgtMax) / 100)}/${tgtMax})` : `/ ${tgtMax}`) : '%'}</span>
               <button class="chip" onClick={() => set(tgtMax && f.hpMode === 'dmg' ? {hp: String(Math.round((tgtNow * tgtMax) / 100))} : {hp: '0'})}>ひんし</button>
+              {wizard && <button class="chip unk" title="回復などで分からなくなったときは、ターン終了時に聞きます" onClick={() => finish({hpUnknown: true, hp: ''})}>? わからない</button>}
             </>}
           </label>
           <div class="chips">
@@ -584,30 +615,86 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
 // ③ ターン終了時の処理
 function EndTurn({battle, usage, onBack, onDone}) {
   const cands = useMemo(() => residualCandidates(battle, usage), [battle]);
+  const expiries = useMemo(() => expiryCandidates(battle), [battle]);
   const keyOf = c => `${c.side}${c.mon}${c.key}`;
   const [on, setOn] = useState(() => new Set(cands.filter(c => c.checked).map(keyOf)));
   const [noOrder, setNoOrder] = useState(false);
+  const [fin, setFin] = useState({}); // ターン終了後のHP (入力したもの)
+  const [first, setFirst] = useState('');
+  const [exp, setExp] = useState({});
   const toggle = k => setOn(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const fmt = c => (c.side === 'me' ? `${c.hp > 0 ? '+' : ''}${c.hp}` : `${c.pct > 0 ? '+' : ''}${Math.round(c.pct * 10) / 10}%`);
+  // ポケモンごとにまとめる (場にいるポケモン全員: HPが分からない攻撃を受けた・回復/定数ダメージがある)
+  const open = openTurn(battle);
+  const mons = ['me', 'opp'].flatMap(side => alive(battle, side).map(mon => ({side, mon})));
+  const groups = mons.map(m => {
+    const list = cands.filter(c => c.side === m.side && c.mon === m.mon);
+    const unknown = !!open?.acts.some(x => x.hpUnknown && x.target?.side === m.side && x.target?.mon === m.mon);
+    const leech = list.some(c => c.key === 'leechheal' || c.key === 'leechseed');
+    const c = condOf(battle, m.side, m.mon);
+    const max = m.side === 'me' ? maxHPOf(battle, m.mon) : null;
+    // チェックした処理を順に当てたあとのHP (計算)
+    let hp = c.hp;
+    for (const x of list) if (on.has(keyOf(x))) hp = Math.max(0, Math.min(100, hp + x.pct));
+    return {...m, list, unknown, leech, max, calc: unknown ? null : hp};
+  }).filter(g => g.list.length || g.unknown);
+  const sidesWith = new Set(groups.filter(g => g.list.some(x => on.has(keyOf(x)))).map(g => g.side));
+  const show = v => (v == null ? '' : v);
+  const toPct = (g, v) => (v === '' || v == null ? null : g.max ? (Number(v) / g.max) * 100 : Number(v));
+  const done = () => {
+    const finalHp = {};
+    for (const g of groups) { const p = toPct(g, fin[`${g.side}${g.mon}`]); if (p != null && Number.isFinite(p)) finalHp[`${g.side}${g.mon}`] = p; }
+    onDone({
+      residual: cands.filter(c => on.has(keyOf(c))), noOrder, finalHp,
+      resFirst: first || undefined,
+      expiry: expiries.filter(x => exp[x.key] != null).map(x => ({key: x.key, ended: exp[x.key], n: x.n})),
+    });
+  };
+  const missing = groups.some(g => g.unknown && (fin[`${g.side}${g.mon}`] ?? '') === '');
   return (
     <div class="tc-box wz-page">
-      {cands.length ? (
-        <ul class="res-list">
-          {cands.map(c => (
-            <li><label>
-              <input type="checkbox" checked={on.has(keyOf(c))} onChange={() => toggle(keyOf(c))} />
-              <span class={cx('side-tag', c.side)}>{SIDE_JA[c.side]}</span>
-              <b>{monName(battle, c.side, c.mon)}</b> {c.label} <span class={cx('num', c.pct < 0 ? 'neg' : 'pos')}>{fmt(c)}</span>
-              {!c.checked && <small class="muted"> (起きていたら)</small>}
-            </label></li>
-          ))}
-        </ul>
-      ) : <p class="muted">自動で反映する処理はありません。</p>}
-      <p class="hint">チェックした処理をHPに反映します。ほかに起きたこと (やどりぎ・ゴツゴツメットなど) は「その他の変化」から記録してください。</p>
+      {groups.length === 0 && <p class="muted">ターン終了時に処理されるものはありません。</p>}
+      {groups.map(g => (
+        <div class={cx('res-group', g.side, g.unknown && 'need')}>
+          <div class="rg-h"><span class={cx('side-tag', g.side)}>{SIDE_JA[g.side]}</span><b>{monName(battle, g.side, g.mon)}</b></div>
+          {g.list.length > 0 && (
+            <ul class="res-list">
+              {g.list.map(c => (
+                <li><label>
+                  <input type="checkbox" checked={on.has(keyOf(c))} onChange={() => toggle(keyOf(c))} />
+                  {c.label} {!c.unknown && <span class={cx('num', c.pct < 0 ? 'neg' : 'pos')}>{fmt(c)}</span>}
+                  {!c.checked && <small class="muted"> (起きていたら)</small>}
+                </label></li>
+              ))}
+            </ul>
+          )}
+          <label class="rg-hp">
+            <span>{g.unknown ? 'ターン終了後のHPは?' : g.leech ? 'ターン終了後のHP (やどりぎの回復量から相手のHPが分かります)' : 'ターン終了後のHP'}</span>
+            {g.calc != null && <span class="muted">計算 {g.max ? `${Math.round((g.calc * g.max) / 100)}/${g.max}` : `${Math.round(g.calc)}%`}</span>}
+            <input class="input num" type="number" inputMode="decimal" min={0} max={g.max || 100} placeholder={g.unknown ? '入力' : '違えば入力'}
+              value={show(fin[`${g.side}${g.mon}`])} onInput={e => setFin({...fin, [`${g.side}${g.mon}`]: e.currentTarget.value})} />
+            <span class="muted">{g.max ? `/ ${g.max}` : '%'}</span>
+          </label>
+          {g.unknown && <p class="hint">分からなかったダメージを、ここで入れたHPから逆算してバトルログを更新します。</p>}
+        </div>
+      ))}
+      {sidesWith.size === 2 && (
+        <div class="res-q">
+          <span>先に処理されたのは? <small class="muted">(速いほうが先。素早さの推定に使います)</small></span>
+          <Seg small value={first} options={[['', 'わからない'], ['me', '自分'], ['opp', '相手']]} onChange={setFirst} />
+        </div>
+      )}
+      {expiries.map(x => (
+        <div class="res-q">
+          <span>{x.label}は終わりましたか? <small class="muted">({x.n}ターン目{x.byName ? `・${x.byName}` : ''})</small></span>
+          <Seg small value={exp[x.key] == null ? '' : exp[x.key] ? 'y' : 'n'} options={[['', '未回答'], ['y', '終わった'], ['n', '続いている']]} onChange={v => setExp({...exp, [x.key]: v === '' ? null : v === 'y'})} />
+        </div>
+      ))}
+      {expiries.some(x => x.n === 5) && <p class="hint">5ターンで終わらなければ、起こしたポケモンは延長する持ち物 (しめったいわ・ひかりのねんど・グランドコートなど) を持っています。</p>}
       <label class="check"><input type="checkbox" checked={noOrder} onChange={e => setNoOrder(e.currentTarget.checked)} />このターンの行動順は素早さの推定に使わない (せんせいのツメ・クイックドロウなど)</label>
       <div class="btnrow">
         {onBack && <button class="btn" onClick={onBack}>戻る</button>}
-        <button class="btn primary grow" onClick={() => onDone(cands.filter(c => on.has(keyOf(c))), noOrder)}>ターンを終える</button>
+        <button class="btn primary grow" onClick={done}>{missing ? 'HPを入れずにターンを終える' : 'ターンを終える'}</button>
       </div>
     </div>
   );

@@ -20,6 +20,7 @@ function allowed(opp, stat) {
 function hpAllowed(opp) {
   const k = opp.statOk || {};
   let lo = 0, hi = 32, known = false;
+  if (k.hp) { known = true; lo = k.hp.indexOf('1'); hi = k.hp.lastIndexOf('1'); if (lo < 0) { lo = 0; hi = 32; known = false; } }
   for (const stat of ['def', 'spd']) {
     const m = k[stat];
     if (!m) continue;
@@ -58,6 +59,7 @@ export function efficientBulk(opp) {
   const opts = (t, h) => (t ? [0, 1, 2].filter(i => t[h][i] >= 0).map(i => ({mi: i, sp: t[h][i]})) : [{mi: 1, sp: 0, none: true}]);
   let best = null;
   for (let h = 0; h <= 32; h++) {
+    if (k.hp && k.hp[h] !== '1') continue;
     for (const d of opts(D, h)) for (const s2 of opts(S, h)) {
       if (d.mi === s2.mi && d.mi !== 1 && !d.none && !s2.none) continue; // 1つの性格で両方に同じ向きの補正はかからない
       // 補正なしで説明がつくならそちらを優先 (同点のとき)

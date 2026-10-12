@@ -866,3 +866,35 @@ test('追加効果が起きたら反映する (シャドーボールの特防ダ
   assert.equal(b.state.mons.opp[4].boosts.spd, -1);
   assert.ok(dex.moves.shadowball.sec?.[0]?.ch === 20);
 });
+
+import {expiryCandidates} from '../src/engine/flow.js';
+test('HPが分からなかった攻撃を、ターン終了後のHPから逆算して入れ直す', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 0); sendOut(b, 'opp', 0, 4);
+  b.opp[4].item = 'leftovers';
+  addAct(b, {side: 'me', type: 'move', move: 'earthquake', hpUnknown: true}, usage);
+  assert.equal(b.state.mons.opp[4].hp, 100);
+  const c = residualCandidates(b, usage);
+  // 満タン扱いなのでたべのこしは候補に出ない → 画面では「わからない」のあと、たべのこしを選べるようにする
+  finishTurn(b, usage, {residual: [{side: 'opp', mon: 4, key: 'leftovers'}], finalHp: {opp4: 66}});
+  const act = b.turns[0].acts.find(a => a.move === 'earthquake');
+  assert.equal(Math.round(act.hpAfter * 100) / 100, 59.75, `攻撃直後 = 66 - 6.25 (${act.hpAfter})`);
+  assert.equal(b.state.mons.opp[4].hp, 66);
+  assert.ok(!act.hpUnknown);
+  void c;
+});
+
+test('5ターン目の天候が終わらなかったら、起こした相手の持ち物が延長アイテムと分かる', () => {
+  const b = makeBattle();
+  b.opp[1].ability = 'sandstream';
+  sendOut(b, 'me', 0, 0);
+  addEvent(b, {kind: 'send', side: 'opp', to: 1}, usage); // バンギラス (すなおこし)
+  for (let n = 1; n <= 4; n++) { addAct(b, {side: 'me', type: 'move', move: 'swordsdance'}, usage); finishTurn(b, usage, {}); }
+  addAct(b, {side: 'me', type: 'move', move: 'swordsdance'}, usage);
+  const ex = expiryCandidates(b);
+  assert.equal(ex.length, 1);
+  assert.equal(ex[0].key, 'weather');
+  finishTurn(b, usage, {expiry: [{key: 'weather', ended: false, n: 5}]});
+  assert.equal(b.opp[1].item, 'smoothrock');
+  assert.equal(b.state.field.weather, 'Sand');
+});

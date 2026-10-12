@@ -88,25 +88,29 @@ const STAT_JA = {atk: 'こうげき', def: 'ぼうぎょ', spa: 'とくこう', 
 const NO_DROP = new Set(['clearbody', 'whitesmoke']); // 相手からの能力ダウンを受けない
 const NO_INTIMIDATE = new Set(['clearbody', 'whitesmoke', 'hypercutter', 'innerfocus', 'owntempo', 'oblivious', 'scrappy']);
 
-export function setWeather(b, w) {
+// by: 誰が起こしたか {side, mon} (延長する持ち物の判定に使う)
+export function setWeather(b, w, by) {
   const f = b.state.field;
   if (f.weather === w) return false;
   f.weather = w;
   f.since.weather = w ? turnNumber(b) : undefined;
+  (f.by ||= {}).weather = w && by ? by : undefined;
   return true;
 }
-export function setTerrain(b, t) {
+export function setTerrain(b, t, by) {
   const f = b.state.field;
   if (f.terrain === t) return false;
   f.terrain = t;
   f.since.terrain = t ? turnNumber(b) : undefined;
+  (f.by ||= {}).terrain = t && by ? by : undefined;
   return true;
 }
-export function setSideFlag(b, side, key, val) {
+export function setSideFlag(b, side, key, val, by) {
   const s = b.state.sides[side];
   if (s[key] === val) return false;
   s[key] = val;
   s.since[key] = val ? turnNumber(b) : undefined;
+  (s.by ||= {})[key] = val && by ? by : undefined;
   return true;
 }
 export function setFieldFlag(b, key, val) {
@@ -153,8 +157,8 @@ export function applyEntryAbility(b, side, i, {log = [], resolveAbility} = {}) {
   if (!ab) return;
   const build = buildOf(b, side, i), cond = condOf(b, side, i);
   const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(currentSpecies(build, cond))}`;
-  if (WEATHER_ABILITY[ab] && setWeather(b, WEATHER_ABILITY[ab])) log.push(`${who}の${abilityName(ab)}: 天候が${WEATHER_JA[WEATHER_ABILITY[ab]]}に`);
-  if (TERRAIN_ABILITY[ab] && setTerrain(b, TERRAIN_ABILITY[ab])) log.push(`${who}の${abilityName(ab)}: ${TERRAIN_JA[TERRAIN_ABILITY[ab]]}に`);
+  if (WEATHER_ABILITY[ab] && setWeather(b, WEATHER_ABILITY[ab], {side, mon: i})) log.push(`${who}の${abilityName(ab)}: 天候が${WEATHER_JA[WEATHER_ABILITY[ab]]}に`);
+  if (TERRAIN_ABILITY[ab] && setTerrain(b, TERRAIN_ABILITY[ab], {side, mon: i})) log.push(`${who}の${abilityName(ab)}: ${TERRAIN_JA[TERRAIN_ABILITY[ab]]}に`);
   if (ab === 'intimidate') {
     for (const t of b.state.sides[other(side)].active) {
       if (t == null || condOf(b, other(side), t)?.fainted) continue;
@@ -203,6 +207,8 @@ export function sendOut(b, side, slot, monIdx, opts = {}) {
   if (prev != null) leaveField(b, side, prev, {log, resolveAbility: opts.resolveAbility});
   s.active[slot] = monIdx;
   if (monIdx == null) return log;
+  // 設置技がある場に出た → ダメージを確認する (ターン入力で聞く)
+  { const c = condOf(b, side, monIdx); if (c) c.hazard = !!(s.sr || s.spikes) && !c.fainted; }
   if (!b.pick[side].includes(monIdx)) b.pick[side].push(monIdx);
   if (!opts.silent) applyEntryAbility(b, side, monIdx, {log, resolveAbility: opts.resolveAbility});
   return log;
@@ -301,12 +307,12 @@ export function applyMoveEffects(b, act, opts = {}) {
   const st = b.state;
 
   const weatherMove = {raindance: 'Rain', sunnyday: 'Sun', sandstorm: 'Sand', snowscape: 'Snow', chillyreception: 'Snow'}[move];
-  if (weatherMove && setWeather(b, weatherMove)) log.push(`${moveName(move)}: 天候が${WEATHER_JA[weatherMove]}に`);
+  if (weatherMove && setWeather(b, weatherMove, {side, mon})) log.push(`${moveName(move)}: 天候が${WEATHER_JA[weatherMove]}に`);
   const terrainMove = {electricterrain: 'Electric', grassyterrain: 'Grassy', mistyterrain: 'Misty', psychicterrain: 'Psychic'}[move];
-  if (terrainMove && setTerrain(b, terrainMove)) log.push(`${moveName(move)}: ${TERRAIN_JA[terrainMove]}に`);
-  if (move === 'reflect' && setSideFlag(b, side, 'reflect', true)) log.push(`${who}のリフレクター`);
-  if (move === 'lightscreen' && setSideFlag(b, side, 'lightScreen', true)) log.push(`${who}のひかりのかべ`);
-  if (move === 'auroraveil' && st.field.weather === 'Snow' && setSideFlag(b, side, 'auroraVeil', true)) log.push(`${who}のオーロラベール`);
+  if (terrainMove && setTerrain(b, terrainMove, {side, mon})) log.push(`${moveName(move)}: ${TERRAIN_JA[terrainMove]}に`);
+  if (move === 'reflect' && setSideFlag(b, side, 'reflect', true, {side, mon})) log.push(`${who}のリフレクター`);
+  if (move === 'lightscreen' && setSideFlag(b, side, 'lightScreen', true, {side, mon})) log.push(`${who}のひかりのかべ`);
+  if (move === 'auroraveil' && st.field.weather === 'Snow' && setSideFlag(b, side, 'auroraVeil', true, {side, mon})) log.push(`${who}のオーロラベール`);
   if (move === 'tailwind' && setSideFlag(b, side, 'tailwind', true)) log.push(`${who}のおいかぜ`);
   if (move === 'trickroom') { setFieldFlag(b, 'trickRoom', !st.field.trickRoom); log.push(`トリックルーム${st.field.trickRoom ? '発動' : '解除'}`); }
   if (move === 'gravity' && setFieldFlag(b, 'gravity', true)) log.push('じゅうりょく発動');

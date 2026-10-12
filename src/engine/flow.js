@@ -3,7 +3,7 @@ import {dex, speciesName, moveName, statsOf, itemName, abilityName} from './dex.
 import {currentSpecies, currentAbility, finalSpeed} from './calc.js';
 import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA, WEATHER_ABILITY, TERRAIN_ABILITY} from './battle.js';
 import {boardContext} from './board.js';
-import {inferFromTaken, inferFromDealt, applyInference, inferable} from './infer-dmg.js';
+import {inferFromTaken, inferFromDealt, applyInference, inferable, applyHpConstraint} from './infer-dmg.js';
 import {inferSpeeds} from './infer.js';
 
 export const openTurn = b => { const t = b.turns[b.turns.length - 1]; return t && t.open ? t : null; };
@@ -52,10 +52,35 @@ export function endTurn(b, usage, opts = {}) {
   for (const [key, label, base, ext] of [['weather', '天候', 5, 8], ['terrain', 'フィールド', 5, 8]]) {
     if (!f[key] || f.since?.[key] == null) continue;
     const n = t.n - f.since[key] + 1;
-    if (n === base) log.push(`${label}が${base}ターン目を終えました${ext ? ` (延長する持ち物がなければここで終了。あれば${ext}ターン)` : ' (ここで終了)'}。終わったら「その他の変化」で解除してください`);
+    void n; void base; void ext; void label;
   }
+  // ターン終了時の処理の順番 (先に処理されたほうが速い) から素早さを絞り込む
+  if (opts.resFirst === 'me' || opts.resFirst === 'opp') {
+    try {
+      const fm = (sd) => b.state.sides[sd].active.find(i => i != null && !condOf(b, sd, i)?.fainted);
+      const first = opts.resFirst, second = other(first);
+      if (fm(first) != null && fm(second) != null) {
+        const sim = clone(b);
+        const acts = [{type: 'move', side: first, mon: fm(first), move: 'tackle', flags: {}}, {type: 'move', side: second, mon: fm(second), move: 'tackle', flags: {}}];
+        const before = sim.opp.map(o => JSON.stringify(o.speOk || null));
+        log.push(...inferSpeeds(sim, {acts}, {resolveAbility: res}).map(x => `ターン終了時の処理の順番から ${x}`));
+        sim.opp.forEach((o, i) => { if (JSON.stringify(o.speOk || null) !== before[i] && b.opp[i]) { b.opp[i].speOk = o.speOk; b.opp[i].scarfLikely = o.scarfLikely; } });
+      }
+    } catch { /* 絞り込めなくても続ける */ }
+  }
+  // やどりぎのタネで吸い取った量 (自分の回復量) から、相手の最大HP → HPの能力ポイントが分かる
+  for (const h of opts.hpFacts || []) {
+    const o = b.opp[h.opp];
+    if (!o || !(h.drain > 0)) continue;
+    const base = dex.species[currentSpecies(o, condOf(b, 'opp', h.opp))]?.bs[0];
+    if (base == null) continue;
+    log.push(`相手の${speciesName(o.species)}: やどりぎのタネの回復量 ${h.drain} から ${applyHpConstraint(o, sp => Math.floor(statsOf(currentSpecies(o, condOf(b, 'opp', h.opp)), [sp, 0, 0, 0, 0, 0], 'Serious')[0] / 8) === h.drain)}`);
+  }
+  // 5ターン目 (延長なら8ターン目) の天候・フィールド・壁: 終わったかどうか → 延長する持ち物の判定
+  for (const x of opts.expiry || []) log.push(...applyExpiry(b, x));
+  for (const sd of ['me', 'opp']) for (const c of b.state.mons[sd]) if (c) c.hazard = false;
   t.open = false;
-  t.end = {noOrder: !!(opts.noOrder || t.noOrder)};
+  t.end = {noOrder: !!(opts.noOrder || t.noOrder), resFirst: opts.resFirst || undefined, hpFacts: opts.hpFacts?.length ? opts.hpFacts : undefined, expiry: opts.expiry?.length ? opts.expiry : undefined};
   t.auto.push(...log);
   b.updatedAt = Date.now();
   return log;
@@ -172,6 +197,7 @@ export function addAct(b, input, usage) {
       }
       a.target = tgt;
     }
+    if (tgt && !a.target && tgt.side !== side) a.target = tgt;
     condOf(b, side, mon).glaive = !failed && a.move === 'glaiverush';
     // やどりぎのタネ: くさタイプ以外に当たると、交代するまで毎ターン 1/8 減る
     if (!failed && tgt && a.move === 'leechseed' && !dex.species[currentSpecies(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon))]?.t.includes('Grass')) condOf(b, tgt.side, tgt.mon).seeded = true;
@@ -218,6 +244,7 @@ export function addAct(b, input, usage) {
       }
     }
   }
+  if (input.hpUnknown) a.hpUnknown = true;
   a.auto = log;
   a.in = inputCopy(input);
   t.acts.push(a);
@@ -248,7 +275,7 @@ export function addEvent(b, ev, usage) {
   const res = boardContext(b, usage).strictAbility;
   const log = [];
   let text = '';
-  const needMon = ['item', 'hp', 'status', 'boost', 'ability', 'mega', 'faint', 'residual'].includes(ev.kind);
+  const needMon = ['item', 'hp', 'status', 'boost', 'ability', 'mega', 'faint', 'residual', 'hazard'].includes(ev.kind);
   if (needMon && !cond) return ['場にポケモンがいません'];
   if (ev.kind === 'item') {
     if (side === 'opp' && ev.item) build.item = ev.item;
@@ -267,6 +294,17 @@ export function addEvent(b, ev, usage) {
     if (ev.key === 'tox') cond.toxicCounter = Math.min(15, (cond.toxicCounter || 1) + 1);
     if (side === 'opp' && RESIDUAL_ITEM[ev.key] && !build.item) build.item = RESIDUAL_ITEM[ev.key];
     text = `${RESIDUAL_JA[ev.key]} ${r.pct > 0 ? '+' : ''}${side === 'me' ? `${r.hp}` : `${Math.round(r.pct * 10) / 10}%`}${cond.fainted && was > 0 ? ' → ひんし' : ''}`;
+  } else if (ev.kind === 'hazard') {
+    cond.hazard = false;
+    if (ev.none) {
+      text = '設置技のダメージを受けなかった';
+      if (side === 'opp' && !build.item && (b.state.sides.opp.sr || hazardDamage(b, side, mon)?.pct)) { build.item = 'heavydutyboots'; text += ' (あつぞこブーツ)'; }
+    } else {
+      const d = hazardDamage(b, side, mon);
+      const hp = ev.hpAfter ?? (d ? Math.max(0, cond.hp - d.pct) : cond.hp);
+      setHP(b, side, mon, hp);
+      text = `設置技のダメージ → HP ${side === 'me' ? `${Math.round((hp * maxHPOf(b, side, mon)) / 100)}` : `${Math.round(hp)}%`}`;
+    }
   } else if (ev.kind === 'send') {
     const slot = ev.slot ?? b.state.sides[side].active.findIndex(x => x == null || condOf(b, side, x)?.fainted);
     if (slot < 0 || ev.to == null) return ['出す場所がありません'];
@@ -305,7 +343,7 @@ export function actLine(b, a) {
   const tags = [a.mega && 'メガ', f.crit && '急所', f.miss && '外れ', f.protect && 'まもる', f.cant && '行動不能'].filter(Boolean).join('・');
   const items = [a.atkItem && `${itemName(a.atkItem)}`, a.defItem && `相手側 ${itemName(a.defItem)} 発動`].filter(Boolean).join('・');
   if (a.type === 'move' && !a.move) return f.cant ? '行動できず' : '(技不明)';
-  return `${moveName(a.move)}${a.inflict ? ` ${STATUS_JA[a.inflict]}` : ''}${a.secFx?.length ? ' 追加効果' : ''}${a.hpAfter != null ? ` ${a.hpAfter > 0 && a.hpAfter < 1 ? 1 : Math.round(a.hpAfter)}%` : ''}${tags ? ` ${tags}` : ''}${items ? ` (${items})` : ''}${a.toSp ? ` → ${speciesName(a.toSp)}` : ''}`;
+  return `${moveName(a.move)}${a.hpUnknown ? ' HP?' : ''}${a.inflict ? ` ${STATUS_JA[a.inflict]}` : ''}${a.secFx?.length ? ' 追加効果' : ''}${a.hpAfter != null ? ` ${a.hpAfter > 0 && a.hpAfter < 1 ? 1 : Math.round(a.hpAfter)}%` : ''}${tags ? ` ${tags}` : ''}${items ? ` (${items})` : ''}${a.toSp ? ` → ${speciesName(a.toSp)}` : ''}`;
 }
 export {turnNumber, defaultAbilityResolver};
 
@@ -480,13 +518,15 @@ export function residualCandidates(b, usage) {
       const itemRates = side === 'opp' && !build.item ? Object.fromEntries(ctx.views[mon]?.items || []) : {};
       const already = new Set((openTurn(b)?.acts || []).filter(x => x.target?.side === side && x.target?.mon === mon).flatMap(x => x.healedBy || []));
       // 処理は順番に起きる (例: すなあらしで減ってから たべのこしで回復) ので、確実なものはHPを進めながら候補を作る
-      let simHp = cond.hp;
+      // HPを「わからない」で飛ばした攻撃を受けていたら、満タンでない前提で候補を出す
+      const unknownHit = (openTurn(b)?.acts || []).some(x => x.hpUnknown && x.target?.side === side && x.target?.mon === mon);
+      let simHp = unknownHit ? 50 : cond.hp;
       const blocked = (cond.healBlock || 0) >= (openTurn(b)?.n ?? turnNumber(b));
       const push = (key, checked) => {
         const r = residualDelta(b, side, mon, key, simHp);
         if (!r || (blocked && r.pct > 0)) return;
         const ch = checked || already.has(key);
-        out.push({side, mon, key, label: RESIDUAL_JA[key], pct: r.pct, hp: r.hp, checked: ch});
+        out.push({side, mon, key, label: RESIDUAL_JA[key], pct: r.pct, hp: r.hp, checked: ch, unknown: unknownHit});
         if (ch) simHp = Math.max(0, Math.min(100, simHp + r.pct));
       };
       const noIndirect = sure('magicguard');
@@ -516,11 +556,50 @@ export function residualCandidates(b, usage) {
 }
 
 /** ターンを締める: 選んだターン終了時の処理を記録してから endTurn */
-export function finishTurn(b, usage, {residual = [], noOrder = false} = {}) {
-  ensureTurn(b);
+/**
+ * ターンを締める。
+ * residual: 選んだターン終了時の処理 / finalHp: {'me0': 割合} ターン終了後のHP (分かったもの)
+ * resFirst: 先に処理されたのはどちらか / expiry: [{key, ended, n}] 5ターン目のものが終わったか
+ */
+export function finishTurn(b, usage, {residual = [], noOrder = false, finalHp = {}, resFirst, expiry = []} = {}) {
+  let t = ensureTurn(b);
   const log = [];
+  // 「わからない」で飛ばした攻撃のHPを、ターン終了後のHPから逆算して入れ直す
+  let changed = false;
+  for (const [k, val] of Object.entries(finalHp)) {
+    if (val == null || !Number.isFinite(val)) continue;
+    const side = k.startsWith('me') ? 'me' : 'opp', mon = Number(k.replace(/^(me|opp)/, ''));
+    const act = [...t.acts].reverse().find(a => a.type === 'move' && a.in?.hpUnknown && a.target?.side === side && a.target?.mon === mon);
+    if (!act) continue;
+    let h = val;
+    for (const r of [...residual].reverse()) if (r.side === side && r.mon === mon) { const d = residualDelta(b, side, mon, r.key, Math.max(1, h)); if (d) h -= d.pct; }
+    act.in = {...act.in, hpAfter: Math.max(0.1, Math.min(100, h)), exact: side === 'me'};
+    delete act.in.hpUnknown;
+    changed = true;
+  }
+  if (changed && canReplay(b)) { replay(b, usage); t = ensureTurn(b); }
+  // やどりぎのタネの回復量 (自分が回復した実数) を控える
+  const hpFacts = [];
+  const leech = residual.find(r => r.side === 'me' && r.key === 'leechheal');
+  if (leech && finalHp[`me${leech.mon}`] != null) {
+    const bd = buildOf(b, 'me', leech.mon), c = condOf(b, 'me', leech.mon);
+    const max = statsOf(currentSpecies(bd, c), bd.sp, bd.nature)[0];
+    let hpReal = Math.round((c.hp * max) / 100);
+    for (const r of residual) if (r.side === 'me' && r.mon === leech.mon && r.key !== 'leechheal') { const d = residualDelta(b, 'me', leech.mon, r.key, (hpReal / max) * 100); if (d) hpReal += d.hp; }
+    const fin = Math.round((finalHp[`me${leech.mon}`] * max) / 100);
+    const drain = fin - hpReal;
+    const seeded = b.state.sides.opp.active.find(i => i != null && condOf(b, 'opp', i)?.seeded);
+    if (drain > 0 && fin < max && seeded != null) hpFacts.push({opp: seeded, drain});
+  }
   for (const r of residual) log.push(...addEvent(b, {kind: 'residual', side: r.side, mon: r.mon, key: r.key}, usage));
-  log.push(...endTurn(b, usage, {noOrder}));
+  // 入力されたターン終了後のHPと計算が合わなければ、入力のほうに合わせる
+  for (const [k, val] of Object.entries(finalHp)) {
+    if (val == null || !Number.isFinite(val)) continue;
+    const side = k.startsWith('me') ? 'me' : 'opp', mon = Number(k.replace(/^(me|opp)/, ''));
+    const c = condOf(b, side, mon);
+    if (c && !c.fainted && Math.abs(c.hp - val) > (side === 'me' ? 0.7 : 1)) log.push(...addEvent(b, {kind: 'hp', side, mon, hpAfter: val, note: 'ターン終了後に確認'}, usage));
+  }
+  log.push(...endTurn(b, usage, {noOrder, resFirst, hpFacts, expiry}));
   return log;
 }
 
@@ -545,7 +624,7 @@ function simultaneousEntry(b, usage, side, mon, res) {
     if (sThis === sOther) { log.push(`同時に場に出た: 素早さが同じ見込みのため、${label}はどちらが残るか不確定 (違っていたら「その他の変化」で直してください)`); continue; }
     // いま出した側のほうが速い → 先に発動して、遅い側 (先に出してあった側) の特性で上書きされる
     if (sThis > sOther) {
-      setter(b, map[abOther]);
+      setter(b, map[abOther], {side: os, mon: om});
       log.push(`同時に場に出た: 遅い${os === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, os, om).species)}の${abilityName(abOther)}があとから発動し、${label}は${ja[map[abOther]]}`);
     } else log.push(`同時に場に出た: 遅い${side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, side, mon).species)}の${abilityName(abThis)}があとから発動し、${label}は${ja[map[abThis]]}`);
   }
@@ -584,4 +663,68 @@ function onHitEffects(b, {side, mon, move, crit, tgt, before, defItem}, res, log
   else if (ab === 'seedsower' && setTerrain(b, 'Grassy')) log.push(`${name}: グラスフィールドに`);
   else if (ab === 'sandspit' && setWeather(b, 'Sand')) log.push(`${name}: 天候がすなあらしに`);
   else if (ab === 'cottondown') { const l = []; applyBoosts(b, side, mon, {spe: -1}, {log: l, fromOpp: true, resolveAbility: res}); if (l.length) log.push(`${name}: ${l.join('、')}`); }
+}
+
+// ---- 5ターン目の天候・フィールド・壁 ----
+const EXTENDER = {weather: {Rain: 'damprock', Sun: 'heatrock', Sand: 'smoothrock', Snow: 'icyrock'}, terrain: 'terrainextender', screen: 'lightclay'};
+const SCREEN_JA = {reflect: 'リフレクター', lightScreen: 'ひかりのかべ', auroraVeil: 'オーロラベール'};
+
+/** ターン終了時に「終わったか」を聞く候補。経過が5ターン目・8ターン目のもの */
+export function expiryCandidates(b) {
+  const t = openTurn(b);
+  if (!t) return [];
+  const out = [];
+  const f = b.state.field;
+  const age = since => (since == null ? 0 : t.n - since + 1);
+  const who = by => (by ? `${by.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, by.side, by.mon)?.species)}` : '');
+  if (f.weather && [5, 8].includes(age(f.since?.weather))) out.push({key: 'weather', label: `天候 (${WEATHER_JA[f.weather]})`, n: age(f.since.weather), by: f.by?.weather, byName: who(f.by?.weather)});
+  if (f.terrain && [5, 8].includes(age(f.since?.terrain))) out.push({key: 'terrain', label: TERRAIN_JA[f.terrain], n: age(f.since.terrain), by: f.by?.terrain, byName: who(f.by?.terrain)});
+  for (const side of ['me', 'opp']) {
+    const sd = b.state.sides[side];
+    for (const k of Object.keys(SCREEN_JA)) if (sd[k] && [5, 8].includes(age(sd.since?.[k]))) out.push({key: `${side}.${k}`, label: `${side === 'me' ? '自分' : '相手'}の${SCREEN_JA[k]}`, n: age(sd.since[k]), by: sd.by?.[k], byName: who(sd.by?.[k])});
+  }
+  return out;
+}
+
+function applyExpiry(b, x) {
+  const log = [];
+  const f = b.state.field;
+  let by, item, label;
+  if (x.key === 'weather') { by = f.by?.weather; item = EXTENDER.weather[f.weather]; label = `天候 (${WEATHER_JA[f.weather] || ''})`; if (x.ended) setWeather(b, ''); }
+  else if (x.key === 'terrain') { by = f.by?.terrain; item = EXTENDER.terrain; label = TERRAIN_JA[f.terrain] || 'フィールド'; if (x.ended) setTerrain(b, ''); }
+  else {
+    const [side, k] = x.key.split('.');
+    by = b.state.sides[side].by?.[k]; item = EXTENDER.screen; label = SCREEN_JA[k];
+    if (x.ended) setSideFlag(b, side, k, false);
+  }
+  if (x.ended) { log.push(`${label}が終わった`); return log; }
+  // 5ターンで終わらなかった → 起こしたポケモンは延長する持ち物を持っている
+  log.push(`${label}が5ターンで終わらなかった`);
+  if (by && x.n === 5 && item) {
+    const bd = buildOf(b, by.side, by.mon);
+    if (by.side === 'opp' && bd && !bd.item) { bd.item = item; log.push(`相手の${speciesName(bd.species)}の持ち物は${itemName(item)}`); }
+  }
+  return log;
+}
+
+/** 場に出たときの設置技のダメージ {pct, hp(自分の実数), parts: ['ステルスロック', ...]} / 受けないなら null */
+export function hazardDamage(b, side, mon) {
+  const sd = b.state.sides[side];
+  const bd = buildOf(b, side, mon), c = condOf(b, side, mon);
+  if (!bd || !c || c.fainted) return null;
+  const types = dex.species[currentSpecies(bd, c)]?.t || [];
+  const ab = defaultAbilityResolver(b, side, mon);
+  if (ab === 'magicguard') return null;
+  let frac = 0;
+  const parts = [];
+  if (sd.sr) {
+    let eff = 1;
+    for (const ty of types) eff *= {Fire: 2, Ice: 2, Flying: 2, Bug: 2, Fighting: 0.5, Ground: 0.5, Steel: 0.5}[ty] || 1;
+    frac += eff / 8; parts.push('ステルスロック');
+  }
+  const grounded = !types.includes('Flying') && ab !== 'levitate' && !(bd.item === 'airballoon' && !c.itemGone);
+  if (sd.spikes && grounded) { frac += [0, 1 / 8, 1 / 6, 1 / 4][Math.min(3, sd.spikes)]; parts.push(`まきびし${sd.spikes}`); }
+  if (!frac) return null;
+  if (side === 'me') { const max = maxHPOf(b, side, mon); const d = Math.floor(max * frac); return {pct: (d / max) * 100, hp: d, parts}; }
+  return {pct: frac * 100, parts};
 }

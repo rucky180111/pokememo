@@ -676,3 +676,13 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .ab-cands { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .ab-cand { background: var(--surface2); border-radius: 4px; padding: 0 5px; font-weight: 600; }
 .ab-cand small { color: var(--muted); font-weight: 400; }
+
+.res-group { border: 1px solid var(--border); border-radius: 9px; padding: 6px 8px; margin: 6px 0; }
+.res-group.me { border-left: 4px solid var(--me); } .res-group.opp { border-left: 4px solid var(--opp); }
+.res-group.need { background: var(--warn-bg); }
+.rg-h { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.res-group .res-list li { border-bottom: 0; padding: 3px 0; }
+.rg-hp { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; margin-top: 4px; }
+.rg-hp > span:first-child { flex-basis: 100%; }
+.rg-hp .input { width: 84px; text-align: right; font-size: 16px; }
+.res-q { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 0; border-top: 1px dashed var(--border); font-size: 13px; }

@@ -171,8 +171,41 @@ export function applyInference(opp, view, res) {
   const prev = opp.statOk[res.stat];
   const merged = prev ? and(prev, res.mask) : res.mask;
   if (!merged.includes('1')) return `これまでの絞り込みと矛盾します。保存していません (相手の情報から絞り込みをリセットできます)。`;
+  // HP の絞り込みがあれば、ぼうぎょ/とくぼうの組み合わせにも反映する
+  if ((res.stat === 'def' || res.stat === 'spd') && opp.statOk.hp) {
+    let out = '';
+    for (let h = 0; h <= 32; h++) out += opp.statOk.hp[h] === '1' ? merged.slice(h * SPE_COMBOS, (h + 1) * SPE_COMBOS) : '0'.repeat(SPE_COMBOS);
+    if (out.includes('1')) { opp.statOk[res.stat] = out; return applyMsg(res); }
+  }
   opp.statOk[res.stat] = merged;
+  return applyMsg(res);
+}
+function applyMsg(res) {
+  const names = {atk: 'こうげき', spa: 'とくこう', def: 'ぼうぎょ', spd: 'とくぼう'};
   const msg = res.range ? `${names[res.stat]}の実数値は ${res.range[0]}〜${res.range[1]}` : `HPの能力ポイント ${res.hpRange[0]}〜${res.hpRange[1]}・${names[res.stat]}の実数値 ${res.defRange[0]}〜${res.defRange[1]}`;
   return `${msg}。`;
 }
 export {parseSpread, ALL};
+
+/**
+ * HP の能力ポイントの絞り込みを足す (やどりぎのタネの回復量などから分かる)。
+ * okSP(sp) が true の SP だけを残す。ぼうぎょ/とくぼうの絞り込み (HP×補正×SP) にも反映する。
+ * 戻り値: 説明の文 (矛盾したら保存しない)
+ */
+export function applyHpConstraint(opp, okSP) {
+  opp.statOk ||= {};
+  let row = '';
+  for (let h = 0; h <= 32; h++) row += okSP(h) ? '1' : '0';
+  const merged = opp.statOk.hp ? and(opp.statOk.hp, row) : row;
+  if (!merged.includes('1')) return 'HPの能力ポイントがこれまでの絞り込みと矛盾するため、保存していません';
+  opp.statOk.hp = merged;
+  for (const st of ['def', 'spd']) {
+    const m = opp.statOk[st];
+    if (!m) continue;
+    let out = '';
+    for (let h = 0; h <= 32; h++) out += merged[h] === '1' ? m.slice(h * SPE_COMBOS, (h + 1) * SPE_COMBOS) : '0'.repeat(SPE_COMBOS);
+    if (out.includes('1')) opp.statOk[st] = out;
+  }
+  const lo = merged.indexOf('1'), hi = merged.lastIndexOf('1');
+  return `HPの能力ポイントは ${lo === hi ? lo : `${lo}〜${hi}`}`;
+}

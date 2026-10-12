@@ -153,7 +153,7 @@ check(b.state.mons.me[0].boosts.atk === 2, 'つるぎのまいで A+2');
 check(b.state.sides.me.sr === true, '自分の場にステルスロック');
 check(b.opp[1].moves.includes('stealthrock'), '相手の技が判明済みに入る');
 check(await page.locator('.tl-act').count() === 3, '時系列に3行 (場に出す + 2行動)');
-check(await page.locator('.res-list, .wz-page', {hasText: '自動で反映'}).count() + await page.locator('.res-list').count() > 0, '全員記録したら ③ ターン終了の画面に進む');
+check(await page.getByRole('button', {name: /ターンを終える/}).count() === 1, '全員記録したら ③ ターン終了の画面に進む');
 await shot(page, 'endturn');
 await page.getByRole('button', {name: 'ターンを終える'}).click();
 // ターン2: 相手=がんせきふうじ (自分の残り70) → 自分=じしん (相手の残り20%)
@@ -165,11 +165,11 @@ await page.locator('.af-hp input').fill('70');
 await page.locator('.actform .btn.primary').click();
 await page.locator('.actor-btn.me').click();
 await page.locator('.oc-btn.hit').click();
-await page.locator('.af-hp input').fill('20');
-await page.locator('.actform .btn.primary').click();
+// 自分のじしんのダメージは「わからない」で飛ばし、ターン終了時にHPを入れて逆算する
+await page.locator('.actform .chip.unk').click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.turns.length === 2 && realActs(b.turns[1]) === 2, '2ターン目に2行動');
-check(Math.round(b.state.mons.me[0].hp) === Math.round(70 / 185 * 100) && b.state.mons.opp[1].hp === 20, `残りHPが盤面に反映される (${b.state.mons.me[0].hp})`);
+check(Math.round(b.state.mons.me[0].hp) === Math.round(70 / 185 * 100) && b.state.mons.opp[1].hp === 100 && b.turns[1].acts.some(a => a.hpUnknown), `残りHPが盤面に反映され、分からないHPは保留 (${b.state.mons.me[0].hp})`);
 check(b.state.mons.me[0].boosts.spe === -1, 'がんせきふうじで S-1');
 check(b.turns[1].acts.some(a => (a.auto || []).some(x => /実数値|説明がつきません/.test(x))), 'ダメージからの絞り込み結果が時系列に出る');
 // あとから修正: 相手のがんせきふうじの残りHPを 80 に直す
@@ -177,8 +177,12 @@ await page.locator('.tl-turn').nth(1).locator('.tl-act').first().click();
 await page.locator('.overlay .af-hp input').fill('80');
 await page.getByRole('button', {name: 'この内容で直す'}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
-check(Math.round(b.state.mons.me[0].hp) === Math.round(80 / 185 * 100) && b.state.mons.opp[1].hp === 20 && b.state.mons.me[0].boosts.atk === 2, `修正が反映され、ほかの記録は残る (${b.state.mons.me[0].hp})`);
+check(Math.round(b.state.mons.me[0].hp) === Math.round(80 / 185 * 100) && b.state.mons.opp[1].hp === 100 && b.state.mons.me[0].boosts.atk === 2, `修正が反映され、ほかの記録は残る (${b.state.mons.me[0].hp})`);
+check(await page.locator('.res-group.need').count() === 1, 'ターン終了時に「HPは?」と聞かれる');
+await page.locator('.res-group.need .rg-hp input').fill('20');
 await page.getByRole('button', {name: 'ターンを終える'}).click();
+b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
+check(b.state.mons.opp[1].hp === 20 && b.turns[1].acts.some(a => a.move === 'earthquake' && a.hpAfter === 20 && !a.hpUnknown), `ターン終了後のHPからダメージを逆算してバトルログを更新 (${b.state.mons.opp[1].hp})`);
 // 出来事: 相手のオボンのみ発動 (+25%)
 await page.locator('.composer .cp-head .seg button', {hasText: 'その他の変化'}).click();
 await page.locator('.ev .seg button', {hasText: '相手'}).click();
