@@ -26,6 +26,14 @@ const benchOf = (b, side) => {
   return list.map((_, i) => i).filter(i => !sd.active.includes(i) && !condOf(b, side, i)?.fainted && (side === 'opp' || !b.pick.me.length || b.pick.me.includes(i) || b.pick.me.length < (b.format === 'double' ? 4 : 3)));
 };
 const monName = (b, side, i) => speciesName(currentSpecies(buildOf(b, side, i), condOf(b, side, i)));
+// メガシンカできる姿 (相手で持ち物が分からないときは全候補。リザードンX/Y など)
+const megaFormes = (b, side, mon) => {
+  if (!canMegaNow(b, side, mon)) return [];
+  const bd = buildOf(b, side, mon);
+  const s = dex.species[bd.species];
+  return side === 'opp' && !bd.item ? s.megas || [] : [megaTarget(b, side, mon)].filter(Boolean);
+};
+const megaLabel = (fm, many) => `メガシンカ${many ? (/[XYZＸＹＺ]$/.exec(speciesName(fm))?.[0] || '') : ''}`;
 const canMegaNow = (b, side, mon) => !!megaTarget(b, side, mon) && !b.state.sides[side].megaUsed && !dex.species[condOf(b, side, mon)?.forme]?.mega;
 
 // 自分の行動予定 (ターンをまたいで画面を切り替えても残す)
@@ -178,6 +186,16 @@ function Composer({battle, ctx, mut, usage, toast}) {
               })}
             </div>
             {!remaining.length && <p class="muted">全員の行動を記録しました。</p>}
+            {actors.some(a => megaFormes(battle, a.side, a.mon).length) && (
+              <div class="mega-row">
+                <span class="muted">ターンの最初にメガシンカ:</span>
+                {actors.flatMap(a => megaFormes(battle, a.side, a.mon).map((fm, _, arr) => (
+                  <button class={cx('btn sm mega-btn', a.side)} onClick={() => { const log = mut(b => addEvent(b, {kind: 'mega', side: a.side, mon: a.mon, forme: fm}, usage)); toast(log?.[log.length - 1] || 'メガシンカ'); }}>
+                    {SIDE_JA[a.side]}の{monName(battle, a.side, a.mon)} {megaLabel(fm, arr.length > 1)}
+                  </button>
+                )))}
+              </div>
+            )}
             <div class="btnrow">
               <button class={cx('btn grow', !remaining.length && 'primary')} disabled={!open} onClick={() => go('end')}>ターン終了へ{remaining.length > 0 && <small class="muted">&nbsp;(未記録 {remaining.length}体)</small>}</button>
             </div>
@@ -251,7 +269,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
       const tm = t?.mon ?? foes[0];
       hp = ts === 'me' && tm != null ? String(Math.round((i.hpAfter * maxHPOf(battle, tm)) / 100)) : String(Math.round(i.hpAfter * 10) / 10);
     }
-    return {type: i.type || null, move: i.move || '', to: i.to ?? null, target: t, mega: !!i.mega,
+    return {type: i.type || null, move: i.move || '', to: i.to ?? null, target: t, mega: !!i.mega, megaForme: i.megaForme || '',
       outcome: i.cant ? 'cant' : i.miss ? 'miss' : i.protect ? 'protect' : 'hit', hp, crit: !!i.crit, hits: i.hits || 0,
       defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
   };
@@ -285,7 +303,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
     let hpAfter = null;
     if (h && m2 && m2.c !== 'Z' && ff.hp !== '' && !ff.endured && ff.defItem !== 'focussash') hpAfter = tgtMax ? (Number(ff.hp) / tgtMax) * 100 : Number(ff.hp);
     return Object.assign(input, {
-      move: ff.move, mega: ff.mega, crit: h && ff.crit, miss: ff.outcome === 'miss', protect: ff.outcome === 'protect', cant: ff.outcome === 'cant',
+      move: ff.move, mega: ff.mega, megaForme: ff.mega ? ff.megaForme || '' : '', crit: h && ff.crit, miss: ff.outcome === 'miss', protect: ff.outcome === 'protect', cant: ff.outcome === 'cant',
       exact: !!tgtMax, endured: h && ff.endured, hits: h && ff.hits ? ff.hits : undefined,
       defItem: h && ff.defItem ? {item: ff.defItem, consumed: consumable(ff.defItem)} : null,
       atkItem: ff.atkItem ? {item: ff.atkItem, consumed: consumable(ff.atkItem)} : null,
@@ -329,7 +347,9 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
         </div>
       )}
       <div class="chips">
-        {canMegaNow(battle, side, mon) && <Toggle small on={f.mega} onChange={v => set({mega: v})}>メガシンカした</Toggle>}
+        {megaFormes(battle, side, mon).map((fm, _, arr) => (
+          <button class={cx('btn sm mega-btn', f.mega && (f.megaForme || arr[0]) === fm && 'on')} onClick={() => set(f.mega && (f.megaForme || arr[0]) === fm ? {mega: false, megaForme: ''} : {mega: true, megaForme: fm})}>{megaLabel(fm, arr.length > 1)}した</button>
+        ))}
         {wizard && <button class="chip" onClick={() => submit({type: 'move', move: '', outcome: 'cant'})}>行動できず (ひるみ・まひ・ねむり等)</button>}
       </div>
     </>

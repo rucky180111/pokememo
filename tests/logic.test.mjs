@@ -804,3 +804,19 @@ test('選出表の記録: 自分×相手の選出率と勝率', () => {
   assert.deepEqual(r.cell.charizard.gengar, {n: 2, picked: 2, win: 2, lose: 0});
   assert.deepEqual(r.row.charizard, {n: 3, picked: 2, win: 2, lose: 0});
 });
+
+test('同時に場に出たときは、遅いほうの天候・フィールドが残る', () => {
+  const b = makeBattle();
+  b.my[0] = B('tyranitar', {ability: 'sandstream', nature: 'Serious', sp: [0, 0, 0, 0, 0, 0], moves: ['rockslide']});
+  b.opp[0] = newOpp('pelipper'); b.opp[0].ability = 'drizzle'; b.opp[0].assume = {kind: 'preset', key: 'none'};
+  sendOut(b, 'me', 0, 0, {resolveAbility: () => 'sandstream'});
+  assert.equal(b.state.field.weather, 'Sand');
+  const log = addEvent(b, {kind: 'send', side: 'opp', to: 0}, usage);
+  // ペリッパー (85) のほうが速い → 先に雨、あとからバンギラス (81) の砂で上書き
+  assert.equal(b.state.field.weather, 'Sand', log.join('/'));
+  // 途中の交代で出てきたときは、普通にあとから出たほうが残る
+  addAct(b, {side: 'me', type: 'move', move: 'rockslide', hpAfter: 90}, usage);
+  addAct(b, {side: 'opp', type: 'switch', to: 1, sameTurn: true}, usage);
+  addAct(b, {side: 'opp', type: 'switch', to: 0}, usage);
+  assert.equal(b.state.field.weather, 'Rain');
+});

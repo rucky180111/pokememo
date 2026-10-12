@@ -1,7 +1,7 @@
 // 時系列での入力: 行動を1つずつ追加していく。追加のたびに盤面・判明情報・能力の絞り込みへ反映する。
 import {dex, speciesName, moveName, statsOf, itemName, abilityName} from './dex.js';
-import {currentSpecies, currentAbility} from './calc.js';
-import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA} from './battle.js';
+import {currentSpecies, currentAbility, finalSpeed} from './calc.js';
+import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA, WEATHER_ABILITY, TERRAIN_ABILITY} from './battle.js';
 import {boardContext} from './board.js';
 import {inferFromTaken, inferFromDealt, applyInference, inferable} from './infer-dmg.js';
 import {inferSpeeds} from './infer.js';
@@ -104,7 +104,7 @@ export function addAct(b, input, usage) {
     condOf(b, side, mon).glaive = false;
     sendOut(b, side, slot, a.to, {log, resolveAbility: res});
   } else {
-    if (a.mega) { megaEvolve(b, side, mon, null, {log, resolveAbility: res}); ctx = boardContext(b, usage); }
+    if (a.mega) { megaEvolve(b, side, mon, input.megaForme || null, {log, resolveAbility: res}); ctx = boardContext(b, usage); }
     if (side === 'opp' && dex.moves[a.move] && !build.moves.includes(a.move) && build.moves.length < 4) build.moves.push(a.move);
     const foe = other(side);
     const tgt = a.target || (() => { const f = b.state.sides[foe].active.filter(i => i != null && !condOf(b, foe, i)?.fainted); return f.length === 1 ? {side: foe, mon: f[0]} : null; })();
@@ -236,7 +236,12 @@ export function addEvent(b, ev, usage) {
   } else if (ev.kind === 'send') {
     const slot = ev.slot ?? b.state.sides[side].active.findIndex(x => x == null || condOf(b, side, x)?.fainted);
     if (slot < 0 || ev.to == null) return ['出す場所がありません'];
+    // 同時に場に出たか (対戦の最初・同じタイミングの死に出し): まだ誰も行動していないターンで、
+    // 相手側も最初から場にいる / このターンに出てきた
+    const others = t.acts.filter(x => x.type !== 'event');
+    const simul = !others.length && (b.turns.length === 1 || t.acts.some(x => x.kind === 'send' && x.side === other(side)));
     sendOut(b, side, slot, ev.to, {log, resolveAbility: res});
+    if (simul) log.push(...simultaneousEntry(b, usage, side, ev.to, res));
     text = '場に出た';
     t.acts.push({side, mon: ev.to, type: 'event', kind: 'send', text, sp: buildOf(b, side, ev.to).species, auto: log, flags: {}, in: inputCopy({...ev, slot})});
     b.updatedAt = Date.now();
@@ -452,5 +457,33 @@ export function finishTurn(b, usage, {residual = [], noOrder = false} = {}) {
   const log = [];
   for (const r of residual) log.push(...addEvent(b, {kind: 'residual', side: r.side, mon: r.mon, key: r.key}, usage));
   log.push(...endTurn(b, usage, {noOrder}));
+  return log;
+}
+
+/**
+ * 両者が同時に場に出たとき、特性は素早さの速い順に発動する。
+ * 天候・フィールドは「後に発動した = 遅いほう」が残るので、先に出した側が遅ければ上書きし直す。
+ * 相手の素早さは推定の型で比べる (同速は不確定として記録だけ残す)。
+ */
+function simultaneousEntry(b, usage, side, mon, res) {
+  const log = [];
+  const os = other(side);
+  const om = b.state.sides[os].active.find(i => i != null && !condOf(b, os, i)?.fainted);
+  if (om == null) return log;
+  const abThis = res(b, side, mon), abOther = res(b, os, om);
+  const kinds = [[WEATHER_ABILITY, setWeather, WEATHER_JA, '天候'], [TERRAIN_ABILITY, setTerrain, TERRAIN_JA, 'フィールド']];
+  if (!kinds.some(([map]) => map[abThis] && map[abOther] && map[abThis] !== map[abOther])) return log;
+  const ctx = boardContext(b, usage);
+  const spd = (sd, i) => finalSpeed({build: ctx.build(sd, i), cond: condOf(b, sd, i)}, {format: b.format, field: b.state.field, side: b.state.sides[sd]});
+  const sThis = spd(side, mon), sOther = spd(os, om);
+  for (const [map, setter, ja, label] of kinds) {
+    if (!map[abThis] || !map[abOther] || map[abThis] === map[abOther]) continue;
+    if (sThis === sOther) { log.push(`同時に場に出た: 素早さが同じ見込みのため、${label}はどちらが残るか不確定 (違っていたら「その他の出来事」で直してください)`); continue; }
+    // いま出した側のほうが速い → 先に発動して、遅い側 (先に出してあった側) の特性で上書きされる
+    if (sThis > sOther) {
+      setter(b, map[abOther]);
+      log.push(`同時に場に出た: 遅い${os === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, os, om).species)}の${abilityName(abOther)}があとから発動し、${label}は${ja[map[abOther]]}`);
+    } else log.push(`同時に場に出た: 遅い${side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, side, mon).species)}の${abilityName(abThis)}があとから発動し、${label}は${ja[map[abThis]]}`);
+  }
   return log;
 }

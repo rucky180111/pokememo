@@ -132,6 +132,7 @@ const realActs = t => t.acts.filter(a => a.type !== 'event').length;
 // ターン1: ① 自分=つるぎのまい を先に選ぶ → ② 相手が先に ステルスロック → 自分
 await page.locator('.composer .plan .mv-btn', {hasText: 'つるぎのまい'}).click();
 check(await page.locator('.actor-btn').count() === 2, '技を選ぶと ② の画面に進む');
+check(await page.locator('.mega-row .mega-btn', {hasText: 'バンギラス'}).count() === 1, '② の画面に相手のメガシンカのボタンが出る');
 await page.locator('.actor-btn.opp').click();
 await page.locator('.actform .mv-btn', {hasText: 'ステルスロック'}).click();
 check(await page.locator('.oc-btn').count() === 4, '技を選ぶと結果の画面に進む');

@@ -633,3 +633,5 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .oc-btn { min-height: 46px; font-size: 14px; }
 .oc-btn.hit { min-height: 54px; font-size: 16px; }
 .outcome-grid { grid-template-columns: 1fr 1fr 1fr; }
+.mega-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.mega-btn.on { background: #8a3fc0; color: #fff; }

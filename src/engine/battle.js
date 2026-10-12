@@ -79,8 +79,8 @@ const defaultAbilityResolver = (b, side, i) => {
   return side === 'me' ? s.ab[0] || '' : '';
 };
 
-const WEATHER_ABILITY = {drizzle: 'Rain', drought: 'Sun', sandstream: 'Sand', snowwarning: 'Snow'};
-const TERRAIN_ABILITY = {electricsurge: 'Electric', grassysurge: 'Grassy', psychicsurge: 'Psychic', mistysurge: 'Misty'};
+export const WEATHER_ABILITY = {drizzle: 'Rain', drought: 'Sun', sandstream: 'Sand', snowwarning: 'Snow'};
+export const TERRAIN_ABILITY = {electricsurge: 'Electric', grassysurge: 'Grassy', psychicsurge: 'Psychic', mistysurge: 'Misty'};
 const WEATHER_JA = {Sun: 'はれ', Rain: 'あめ', Sand: 'すなあらし', Snow: 'ゆき'};
 const TERRAIN_JA = {Electric: 'エレキフィールド', Grassy: 'グラスフィールド', Misty: 'ミストフィールド', Psychic: 'サイコフィールド'};
 const STAT_JA = {atk: 'こうげき', def: 'ぼうぎょ', spa: 'とくこう', spd: 'とくぼう', spe: 'すばやさ'};
