@@ -283,7 +283,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
     }
     return {type: i.type || null, move: i.move || '', to: i.to ?? null, target: t, mega: !!i.mega, megaForme: i.megaForme || '',
       outcome: i.cant ? 'cant' : i.miss ? 'miss' : i.protect ? 'protect' : 'hit', hp, crit: !!i.crit, hits: i.hits || 0,
-      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
+      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, healedBy: i.healedBy || [], hpMode: 'left', inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
   };
   const [f, setF] = useState(fromInit);
   const [pick, setPick] = useState(null);
@@ -302,6 +302,17 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
   const tgtNow = tgt ? condOf(battle, tgt.side, tgt.mon)?.hp ?? 100 : 100;
   const bench = benchOf(battle, side);
   const pivot = mv && PIVOT_MOVES.has(f.move) && hit;
+  // 攻撃を受けた側がターン終了時に回復しうるもの (入れたHPが回復後かどうかを選べるように)
+  const healOpts = (() => {
+    if (!tgt) return [];
+    const tb = buildOf(battle, tgt.side, tgt.mon), tc = condOf(battle, tgt.side, tgt.mon);
+    const item = tc?.itemGone ? 'none' : tb.item;
+    const out = [];
+    if (!item || item === 'leftovers') out.push(['leftovers', 'たべのこし']);
+    if ((!item || item === 'blacksludge') && dex.species[currentSpecies(tb, tc)]?.t.includes('Poison')) out.push(['blacksludge', 'くろいヘドロ']);
+    if (battle.state.field.terrain === 'Grassy') out.push(['grassy', 'グラスフィールド']);
+    return out;
+  })();
   const moves = side === 'me'
     ? (build.moves || []).filter(m => dex.moves[m]).map(id => ({id, known: true}))
     : (ctx.views[mon]?.moves || []).slice(0, 10);
@@ -313,13 +324,17 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
     const h = ff.outcome === 'hit';
     const m2 = dex.moves[ff.move];
     let hpAfter = null;
-    if (h && m2 && m2.c !== 'Z' && ff.hp !== '' && !ff.endured && ff.defItem !== 'focussash') hpAfter = tgtMax ? (Number(ff.hp) / tgtMax) * 100 : Number(ff.hp);
+    if (h && m2 && m2.c !== 'Z' && ff.hp !== '' && !ff.endured && ff.defItem !== 'focussash') {
+      // 自分のHPは「残りHP」か「受けたダメージ」で入れられる
+      const left = tgtMax && ff.hpMode === 'dmg' ? Math.max(0, Math.round((tgtNow * tgtMax) / 100) - Number(ff.hp)) : Number(ff.hp);
+      hpAfter = tgtMax ? (left / tgtMax) * 100 : left;
+    }
     return Object.assign(input, {
       move: ff.move, mega: ff.mega, megaForme: ff.mega ? ff.megaForme || '' : '', crit: h && ff.crit, miss: ff.outcome === 'miss', protect: ff.outcome === 'protect', cant: ff.outcome === 'cant',
       exact: !!tgtMax, endured: h && ff.endured, hits: h && ff.hits ? ff.hits : undefined,
       defItem: h && ff.defItem ? {item: ff.defItem, consumed: consumable(ff.defItem)} : null,
       atkItem: ff.atkItem ? {item: ff.atkItem, consumed: consumable(ff.atkItem)} : null,
-      target: double ? tgt : null, hpAfter, inflict: h && ff.inflict ? ff.inflict : '',
+      target: double ? tgt : null, hpAfter, healedBy: h && hpAfter != null && ff.healedBy.length ? ff.healedBy : undefined, inflict: h && ff.inflict ? ff.inflict : '',
       to: m2 && PIVOT_MOVES.has(ff.move) && h && ff.to != null ? ff.to : null,
     });
   };
@@ -389,13 +404,14 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
       {damaging && tgt && (
         <div class="af-dmg">
           <label class="af-hp">
-            <span>{monName(battle, tgt.side, tgt.mon)}の残りHP {tgtMax ? '(実数値)' : '(%)'}</span>
+            <span>{monName(battle, tgt.side, tgt.mon)}の{tgtMax && f.hpMode === 'dmg' ? '受けたダメージ' : '残りHP'} {tgtMax ? '(実数値)' : '(%)'}
+              {tgtMax && <Seg small value={f.hpMode} options={[['left', '残りHP'], ['dmg', 'ダメージ量']]} onChange={v => set({hpMode: v, hp: ''})} />}</span>
             {f.endured || f.defItem === 'focussash' ? <b class="num">1{tgtMax ? '' : '%'} (耐えた)</b> : <>
               <input class="input num" type="number" inputMode="decimal" min={0} max={tgtMax || 100} value={f.hp} autoFocus={wizard}
-                placeholder={String(Math.round(tgtMax ? (tgtNow * tgtMax) / 100 : tgtNow))} onInput={e => set({hp: e.currentTarget.value})}
+                placeholder={tgtMax && f.hpMode === 'dmg' ? '0' : String(Math.round(tgtMax ? (tgtNow * tgtMax) / 100 : tgtNow))} onInput={e => set({hp: e.currentTarget.value})}
                 onKeyDown={e => { if (e.key === 'Enter' && ready) submit(); }} />
-              <span class="muted">{tgtMax ? `/ ${tgtMax}` : '%'}</span>
-              <button class="chip" onClick={() => set({hp: '0'})}>ひんし</button>
+              <span class="muted">{tgtMax ? (f.hpMode === 'dmg' ? `(いま ${Math.round((tgtNow * tgtMax) / 100)}/${tgtMax})` : `/ ${tgtMax}`) : '%'}</span>
+              <button class="chip" onClick={() => set(tgtMax && f.hpMode === 'dmg' ? {hp: String(Math.round((tgtNow * tgtMax) / 100))} : {hp: '0'})}>ひんし</button>
             </>}
           </label>
           <div class="chips">
@@ -410,6 +426,12 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
             <button class={cx('chip', f.defItem && !['focussash', 'sitrusberry'].includes(f.defItem) ? 'on' : 'add')} onClick={() => (f.defItem && !['focussash', 'sitrusberry'].includes(f.defItem) ? set({defItem: ''}) : setPick('def'))}>{f.defItem && !['focussash', 'sitrusberry'].includes(f.defItem) ? `${itemName(f.defItem)} 発動` : 'ほかの持ち物…'}</button>
           </div>
           {f.defItem === 'sitrusberry' && <p class="hint">残りHPには、オボンで回復したあとの値を入れてください。</p>}
+          {healOpts.length > 0 && !(f.endured || f.defItem === 'focussash') && (
+            <div class="chips">
+              <span class="muted">入れたHPは回復したあとの値:</span>
+              {healOpts.map(([k, l]) => <button class={cx('chip', f.healedBy.includes(k) && 'on')} onClick={() => set({healedBy: f.healedBy.includes(k) ? f.healedBy.filter(x => x !== k) : [...f.healedBy, k]})}>{l}</button>)}
+            </div>
+          )}
         </div>
       )}
       {tgt && (

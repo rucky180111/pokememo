@@ -176,6 +176,8 @@ function leaveField(b, side, i, {log = [], resolveAbility} = {}) {
   const ab = (resolveAbility || defaultAbilityResolver)(b, side, i);
   cond.boosts = emptyBoosts();
   cond.abilityOn = false;
+  cond.healBlock = 0;
+  cond.seeded = false;
   if (cond.status === 'tox') cond.toxicCounter = 1;
   if (cond.forme && !dex.species[cond.forme]?.mega) cond.forme = null; // メガシンカは交代しても戻らない
   if (cond.fainted) return;
@@ -247,7 +249,7 @@ export const MOVE_BOOSTS = {
   tailglow: B({spa: 3}), shiftgear: B({spe: 2, atk: 1}), victorydance: B({atk: 1, def: 1, spe: 1}), noretreat: B({atk: 1, def: 1, spa: 1, spd: 1, spe: 1}),
   howl: B({atk: 1}), meditate: B({atk: 1}), sharpen: B({atk: 1}), harden: B({def: 1}), withdraw: B({def: 1}), defensecurl: B({def: 1}),
   stockpile: B({def: 1, spd: 1}), tidyup: B({atk: 1, spe: 1}), bellydrum: B({atk: 12}), filletaway: B({atk: 2, spa: 2, spe: 2}),
-  clangoroussoul: B({atk: 1, def: 1, spa: 1, spd: 1, spe: 1}), geomancy: B({spa: 2, spd: 2, spe: 2}), shelter: B({def: 2}), electroshot: B({spa: 1}), meteorbeam: B({spa: 1}), charge: B({spd: 1}), toxicthread: B(null, {spe: -2}),
+  clangoroussoul: B({atk: 1, def: 1, spa: 1, spd: 1, spe: 1}), geomancy: B({spa: 2, spd: 2, spe: 2}), shelter: B({def: 2}), strengthsap: B(null, {atk: -1}), electroshot: B({spa: 1}), meteorbeam: B({spa: 1}), charge: B({spd: 1}), toxicthread: B(null, {spe: -2}),
   // 使用者が下がる攻撃技 (追加効果ではないので ちからずく の影響を受けない)
   closecombat: B({def: -1, spd: -1}), superpower: B({atk: -1, def: -1}), dracometeor: B({spa: -2}), overheat: B({spa: -2}),
   leafstorm: B({spa: -2}), psychoboost: B({spa: -2}), fleurcannon: B({spa: -2}), makeitrain: B({spa: -2}), hammerarm: B({spe: -1}),

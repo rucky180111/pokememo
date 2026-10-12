@@ -9,7 +9,8 @@ import fs from 'node:fs';
 import {createRequire} from 'node:module';
 import {dex, toID, natureMod, STAT_KEYS} from '../src/engine/dex.js';
 import {newBattle, newTeam, newOpp, normalizeBattle, sendOut, condOf} from '../src/engine/battle.js';
-import {addAct, endTurn} from '../src/engine/flow.js';
+import {addAct, endTurn, residualCandidates, finishTurn, replay} from '../src/engine/flow.js';
+import {clone} from '../src/engine/battle.js';
 import {boardContext, attackTable} from '../src/engine/board.js';
 import {comboOf, parseSpread} from '../src/engine/assume.js';
 import {estimateStats} from '../src/engine/estimate.js';
@@ -98,7 +99,7 @@ function choose(battle, sid) {
 const WEATHER = {RainDance: 'Rain', SunnyDay: 'Sun', Sandstorm: 'Sand', Snowscape: 'Snow', Snow: 'Snow', none: ''};
 const SIDEKEY = {reflect: 'reflect', lightscreen: 'lightScreen', auroraveil: 'auroraVeil', tailwind: 'tailwind', stealthrock: 'sr'};
 const DEBUG = process.env.DEBUG ? process.env.DEBUG.split(':').map(Number) : null;
-const stats = {battles: 0, turns: 0, acts: 0, infer: 0, unsound: [], unexplained: [], speedUnsound: [], crashes: [], mismatch: {}, checked: {}, tableCalls: 0};
+const stats = {resMissing: {}, resFalse: {}, resHp: [], resOk: 0, replayBad: [], battles: 0, turns: 0, acts: 0, infer: 0, unsound: [], unexplained: [], speedUnsound: [], crashes: [], mismatch: {}, checked: {}, tableCalls: 0};
 const bump = (o, k) => { o[k] = (o[k] || 0) + 1; };
 
 function runOne(n) {
@@ -145,7 +146,18 @@ function runOne(n) {
     Object.assign(b.state.field, T.field);
   }
 
+  const RES_FROM = [[/item: Leftovers/, 'leftovers'], [/item: Black Sludge/, 'blacksludge'], [/\[from\] (psn|tox)/, 'psn'], [/\[from\] brn/, 'brn'], [/\[from\] Sandstorm/, 'sand'], [/\[from\] Grassy Terrain/, 'grassy'],
+    [/ability: Poison Heal/, 'poisonheal'], [/ability: Rain Dish/, 'raindish'], [/ability: Dry Skin/, 'dryskin'], [/ability: Solar Power/, 'solarpower'], [/ability: Ice Body/, 'icebody'], [/\[from\] Leech Seed/, 'leechseed']];
+  let resSeen = [];
   function apply(line) {
+    if (/^\|-(heal|damage)\|/.test(line)) {
+      const q = line.split('|');
+      for (const [re, key] of RES_FROM) if (re.test(line)) {
+        const sd = sideOf(q[2].slice(0, 2)), mi = idxOf(q[2].slice(0, 2), q[2]);
+        const k2 = key === 'psn' && T[sd].mons[mi].status === 'tox' ? 'tox' : key;
+        resSeen.push({side: sd, mon: mi, key: k2, hp: hpOf(q[3]), prev: T[sd].mons[mi].hp});
+      }
+    }
     const p = line.split('|');
     const kind = p[1];
     const who = p[2] && /^p[12]a?: /.test(p[2]) ? {sid: p[2].slice(0, 2), side: sideOf(p[2].slice(0, 2))} : null;
@@ -280,10 +292,36 @@ function runOne(n) {
       if (/Quick Claw|Quick Draw|Custap/.test(l)) noOrder = true;
       if (l.startsWith('|move|')) { const j = handleMove(lines, i); if (DEBUG && DEBUG[0] === n && process.env.RAW) console.log(lines.slice(i + 1, j).map(x => '      ' + x).join('\n')); i = j; continue; }
       apply(l);
-      if (l.startsWith('|upkeep|')) T.cur = 'ターン終了時';
+      if (l.startsWith('|upkeep')) { T.cur = 'ターン終了時'; T.afterUpkeep = true; }
+      if (T.afterUpkeep && /^\|(switch|drag)\|/.test(l)) (T.lateIn ||= new Set()).add(`${sideOf(l.split('|')[2].slice(0, 2))}${idxOf(l.split('|')[2].slice(0, 2), l.split('|')[2])}`);
       if (l.startsWith('|turn|')) {
+        const firstTurn = l === '|turn|1';
+        // ターン終了時の処理: 実際の「処理前」のHPにそろえてから、アプリの候補と実際に起きたことを比べ、起きたものを選んで締める
         sync(lastMove); lastMove = '';
-        endTurn(b, usage, {noOrder});
+        const firstOf = new Map();
+        for (const r of resSeen) { const k = `${r.side}${r.mon}`; if (!firstOf.has(k)) firstOf.set(k, r); }
+        for (const r of firstOf.values()) { const c = b.state.mons[r.side][r.mon]; c.hp = seen(r.side, r.prev); c.fainted = c.hp <= 0; }
+        let cands = [];
+        try { cands = residualCandidates(b, usage); } catch (e) { stats.crashes.push(`residual 対戦${n}: ${e.message}`); }
+        const pick = [];
+        const nm = (sd, mi) => `${dex.species[sets[sd === 'me' ? 'p1' : 'p2'][mi].species].j}/${dex.abilities[sets[sd === 'me' ? 'p1' : 'p2'][mi].ability]?.j}/${dex.items[sets[sd === 'me' ? 'p1' : 'p2'][mi].item]?.j || 'なし'}`;
+        for (const r of resSeen) {
+          const c = cands.find(x => x.side === r.side && x.mon === r.mon && x.key === r.key);
+          if (!c) { bump(stats.resMissing, `${r.key} (${nm(r.side, r.mon)})`); if (process.env.RM) console.log('RM', r.key, nm(r.side, r.mon), 'appItem=' + (r.side === 'opp' ? b.opp[r.mon].item : b.my[r.mon].item), `対戦${n} T${battle.turn}`, JSON.stringify(b.state.mons[r.side][r.mon]).slice(0, 160), b.state.field.weather, b.state.field.terrain); continue; }
+          if (!pick.includes(c)) pick.push(c);
+        }
+        for (const c of cands) if (!firstTurn && c.checked && !T.lateIn?.has(`${c.side}${c.mon}`) && !resSeen.some(r => r.side === c.side && r.mon === c.mon && r.key === c.key)) { bump(stats.resFalse, `${c.key} (${nm(c.side, c.mon)})`); if (process.env.RF) console.log('RF', c.key, nm(c.side, c.mon), `対戦${n} T${battle.turn}`, b.state.mons[c.side][c.mon].hp, T[c.side].mons[c.mon].hp); }
+        try { finishTurn(b, usage, {residual: pick, noOrder}); } catch (e) { stats.crashes.push(`finishTurn 対戦${n}: ${e.stack.split('\n').slice(0, 3).join(' | ')}`); }
+        for (const r of resSeen) {
+          const last = resSeen.filter(x => x.side === r.side && x.mon === r.mon).pop();
+          if (last !== r) continue;
+          const app = b.state.mons[r.side][r.mon].hp;
+          const tol = r.side === 'me' ? 1.2 : 1.6;
+          if (pick.some(c => c.side === r.side && c.mon === r.mon) && Math.abs(app - r.hp) > tol + (resSeen.filter(x => x.side === r.side && x.mon === r.mon).length > 1 ? 1 : 0)) stats.resHp.push(`${r.side} ${dex.species[sets[r.side === 'me' ? 'p1' : 'p2'][r.mon].species].j} ${resSeen.filter(x => x.side === r.side && x.mon === r.mon).map(x => x.key).join('+')}: アプリ ${app.toFixed(1)}% / 実際 ${r.hp.toFixed(1)}% [対戦${n} T${battle.turn}]`);
+          else stats.resOk++;
+        }
+        resSeen = []; T.afterUpkeep = false; T.lateIn = null;
+        sync(false);
         noOrder = false; stats.turns++;
         // 素早さ推定の健全性
         t2.forEach((real, oi) => {
@@ -308,6 +346,12 @@ function runOne(n) {
     }
     pump();
   }
+  // 入れ直し (記録の修正時の処理) が例外なく動き、2回やっても同じ結果になるか
+  try {
+    const r1 = clone(b); replay(r1, usage); const r2 = clone(r1); replay(r2, usage);
+    const key = x => JSON.stringify({m: x.state.mons, f: x.state.field, s: x.state.sides, o: x.opp.map(o => [o.item, o.ability, o.moves, o.statOk, o.speOk])});
+    if (key(r1) !== key(r2)) stats.replayBad.push(`対戦${n}: 2回の入れ直しで結果が違う`);
+  } catch (e) { stats.replayBad.push(`対戦${n}: ${e.stack.split('\n').slice(0, 3).join(' | ')}`); }
   stats.battles++;
 }
 
@@ -320,5 +364,9 @@ console.log(`例外: ${stats.crashes.length}`); console.log(stats.crashes.slice(
 console.log(`推定が本当の配分を外した: ${stats.unsound.length}`); console.log(stats.unsound.slice(0, 25).join('\n'));
 console.log(`説明がつかなかった: ${stats.unexplained.length}`); console.log(stats.unexplained.slice(0, 25).join('\n'));
 console.log(`素早さ推定が本当の値を外した: ${stats.speedUnsound.length}`); console.log(stats.speedUnsound.slice(0, 15).join('\n'));
+console.log(`ターン終了時の処理: HPが合った ${stats.resOk} / ずれた ${stats.resHp.length}`); console.log(stats.resHp.slice(0, 12).join('\n'));
+console.log('ターン終了時の処理で候補に出なかったもの:'); console.log(top(stats.resMissing, 15));
+console.log('確実として出したのに起きなかったもの:'); console.log(top(stats.resFalse, 15));
+console.log(`入れ直しの不具合: ${stats.replayBad.length}`); console.log(stats.replayBad.slice(0, 8).join('\n'));
 console.log('自動反映のずれ (多い順):'); console.log(top(stats.mismatch));
 process.exit(stats.crashes.length ? 1 : 0);

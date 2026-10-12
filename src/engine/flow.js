@@ -122,6 +122,21 @@ export function addAct(b, input, usage) {
     if (input.hits) a.hits = input.hits;
     if (atkItem) a.atkItem = atkItem;
     if (defItem) a.defItem = defItem;
+    // 入れたHPが「たべのこし等でターン終了時に回復したあと」の値なら、回復分を引いて攻撃直後のHPに戻す
+    // (回復はターン終了の処理で改めて足すので、HPの流れが正しくなる)
+    if (!failed && tgt && hp != null && Number.isFinite(hp) && hp > 0 && input.healedBy?.length) {
+      let sub = 0;
+      for (const key of input.healedBy) {
+        const fr = residualFrac(b, tgt.side, tgt.mon, key);
+        if (fr <= 0) continue;
+        if (tgt.side === 'me') { const tb0 = buildOf(b, 'me', tgt.mon); const mx = statsOf(currentSpecies(tb0, condOf(b, 'me', tgt.mon)), tb0.sp, tb0.nature)[0]; sub += (Math.max(1, Math.floor(mx * fr)) / mx) * 100; }
+        else sub += fr * 100;
+        if (tgt.side === 'opp' && RESIDUAL_ITEM[key] && !buildOf(b, 'opp', tgt.mon).item) buildOf(b, 'opp', tgt.mon).item = RESIDUAL_ITEM[key];
+      }
+      hp = Math.max(0.1, hp - sub);
+      a.healedBy = [...input.healedBy];
+      log.push(`入力したHPから${input.healedBy.map(k => RESIDUAL_JA[k].replace(/で回復$/, '')).join('・')}の回復分を引いて計算`);
+    }
     if (!failed && tgt && hp != null && Number.isFinite(hp)) {
       a.hpAfter = Math.max(0, Math.min(100, hp));
       const tc = condOf(b, tgt.side, tgt.mon);
@@ -158,13 +173,20 @@ export function addAct(b, input, usage) {
       a.target = tgt;
     }
     condOf(b, side, mon).glaive = !failed && a.move === 'glaiverush';
+    // やどりぎのタネ: くさタイプ以外に当たると、交代するまで毎ターン 1/8 減る
+    if (!failed && tgt && a.move === 'leechseed' && !dex.species[currentSpecies(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon))]?.t.includes('Grass')) condOf(b, tgt.side, tgt.mon).seeded = true;
+    // サイコノイズ: 当たった相手は2ターンの間 回復できない (たべのこし等も発動しない)
+    if (!failed && tgt && a.move === 'psychicnoise' && !condOf(b, tgt.side, tgt.mon).fainted) { condOf(b, tgt.side, tgt.mon).healBlock = t.n + 1; log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は2ターン回復できない`); }
     if (!failed) applyMoveEffects(b, {...a, target: tgt}, {log, resolveAbility: res});
     if (!failed && tgt && (a.move === 'trick' || a.move === 'switcheroo')) {
       // 持ち物が入れ替わると、以後の持ち物は確定できない
       condOf(b, side, mon).tricked = true; condOf(b, tgt.side, tgt.mon).tricked = true;
       log.push('持ち物が入れ替わったため、この2体は以後の推定 (ダメージ・行動順) の対象から外します');
     }
+    const hpBeforeHit = tgt ? condOf(b, tgt.side, tgt.mon).hp : null;
     if (a.hpAfter != null && tgt) setHP(b, tgt.side, tgt.mon, a.hpAfter);
+    // 被弾時の特性は「判明している特性」だけで反映する (使用率からの推測で能力ランクを動かさない)
+    if (!failed && tgt && tgt.side !== side) onHitEffects(b, {side, mon, move: a.move, crit: a.flags.crit, tgt, before: hpBeforeHit, defItem}, defaultAbilityResolver, log);
     // 追加効果・変化技で相手が状態異常になった
     if (!failed && tgt && input.inflict && !condOf(b, tgt.side, tgt.mon).fainted) {
       const tc2 = condOf(b, tgt.side, tgt.mon);
@@ -366,7 +388,7 @@ export function reopenLastTurn(b, usage) {
 
 // ---- ターン終了時の処理 (たべのこし・定数ダメージなど) ----
 const RESIDUAL_JA = {sand: 'すなあらしのダメージ', grassy: 'グラスフィールドで回復', leftovers: 'たべのこしで回復', blacksludge: 'くろいヘドロ', psn: 'どくのダメージ', tox: 'もうどくのダメージ',
-  brn: 'やけどのダメージ', poisonheal: 'ポイズンヒールで回復', raindish: 'あめうけざらで回復', dryskin: 'かんそうはだ', solarpower: 'サンパワーのダメージ', icebody: 'アイスボディで回復'};
+  brn: 'やけどのダメージ', leechseed: 'やどりぎのタネ', poisonheal: 'ポイズンヒールで回復', raindish: 'あめうけざらで回復', dryskin: 'かんそうはだ', solarpower: 'サンパワーのダメージ', icebody: 'アイスボディで回復'};
 const RESIDUAL_ITEM = {leftovers: 'leftovers', blacksludge: 'blacksludge'};
 export {RESIDUAL_JA};
 
@@ -381,6 +403,7 @@ function residualFrac(b, side, mon, key) {
     case 'psn': return -1 / 8;
     case 'tox': return -Math.min(15, cond.toxicCounter || 1) / 16;
     case 'brn': return -1 / 16;
+    case 'leechseed': return -1 / 8;
     case 'poisonheal': return 1 / 8;
     case 'dryskin': return w === 'Rain' ? 1 / 8 : -1 / 8;
     case 'solarpower': return -1 / 8;
@@ -389,19 +412,21 @@ function residualFrac(b, side, mon, key) {
 }
 
 // 1回分の変化量 {pct: HP割合の変化, hp: 自分なら実数の変化}。満タンで回復しないときは null
-function residualDelta(b, side, mon, key) {
+function residualDelta(b, side, mon, key, hpNow) {
   const cond = condOf(b, side, mon), build = buildOf(b, side, mon);
-  if (!cond || cond.fainted) return null;
+  const cur = hpNow ?? cond?.hp;
+  if (!cond || cond.fainted || cur <= 0) return null;
   const f = residualFrac(b, side, mon, key);
-  if (!f || (f > 0 && cond.hp >= 100)) return null;
+  if (!f || (f > 0 && cur >= 100)) return null;
   if (side === 'me') {
     const max = statsOf(currentSpecies(build, cond), build.sp, build.nature)[0];
-    const now = Math.round((cond.hp * max) / 100);
-    let d = Math.max(1, Math.floor(max * Math.abs(f))) * Math.sign(f);
+    const now = Math.round((cur * max) / 100);
+    // もうどくは「最大HPの1/16 (切り捨て) × 段階」
+    let d = key === 'tox' ? -Math.max(1, Math.floor(max / 16)) * Math.min(15, cond.toxicCounter || 1) : Math.max(1, Math.floor(max * Math.abs(f))) * Math.sign(f);
     d = Math.max(-now, Math.min(max - now, d));
     return {pct: (d / max) * 100, hp: d};
   }
-  return {pct: Math.max(-cond.hp, Math.min(100 - cond.hp, f * 100))};
+  return {pct: Math.max(-cur, Math.min(100 - cur, f * 100))};
 }
 
 /**
@@ -426,7 +451,17 @@ export function residualCandidates(b, usage) {
       const itemKnown = side === 'me' || !!build.item;
       const item = cond.itemGone ? '' : side === 'me' ? build.item : build.item;
       const itemRates = side === 'opp' && !build.item ? Object.fromEntries(ctx.views[mon]?.items || []) : {};
-      const push = (key, checked) => { const r = residualDelta(b, side, mon, key); if (r) out.push({side, mon, key, label: RESIDUAL_JA[key], pct: r.pct, hp: r.hp, checked}); };
+      const already = new Set((openTurn(b)?.acts || []).filter(x => x.target?.side === side && x.target?.mon === mon).flatMap(x => x.healedBy || []));
+      // 処理は順番に起きる (例: すなあらしで減ってから たべのこしで回復) ので、確実なものはHPを進めながら候補を作る
+      let simHp = cond.hp;
+      const blocked = (cond.healBlock || 0) >= (openTurn(b)?.n ?? turnNumber(b));
+      const push = (key, checked) => {
+        const r = residualDelta(b, side, mon, key, simHp);
+        if (!r || (blocked && r.pct > 0)) return;
+        const ch = checked || already.has(key);
+        out.push({side, mon, key, label: RESIDUAL_JA[key], pct: r.pct, hp: r.hp, checked: ch});
+        if (ch) simHp = Math.max(0, Math.min(100, simHp + r.pct));
+      };
       const noIndirect = sure('magicguard');
       if (w === 'Sand' && !noIndirect && !types.some(t => ['Rock', 'Ground', 'Steel'].includes(t)) && item !== 'safetygoggles' && !['sandveil', 'sandrush', 'sandforce', 'overcoat'].some(sure))
         push('sand', !['sandveil', 'sandrush', 'sandforce', 'overcoat', 'magicguard'].some(maybe));
@@ -442,6 +477,7 @@ export function residualCandidates(b, usage) {
       if (cond.status === 'psn' && !noIndirect && !sure('poisonheal')) push('psn', !maybe('poisonheal') && !maybe('magicguard'));
       if (cond.status === 'tox' && !noIndirect && !sure('poisonheal')) push('tox', !maybe('poisonheal') && !maybe('magicguard'));
       if (cond.status === 'brn' && !noIndirect) push('brn', !maybe('magicguard'));
+      if (cond.seeded && !noIndirect) push('leechseed', !maybe('magicguard'));
       if (w === 'Rain' && maybe('raindish')) push('raindish', sure('raindish'));
       if ((w === 'Rain' || w === 'Sun') && maybe('dryskin')) push('dryskin', sure('dryskin'));
       if (w === 'Sun' && maybe('solarpower')) push('solarpower', sure('solarpower'));
@@ -486,4 +522,38 @@ function simultaneousEntry(b, usage, side, mon, res) {
     } else log.push(`同時に場に出た: 遅い${side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, side, mon).species)}の${abilityName(abThis)}があとから発動し、${label}は${ja[map[abThis]]}`);
   }
   return log;
+}
+
+// 攻撃を受けたときに必ず起きる特性・持ち物の効果 (ランク変化・天候・フィールド)
+const HIT_ITEM_BOOST = {weaknesspolicy: {atk: 2, spa: 2}, cellbattery: {atk: 1}, absorbbulb: {spa: 1}, luminousmoss: {spd: 1}, snowball: {atk: 1}, keeberry: {def: 1}, marangaberry: {spd: 1}};
+function onHitEffects(b, {side, mon, move, crit, tgt, before, defItem}, res, log) {
+  const mv = dex.moves[move];
+  if (!mv || mv.c === 'Z') return;
+  const tc = condOf(b, tgt.side, tgt.mon);
+  const who = `${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}`;
+  const boost = (d, why) => { const l = []; applyBoosts(b, tgt.side, tgt.mon, d, {log: l, resolveAbility: () => ''}); if (l.length) log.push(`${why}: ${l.join('、')}`); };
+  if (defItem && HIT_ITEM_BOOST[defItem] && !tc.fainted) boost(HIT_ITEM_BOOST[defItem], itemName(defItem));
+  if (tc.fainted) {
+    // 倒したとき: じしんかじょう等
+    const ab = res(b, side, mon);
+    const ko = {moxie: {atk: 1}, chillingneigh: {atk: 1}, grimneigh: {spa: 1}}[ab];
+    if (ko) { const l = []; applyBoosts(b, side, mon, ko, {log: l, resolveAbility: () => ''}); if (l.length) log.push(`${abilityName(ab)}: ${l.join('、')}`); }
+    return;
+  }
+  const ab = res(b, tgt.side, tgt.mon);
+  if (!ab) return;
+  const name = `${who}の${abilityName(ab)}`;
+  const t = mv.t;
+  if (ab === 'stamina') boost({def: 1}, name);
+  else if (ab === 'weakarmor' && mv.c === 'P') boost({def: -1, spe: 2}, name);
+  else if (ab === 'justified' && t === 'Dark') boost({atk: 1}, name);
+  else if (ab === 'steamengine' && (t === 'Fire' || t === 'Water')) boost({spe: 6}, name);
+  else if (ab === 'watercompaction' && t === 'Water') boost({def: 2}, name);
+  else if (ab === 'rattled' && ['Bug', 'Ghost', 'Dark'].includes(t)) boost({spe: 1}, name);
+  else if (ab === 'thermalexchange' && t === 'Fire') boost({atk: 1}, name);
+  else if (ab === 'angerpoint' && crit) boost({atk: 12}, name);
+  else if (ab === 'berserk' && before > 50 && tc.hp <= 50) boost({spa: 1}, name);
+  else if (ab === 'seedsower' && setTerrain(b, 'Grassy')) log.push(`${name}: グラスフィールドに`);
+  else if (ab === 'sandspit' && setWeather(b, 'Sand')) log.push(`${name}: 天候がすなあらしに`);
+  else if (ab === 'cottondown') { const l = []; applyBoosts(b, side, mon, {spe: -1}, {log: l, fromOpp: true, resolveAbility: res}); if (l.length) log.push(`${name}: ${l.join('、')}`); }
 }

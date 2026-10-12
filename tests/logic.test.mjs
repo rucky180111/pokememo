@@ -820,3 +820,27 @@ test('同時に場に出たときは、遅いほうの天候・フィールド�
   addAct(b, {side: 'opp', type: 'switch', to: 0}, usage);
   assert.equal(b.state.field.weather, 'Rain');
 });
+
+test('入れたHPがたべのこしで回復したあとの値なら、回復分を引いて記録し、ターン終了で足し直す', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 0); sendOut(b, 'opp', 0, 4);
+  b.opp[4].item = 'leftovers';
+  const log = addAct(b, {side: 'me', type: 'move', move: 'earthquake', hpAfter: 66.25, healedBy: ['leftovers']}, usage);
+  assert.equal(b.state.mons.opp[4].hp, 60, log.join('/'));
+  const c = residualCandidates(b, usage).find(x => x.side === 'opp' && x.key === 'leftovers');
+  assert.ok(c?.checked);
+  finishTurn(b, usage, {residual: [c]});
+  assert.equal(b.state.mons.opp[4].hp, 66.25);
+});
+
+test('被弾時の特性・持ち物 (判明しているときだけ)、やどりぎのタネ、サイコノイズ', () => {
+  // じゃくてんほけん → こうげき・とくこう +2
+  const b2 = makeBattle();
+  sendOut(b2, 'me', 0, 0); sendOut(b2, 'opp', 0, 4);
+  addAct(b2, {side: 'me', type: 'move', move: 'earthquake', hpAfter: 60, defItem: {item: 'weaknesspolicy', consumed: true}}, usage);
+  assert.equal(b2.state.mons.opp[4].boosts.spa, 2);
+  // やどりぎのタネ → ターン終了時の候補に出る
+  addAct(b2, {side: 'opp', type: 'move', move: 'leechseed', sameTurn: true}, usage);
+  assert.ok(b2.state.mons.me[0].seeded);
+  assert.ok(residualCandidates(b2, usage).some(c => c.side === 'me' && c.key === 'leechseed' && c.checked));
+});
