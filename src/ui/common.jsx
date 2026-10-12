@@ -77,16 +77,26 @@ const CAT_JA = {P: '物理', S: '特殊', Z: '変化'};
 export function Picker({kind, title, onPick, onClose, filter, rank, prefer, preferLabel, allowClear, clearLabel}) {
   const [q, setQ] = useState('');
   const [all, setAll] = useState(!prefer);
+  const [types, setTypes] = useState([]);
+  const [cat, setCat] = useState('');
+  const typed = kind === 'species' || kind === 'moves';
+  // タイプ: ポケモンは2つまで (両方を持つもの)、技は1つ
+  const toggleType = t => setTypes(prev => (prev.includes(t) ? prev.filter(x => x !== t) : kind === 'species' ? [...prev, t].slice(-2) : [t]));
+  const typeOk = id => {
+    if (kind === 'species') return types.every(t => dex.species[id].t.includes(t));
+    if (kind === 'moves') { const m = dex.moves[id]; return (!types.length || types.includes(m.t)) && (!cat || m.c === cat); }
+    return true;
+  };
   const ref = useRef(null);
   useEffect(() => { ref.current?.focus(); }, []);
   const preferSet = useMemo(() => (prefer ? new Set(prefer) : null), [prefer]);
   const list = useMemo(() => {
-    let out = search(kind, q, {limit: 0, filter: id => (!filter || filter(id)) && (all || !preferSet || preferSet.has(id))});
+    let out = search(kind, q, {limit: 0, filter: id => (!filter || filter(id)) && (all || !preferSet || preferSet.has(id)) && typeOk(id)});
     if (rank && !q) {
       out = out.slice().sort((a, b) => (rank[b.id] || 0) - (rank[a.id] || 0) || a.j.localeCompare(b.j, 'ja'));
     } else if (!q) out = out.slice().sort((a, b) => a.j.localeCompare(b.j, 'ja'));
-    return out.slice(0, 120);
-  }, [kind, q, all, rank, preferSet, filter]);
+    return out.slice(0, types.length || cat ? 400 : 120);
+  }, [kind, q, all, rank, preferSet, filter, types, cat]);
   return (
     <Sheet title={title} onClose={onClose}>
       <div class="picker-bar">
@@ -95,6 +105,16 @@ export function Picker({kind, title, onPick, onClose, filter, rank, prefer, pref
           onKeyDown={e => { if (e.key === 'Enter' && list[0]) onPick(list[0].id); }} />
         {prefer && <label class="check"><input type="checkbox" checked={all} onChange={e => setAll(e.currentTarget.checked)} />{preferLabel || 'すべて表示'}</label>}
       </div>
+      {typed && (
+        <div class="type-filter">
+          <span class="muted">タイプで絞り込み{kind === 'species' ? ' (2つまで)' : ''}:</span>
+          {Object.keys(TYPE_JA).filter(t => t !== 'Stellar' && t !== '???').map(t => (
+            <button class={cx('tf', `t-${t}`, types.includes(t) && 'on')} aria-pressed={types.includes(t)} onClick={() => toggleType(t)}>{TYPE_JA[t]}</button>
+          ))}
+          {kind === 'moves' && [['P', '物理'], ['S', '特殊'], ['Z', '変化']].map(([k, l]) => <button class={cx('tf cat', cat === k && 'on')} onClick={() => setCat(cat === k ? '' : k)}>{l}</button>)}
+          {(types.length > 0 || cat) && <button class="btn ghost sm" onClick={() => { setTypes([]); setCat(''); }}>解除</button>}
+        </div>
+      )}
       <div class="picker-list">
         {allowClear && !q && <button class="row" onClick={() => onPick('')}><span class="muted">{clearLabel || '(なし / 未設定)'}</span></button>}
         {list.map(e => (

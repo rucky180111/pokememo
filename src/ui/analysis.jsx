@@ -49,7 +49,7 @@ export function DamageTab({battle, ctx, mut, toast}) {
       <div class="chips">
         <Toggle small on={crit} onChange={setCrit}>急所</Toggle>
         {battle.format === 'double' && <Toggle small on={hh} onChange={setHH}>てだすけ</Toggle>}
-        {view && <span class="muted">相手の型: {view.megaForme && !battle.state.mons.opp[atk].forme ? `${speciesName(view.megaForme)} ` : ''}{spreadLabel(view.build.nature, view.build.sp)} / {itemName(view.build.item) || '持ち物なし'}{view.itemGuess ? '?' : ''} ({view.spreadSource})</span>}
+        {view && <span class="muted">相手の型: {spreadLabel(view.build.nature, view.build.sp)} / {itemName(view.build.item) || '持ち物なし'}{view.itemGuess ? '?' : ''} ({view.spreadSource})</span>}
       </div>
       {table && table.moves.length === 0 && <Empty>{dir === 'me' ? 'このポケモンに技が登録されていません。' : 'このポケモンの技候補がありません。相手の情報から技を追加してください。'}</Empty>}
       {table && table.moves.length > 0 && (

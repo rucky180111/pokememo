@@ -81,12 +81,12 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
           const o = battle.opp[i];
           if (!o) return <button class="opp-tile empty" onClick={() => setPick(true)}>{i === battle.opp.length ? '＋ 追加' : ''}</button>;
           const v = ctx.views[i];
-          const s = dex.species[v?.megaForme || o.species];
+          const s = dex.species[o.species];
           return (
             <button class="opp-tile" onClick={() => setOppEdit(i)}>
               <span class="nm">{speciesName(o.species)}</span>
               <span class="types">{s.t.map(t => <TypeChip type={t} small />)}</span>
-              <span class="sub">{v?.megaForme ? 'メガ想定' : itemName(v?.build.item) || '持ち物?'}{v?.itemGuess && !v?.megaForme ? '?' : ''}</span>
+              <span class="sub">{itemName(v?.build.item) || '持ち物?'}{v?.itemGuess ? '?' : ''}{v?.megaP > 0.05 ? ` (メガ${rate(v.megaP)})` : ''}</span>
             </button>
           );
         })}

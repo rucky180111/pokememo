@@ -260,7 +260,7 @@ test('相手の推定: メガシンカの見込み', () => {
   assert.equal(oppView(o, usage).megaForme, null);
   o.item = 'salamencite';
   assert.equal(oppView(o, usage).megaForme, 'salamencemega');
-  assert.equal(oppCond(newCond(), oppView(o, usage)).forme, 'salamencemega');
+  assert.equal(oppCond(newCond(), oppView(o, usage)).forme ?? null, null, 'メガシンカするまでは通常の姿');
   // リザードン: X/Y のうち持ち物で決まる
   const c = newOpp('charizard'); c.item = 'charizarditex';
   assert.equal(oppView(c, usage).megaForme, 'charizardmegax');
@@ -732,4 +732,64 @@ test('バトンタッチはランク変化を引き継ぎ、持ち物の入れ�
 test('チャンピオンズ仕様: ゴールドラッシュは特攻が2段階下がる', () => {
   assert.deepEqual(MOVE_BOOSTS.makeitrain.self, {spa: -2});
   assert.equal(MOVE_BOOSTS.chargebeam, undefined);
+});
+
+import {canReplay, editAct, residualCandidates, finishTurn, replay} from '../src/engine/flow.js';
+
+test('ターン終了時の処理: すなあらし・たべのこし・もうどくの段階', () => {
+  const b = makeBattle();
+  b.opp[1].ability = 'sandstream'; b.opp[1].item = 'leftovers';
+  sendOut(b, 'me', 0, 4); sendOut(b, 'opp', 0, 1); // ペリッパー vs バンギラス (すなおこし)
+  addAct(b, {side: 'opp', type: 'move', move: 'crunch', hpAfter: 70}, usage);
+  addAct(b, {side: 'me', type: 'move', move: 'hurricane', hpAfter: 80, sameTurn: true}, usage);
+  const c = residualCandidates(b, usage);
+  const keys = c.map(x => `${x.side}:${x.key}:${x.checked}`);
+  assert.ok(keys.includes('me:sand:true'), keys.join(','));
+  assert.ok(keys.includes('opp:leftovers:true'), keys.join(','));
+  assert.ok(!keys.some(k => k.startsWith('opp:sand')), 'いわタイプは砂ダメージなし');
+  const maxP = statsOf5(b.my[4]);
+  const hpBefore = Math.round((b.state.mons.me[4].hp * maxP) / 100);
+  finishTurn(b, usage, {residual: c.filter(x => x.checked)});
+  assert.equal(Math.round((b.state.mons.me[4].hp * maxP) / 100), hpBefore - Math.floor(maxP / 16));
+  assert.equal(b.state.mons.opp[1].hp, 86.25);
+  // もうどくは 1/16, 2/16 と増える
+  b.state.mons.opp[1].status = 'tox'; b.state.mons.opp[1].toxicCounter = 1;
+  addEvent(b, {kind: 'residual', side: 'opp', mon: 1, key: 'tox'}, usage);
+  addEvent(b, {kind: 'residual', side: 'opp', mon: 1, key: 'tox'}, usage);
+  assert.equal(Math.round(b.state.mons.opp[1].hp * 100) / 100, 86.25 - 6.25 - 12.5);
+});
+
+test('記録した行動をあとから直すと、そのあとも入れ直される', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 0); sendOut(b, 'opp', 0, 4); // ガブリアス vs ミロカロス
+  addAct(b, {side: 'me', type: 'move', move: 'earthquake', hpAfter: 60}, usage);
+  addAct(b, {side: 'opp', type: 'move', move: 'scald', hpAfter: 50, exact: true, sameTurn: true}, usage);
+  finishTurn(b, usage, {});
+  addAct(b, {side: 'me', type: 'move', move: 'swordsdance'}, usage);
+  addAct(b, {side: 'opp', type: 'move', move: 'icebeam', hpAfter: 10, exact: true, sameTurn: true}, usage);
+  assert.ok(canReplay(b));
+  assert.equal(b.state.mons.opp[4].hp, 60);
+  editAct(b, 0, 0, {side: 'me', mon: 0, type: 'move', move: 'earthquake', hpAfter: 45}, usage);
+  assert.equal(b.state.mons.opp[4].hp, 45);
+  assert.equal(b.state.mons.me[0].boosts.atk, 2, 'あとのターンの剣の舞も入れ直される');
+  assert.equal(b.state.mons.me[0].hp, 10);
+  assert.ok(b.opp[4].moves.includes('scald') && b.opp[4].moves.includes('icebeam'));
+  // 2ターン目の相手の行動を消す
+  editAct(b, 1, 1, null, usage);
+  assert.equal(b.state.mons.me[0].hp, 50);
+  assert.ok(!b.opp[4].moves.includes('icebeam'));
+  // 交代技 → 交代先を選ぶ
+  editAct(b, 1, 0, {side: 'me', mon: 0, type: 'move', move: 'uturn', to: 3, hpAfter: 40}, usage);
+  assert.equal(b.state.sides.me.active[0], 3);
+});
+
+test('メガシンカは印をつけるまで通常の姿で計算し、持ち物の率は合計100%を超えない', () => {
+  const b = makeBattle();
+  const v = oppView(b.opp[2], usage); // ゲンガー
+  assert.equal(oppCond(b.state.mons.opp[2], v).forme ?? null, null);
+  const sum = (v.items || []).reduce((a, [, r]) => a + r, 0);
+  assert.ok(sum <= 1.0001, `合計 ${sum}`);
+  sendOut(b, 'opp', 0, 2);
+  addEvent(b, {kind: 'mega', side: 'opp', mon: 2, forme: 'gengarmega'}, usage);
+  assert.equal(b.state.mons.opp[2].forme, 'gengarmega');
 });

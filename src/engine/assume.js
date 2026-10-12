@@ -130,7 +130,7 @@ export function oppView(opp, usage, ctx = {}) {
     itemKnown, itemGuess, abilityGuess,
     spreadSource, spreadRate, spreads,
     moves,
-    items: megaForme && !itemKnown ? [[dex.species[megaForme]?.stone, 1]] : (baseEntry?.it || []),
+    items: itemRates(entries, opp.species, itemKnown ? [[opp.item, 1]] : null),
     abilities: baseEntry?.ab || [],
     usage: variant?.u ?? null,
     // 通常の姿とメガの集計を合算した値 (使用率 = パーティ採用率、lead = 全初手に占める割合)
@@ -140,11 +140,24 @@ export function oppView(opp, usage, ctx = {}) {
   };
 }
 
-// 推定を踏まえた、計算に使う cond (メガ想定を反映)
-export function oppCond(cond, view) {
-  const c = cond || newCond();
-  if (c.forme || !view?.megaForme) return c;
-  return {...c, forme: view.megaForme};
+// 持ち物の採用率: 通常の姿とメガの集計を、それぞれの使用率で重みづけして合算する
+// (メガの集計は持ち物が必ずメガストーンなので、そのまま出すと 100% になってしまう)
+function itemRates(entries, speciesId, fixed) {
+  if (fixed) return fixed;
+  const total = entries.reduce((a, e) => a + (e.w || 0), 0);
+  if (!total) return entries[0]?.d.it || [];
+  const acc = new Map();
+  for (const e of entries) {
+    const w = (e.w || 0) / total;
+    if (e.id !== speciesId) { const st = dex.species[e.id]?.stone; if (st) acc.set(st, (acc.get(st) || 0) + w); continue; }
+    for (const [id, r] of e.d.it || []) acc.set(id, (acc.get(id) || 0) + r * w);
+  }
+  return [...acc.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+// 計算に使う cond。メガシンカは実際にした (盤面で印をつけた) ときだけ反映する
+export function oppCond(cond) {
+  return cond || newCond();
 }
 
 // ---- 素早さ ----

@@ -133,7 +133,7 @@ function SetupTab({battle, ctx, mut, usage, setTab, toast}) {
               <button class="party-main" onClick={() => setOppEdit(i)}>
                 <MonName id={o.species} />
                 <span class="party-sub">
-                  {v && <span>{v.megaForme ? `${speciesName(v.megaForme)}想定` : ''} {itemName(v.build.item) || '持ち物?'}{v.itemGuess ? '?' : ''} / {abilityName(v.build.ability)}{v.abilityGuess ? '?' : ''} / {spreadLabel(v.build.nature, v.build.sp)}</span>}
+                  {v && <span>{v.megaP > 0 ? `メガ率${rate(v.megaP)} ` : ''}{itemName(v.build.item) || '持ち物?'}{v.itemGuess ? '?' : ''} / {abilityName(v.build.ability)}{v.abilityGuess ? '?' : ''} / {spreadLabel(v.build.nature, v.build.sp)}</span>}
                 </span>
                 <span class="party-sub">
                   {v?.hasData && <span class="stat-pill">採用率 {rate(v.usageAll || 0, 1)}・初手率 {rate(leadRate(v, battle.format))}</span>}
@@ -252,11 +252,8 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
   const itemRank = v?.items?.length ? Object.fromEntries(v.items) : null;
   const megas = s.megas || [];
   const megaItems = megas.map(m => dex.species[m].stone);
-  const allItemRank = useMemo(() => {
-    const r = {...(itemRank || {})};
-    for (const e of megas) { const d = usage?.pokemon?.[e]; if (d) r[dex.species[e].stone] = Math.max(r[dex.species[e].stone] || 0, d.u / Math.max(d.u, usage.pokemon[o.species]?.u || 0.0001)); }
-    return Object.keys(r).length ? r : null;
-  }, [usage, o.species]);
+  // 持ち物の率は、通常の姿とメガの使用率で重みづけ済み (メガストーンが 100% にならない)
+  const allItemRank = itemRank;
   return (
     <Sheet title={`相手の${speciesName(o.species)}`} onClose={onClose} wide>
       <div class="editor">
@@ -269,7 +266,7 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
             <Seg wrap value={o.ability || ''} options={[['', '不明'], ...s.ab.map(a => [a, abilityName(a)])]} onChange={val => set(x => { x.ability = val; })} />
           </div>
         </div>
-        {megas.length > 0 && <p class="hint">メガシンカの見込み: {v?.megaForme ? `${speciesName(v.megaForme)} として計算 (${v.megaWhy})` : `通常の姿で計算${ctx.megaBlocked ? ' (相手は別のポケモンがメガシンカ済み)' : v ? ` (メガ使用率 ${rate(v.megaP)})` : ''}`}。メガストーン ({megaItems.map(itemName).join(' / ')}) を持ち物に入れると確定します。</p>}
+        {megas.length > 0 && <p class="hint">メガシンカ: {battle.state.mons.opp[idx]?.forme ? 'メガシンカ済み (メガの種族値で計算)' : `まだしていないので通常の姿で計算${ctx.megaBlocked ? ' (相手は別のポケモンがメガシンカ済み)' : v ? ` ・ 使用率上のメガ率 ${rate(v.megaP)}` : ''}`}。メガシンカしたら、盤面の名前の横の「メガ」ボタンを押してください。</p>}
 
         <div class="field"><span>判明した技 ({o.moves.length}/4)</span>
           <div class="chips">
@@ -344,7 +341,7 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
 
 function speedRangeText(o, v, battle, idx) {
   const txt = [];
-  const sid = battle.state.mons.opp[idx].forme || v?.megaForme || o.species;
+  const sid = battle.state.mons.opp[idx].forme || o.species;
   for (const [key, label] of [['plain', 'スカーフなし'], ['scarf', 'スカーフあり']]) {
     const mask = o.speOk?.[key];
     if (!mask) continue;

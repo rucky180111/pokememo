@@ -25,7 +25,8 @@ export function inferSpeeds(b, draft, opts = {}) {
   const res = opts.resolveAbility || defaultAbilityResolver;
   // 行動順が決まる時点の盤面: 交代とメガシンカを済ませた状態
   const sim = clone(b);
-  for (const a of acts) {
+  for (const a of draft.acts || []) {
+    if (a.type === 'event' && a.kind === 'send' && a.in) { sendOut(sim, a.side, a.in.slot, a.in.to, {resolveAbility: res}); continue; }
     if (a.type === 'switch' && a.to != null) {
       const slot = sim.state.sides[a.side].active.indexOf(a.mon);
       if (slot >= 0) sendOut(sim, a.side, slot, a.to, {resolveAbility: res});

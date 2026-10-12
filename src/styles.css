@@ -403,25 +403,25 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 
 /* 対戦フェーズ (3列) */
 .arena { padding: 8px 10px 0; }
-.arena.wide { display: grid; grid-template-columns: minmax(250px, 300px) minmax(0, 1fr) minmax(280px, 340px); gap: 10px; align-items: start; }
+.arena.wide { display: grid; grid-template-columns: minmax(300px, 370px) minmax(0, 1fr) minmax(260px, 310px); gap: 10px; align-items: start; }
 .arena-tabs { margin-bottom: 8px; }
 .arena-tabs .seg { display: flex; }
 .arena h3 { margin: 0 0 6px; font-size: 14px; }
 .ar-left, .ar-right { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px; min-width: 0; }
 .arena.wide .ar-left, .arena.wide .ar-right { position: sticky; top: calc(var(--top-h) + 50px); max-height: calc(100dvh - var(--top-h) - 50px - var(--nav-h) - 12px); display: flex; flex-direction: column; }
 .arena.wide .ar-right { overflow-y: auto; }
-.tl { flex: 1 1 auto; overflow-y: auto; min-height: 40vh; max-height: 58vh; margin-bottom: 8px; }
+.tl { flex: 1 1 auto; overflow-y: auto; min-height: 18vh; max-height: 38vh; margin-bottom: 8px; }
 .arena.wide .ar-left { height: calc(100dvh - var(--top-h) - 110px - var(--nav-h) - 16px); min-height: 420px; }
 .composer > .btnrow { position: sticky; bottom: 0; background: var(--surface); padding: 6px 0 2px; }
-.arena.wide .tl { max-height: none; min-height: 50%; flex: 1 1 50%; }
-.arena.wide .composer { flex: 0 1 auto; overflow-y: auto; max-height: 50%; }
+.arena.wide .tl { max-height: none; min-height: 20%; flex: 1 1 30%; }
+.arena.wide .composer { flex: 0 1 auto; overflow-y: auto; max-height: 78%; }
 .tl-n { text-align: center; color: var(--muted); font-size: 12px; margin: 6px 0 4px; }
-.tl-act { border: 1.5px solid var(--border); border-radius: 8px; padding: 4px 8px; margin: 4px 0; display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; font-size: 13.5px; }
+.tl-act { width: calc(100% - 18px); text-align: left; background: var(--surface); color: inherit; border: 1.5px solid var(--border); border-radius: 8px; padding: 4px 8px; margin: 4px 0; display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; font-size: 13.5px; }
 .tl-act.opp { border-color: var(--opp); margin-right: 18px; } .tl-act.me { border-color: var(--me); margin-left: 18px; }
 .tl-who { font-size: 10.5px; font-weight: 700; } .tl-act.opp .tl-who { color: var(--opp); } .tl-act.me .tl-who { color: var(--me); }
 .tl-body { font-weight: 700; }
 .tl-auto { flex-basis: 100%; font-size: 11px; color: var(--muted); }
-.composer { border-top: 2px solid var(--border); padding-top: 6px; }
+.composer { border-top: 2px solid var(--border); padding-top: 6px; padding-bottom: 8px; }
 .cp-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; }
 .composer .chips { margin: 5px 0; gap: 4px; }
 .composer .chip { padding: 3px 8px; min-height: 32px; font-size: 12.5px; }
@@ -491,3 +491,65 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .btn.primary.sm { min-height: 32px; }
 
 .mp-table tr.real td small { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
+
+/* ---- 時系列の行 (タップで修正) ---- */
+.tl-act:not(:disabled):hover { background: var(--surface2); }
+.tl-act:disabled { opacity: 1; cursor: default; }
+.tl-act.ev { border-style: dashed; font-size: 12.5px; }
+.tl-act.ev .tl-body { font-weight: 500; }
+.tl-act.res { border-width: 1px; }
+.tl-reopen { display: block; margin: 2px auto 6px; font-size: 12px; }
+
+/* ---- ターン入力 ---- */
+.tc-box { border: 1px solid var(--border); border-radius: 10px; padding: 7px 8px; margin: 6px 0; background: var(--surface); }
+.tc-box.warn { background: var(--warn-bg); border-color: transparent; color: var(--warn-text); }
+.tc-h { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+.tc-h small { font-weight: 400; }
+.tc-no { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--accent-text); font-size: 12px; font-weight: 700; flex: none; }
+.tc-no.inv { margin-right: 6px; }
+.tc-end { position: sticky; bottom: 0; background: var(--surface); padding: 6px 0 2px; }
+.plan + .plan { border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 6px; }
+.plan-who { font-size: 12px; font-weight: 700; color: var(--me); }
+.move-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin: 4px 0; }
+.mv-btn { position: relative; overflow: hidden; display: flex; align-items: center; gap: 5px; min-height: 40px; padding: 4px 7px 4px 12px; border: 1.5px solid var(--border); border-radius: 8px; background: var(--surface); text-align: left; font-size: 13px; line-height: 1.2; min-width: 0; }
+.mv-nm { min-width: 0; word-break: break-all; }
+.mv-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; }
+.mv-btn .rate { margin-left: auto; color: var(--muted); font-size: 11px; }
+.mv-btn.on { border-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+.mv-btn.guess { border-style: dashed; }
+.mv-btn.add { justify-content: center; border-style: dashed; color: var(--accent); }
+.actor-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
+.actor-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 9px; border: 2px solid var(--border); border-radius: 10px; background: var(--surface); text-align: left; min-height: 56px; }
+.actor-btn.me { border-color: var(--me); } .actor-btn.opp { border-color: var(--opp); }
+.actor-btn.me.on { background: var(--me-soft); } .actor-btn.opp.on { background: var(--opp-soft); }
+.ab-side { font-size: 10.5px; font-weight: 700; } .actor-btn.me .ab-side { color: var(--me); } .actor-btn.opp .ab-side { color: var(--opp); }
+.ab-name { font-weight: 700; font-size: 14px; }
+.ab-sub { font-size: 11.5px; color: var(--muted); }
+.actform { margin-top: 8px; padding: 8px; border-radius: 10px; border: 2px solid var(--border); background: var(--surface2); }
+.actform.me { border-color: var(--me); } .actform.opp { border-color: var(--opp); }
+.af-h { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 13px; margin-bottom: 2px; }
+.af-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.af-row .seg button { font-size: 12px; padding: 4px 7px; }
+.af-dmg { background: var(--surface); border-radius: 8px; padding: 6px 8px; margin: 6px 0; }
+.af-hp { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
+.af-hp > span:first-child { flex-basis: 100%; }
+.af-hp .input { width: 92px; font-size: 18px; text-align: right; padding: 4px 8px; }
+.actform .btnrow, .tc-box .btnrow { margin-top: 8px; }
+.pivot { background: var(--warn-bg); border-radius: 8px; padding: 4px 6px; }
+.res-list { list-style: none; margin: 4px 0; padding: 0; }
+.res-list li { padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.res-list label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.res-list input { width: 18px; height: 18px; }
+.res-list .neg { color: var(--bad); font-weight: 700; } .res-list .pos { color: var(--ok); font-weight: 700; }
+.mega-btn { border-color: #a35bd6; color: #8a3fc0; font-weight: 700; padding: 2px 8px; min-height: 26px; }
+@media (prefers-color-scheme: dark) { .mega-btn { color: #d3a6ff; border-color: #a77bd0; } }
+
+/* ---- 検索パネルのタイプ絞り込み ---- */
+.type-filter { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 12px 8px; border-bottom: 1px solid var(--border); }
+.type-filter > .muted { flex-basis: 100%; font-size: 12px; }
+.tf { border: 0; border-radius: 6px; padding: 4px 7px; font-size: 12px; font-weight: 700; color: #fff; opacity: .38; min-height: 30px; }
+.tf.on { opacity: 1; box-shadow: 0 0 0 2px var(--text); }
+.tf.cat { background: var(--surface2); color: var(--text); border: 1px solid var(--border); opacity: .8; }
+.tf.cat.on { opacity: 1; background: var(--accent-soft); border-color: var(--accent); }
+
+.mv-box { white-space: normal; word-break: break-all; }

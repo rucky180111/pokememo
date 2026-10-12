@@ -11,6 +11,8 @@ export const openTurn = b => { const t = b.turns[b.turns.length - 1]; return t &
 function ensureTurn(b) {
   let t = openTurn(b);
   if (!t) {
+    // あとから入力を直せるよう、最初のターンの前の状態を残しておく (全ターンをここから再生する)
+    if (!b.turns.length && !b.start) b.start = clone({state: b.state, pick: b.pick, opp: b.opp});
     t = {n: b.turns.length + 1, acts: [], orderKnown: true, note: '', auto: [], open: true, before: clone({state: b.state, pick: b.pick, opp: b.opp})};
     b.turns.push(t);
     for (let i = 0; i < b.turns.length - UNDO_DEPTH; i++) delete b.turns[i].before;
@@ -53,6 +55,7 @@ export function endTurn(b, usage, opts = {}) {
     if (n === base) log.push(`${label}が${base}ターン目を終えました${ext ? ` (延長する持ち物がなければここで終了。あれば${ext}ターン)` : ' (ここで終了)'}。切れたら「出来事」で解除してください`);
   }
   t.open = false;
+  t.end = {noOrder: !!(opts.noOrder || t.noOrder)};
   t.auto.push(...log);
   b.updatedAt = Date.now();
   return log;
@@ -162,6 +165,12 @@ export function addAct(b, input, usage) {
       log.push('持ち物が入れ替わったため、この2体は以後の推定 (ダメージ・行動順) の対象から外します');
     }
     if (a.hpAfter != null && tgt) setHP(b, tgt.side, tgt.mon, a.hpAfter);
+    // 追加効果・変化技で相手が状態異常になった
+    if (!failed && tgt && input.inflict && !condOf(b, tgt.side, tgt.mon).fainted) {
+      const tc2 = condOf(b, tgt.side, tgt.mon);
+      tc2.status = input.inflict; tc2.toxicCounter = 1; a.inflict = input.inflict;
+      log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は${STATUS_JA[input.inflict]}になった`);
+    }
     if (!failed && defItem && input.defItem.consumed !== false && tgt) condOf(b, tgt.side, tgt.mon).itemGone = true;
     if (atkItem && input.atkItem.consumed) condOf(b, side, mon).itemGone = true;
     if (a.to != null && !failed) {
@@ -176,6 +185,7 @@ export function addAct(b, input, usage) {
     }
   }
   a.auto = log;
+  a.in = inputCopy(input);
   t.acts.push(a);
   b.updatedAt = Date.now();
   return log;
@@ -204,7 +214,7 @@ export function addEvent(b, ev, usage) {
   const res = boardContext(b, usage).strictAbility;
   const log = [];
   let text = '';
-  const needMon = ['item', 'hp', 'status', 'boost', 'ability', 'mega', 'faint'].includes(ev.kind);
+  const needMon = ['item', 'hp', 'status', 'boost', 'ability', 'mega', 'faint', 'residual'].includes(ev.kind);
   if (needMon && !cond) return ['場にポケモンがいません'];
   if (ev.kind === 'item') {
     if (side === 'opp' && ev.item) build.item = ev.item;
@@ -215,6 +225,23 @@ export function addEvent(b, ev, usage) {
     text = `${itemName(ev.item) || '持ち物'} ${ev.consumed ? '発動・消費' : '判明'}${hp != null ? ` → HP ${Math.round(hp)}%` : ''}`;
   } else if (ev.kind === 'hp') { setHP(b, side, mon, ev.hpAfter); text = `HP → ${Math.round(ev.hpAfter)}%${ev.note ? ` (${ev.note})` : ''}`; }
   else if (ev.kind === 'faint') { setHP(b, side, mon, 0); text = 'ひんし'; }
+  else if (ev.kind === 'residual') {
+    const r = residualDelta(b, side, mon, ev.key);
+    if (!r) return [];
+    const was = cond.hp;
+    setHP(b, side, mon, cond.hp + r.pct);
+    if (ev.key === 'tox') cond.toxicCounter = Math.min(15, (cond.toxicCounter || 1) + 1);
+    if (side === 'opp' && RESIDUAL_ITEM[ev.key] && !build.item) build.item = RESIDUAL_ITEM[ev.key];
+    text = `${RESIDUAL_JA[ev.key]} ${r.pct > 0 ? '+' : ''}${side === 'me' ? `${r.hp}` : `${Math.round(r.pct * 10) / 10}%`}${cond.fainted && was > 0 ? ' → ひんし' : ''}`;
+  } else if (ev.kind === 'send') {
+    const slot = ev.slot ?? b.state.sides[side].active.findIndex(x => x == null || condOf(b, side, x)?.fainted);
+    if (slot < 0 || ev.to == null) return ['出す場所がありません'];
+    sendOut(b, side, slot, ev.to, {log, resolveAbility: res});
+    text = '場に出た';
+    t.acts.push({side, mon: ev.to, type: 'event', kind: 'send', text, sp: buildOf(b, side, ev.to).species, auto: log, flags: {}, in: inputCopy({...ev, slot})});
+    b.updatedAt = Date.now();
+    return [text, ...log];
+  }
   else if (ev.kind === 'status') { cond.status = ev.status || ''; cond.toxicCounter = 1; text = STATUS_JA[ev.status || '']; }
   else if (ev.kind === 'boost') { applyBoosts(b, side, mon, {[ev.stat]: ev.delta}, {log: [], resolveAbility: () => ''}); text = `${STAT_JA[ev.stat]} ${ev.delta > 0 ? '+' : ''}${ev.delta} (→${cond.boosts[ev.stat] > 0 ? '+' : ''}${cond.boosts[ev.stat]})`; }
   else if (ev.kind === 'ability') { if (side === 'opp') build.ability = ev.ability; text = `特性 ${abilityName(ev.ability)} 判明`; }
@@ -226,7 +253,7 @@ export function addEvent(b, ev, usage) {
   } else if (ev.kind === 'side') { setSideFlag(b, side, ev.key, !!ev.value); text = `${FLAG_JA[ev.key]} ${ev.value ? '' : '終了'}`.trim(); }
   else if (ev.kind === 'spikes') { b.state.sides[side].spikes = Math.max(0, Math.min(3, ev.value)); text = `まきびし ${b.state.sides[side].spikes}層`; }
   else return [];
-  t.acts.push({side, mon: needMon ? mon : null, type: 'event', kind: ev.kind, text, sp: needMon ? build.species : null, auto: log, flags: {}});
+  t.acts.push({side, mon: needMon ? mon : null, type: 'event', kind: ev.kind, text, sp: needMon ? build.species : null, auto: log, flags: {}, in: inputCopy({...ev, mon: needMon ? mon : ev.mon})});
   b.updatedAt = Date.now();
   return [text, ...log];
 }
@@ -238,6 +265,192 @@ export function actLine(b, a) {
   const f = a.flags || {};
   const tags = [a.mega && 'メガ', f.crit && '急所', f.miss && '外れ', f.protect && 'まもる', f.cant && '行動不能'].filter(Boolean).join('・');
   const items = [a.atkItem && `${itemName(a.atkItem)}`, a.defItem && `相手側 ${itemName(a.defItem)} 発動`].filter(Boolean).join('・');
-  return `${moveName(a.move)}${a.hpAfter != null ? ` ${a.hpAfter > 0 && a.hpAfter < 1 ? 1 : Math.round(a.hpAfter)}%` : ''}${tags ? ` ${tags}` : ''}${items ? ` (${items})` : ''}${a.toSp ? ` → ${speciesName(a.toSp)}` : ''}`;
+  if (a.type === 'move' && !a.move) return f.cant ? '行動できず' : '(技不明)';
+  return `${moveName(a.move)}${a.inflict ? ` ${STATUS_JA[a.inflict]}` : ''}${a.hpAfter != null ? ` ${a.hpAfter > 0 && a.hpAfter < 1 ? 1 : Math.round(a.hpAfter)}%` : ''}${tags ? ` ${tags}` : ''}${items ? ` (${items})` : ''}${a.toSp ? ` → ${speciesName(a.toSp)}` : ''}`;
 }
 export {turnNumber, defaultAbilityResolver};
+
+// 入力の控え (再生用)。sameTurn は再生時に付け直す
+function inputCopy(input) {
+  const c = clone(input || {});
+  delete c.sameTurn;
+  return c;
+}
+
+// 古い記録 (入力の控えがない行動) から入力を組み立てる
+function legacyInput(a) {
+  if (a.type === 'event') return null;
+  const f = a.flags || {};
+  return {side: a.side, mon: a.mon, type: a.type, move: a.move, to: a.to, mega: a.mega, crit: f.crit, miss: f.miss, protect: f.protect, cant: f.cant,
+    target: a.target, hpAfter: a.hpAfter, hits: a.hits, defItem: a.defItem ? {item: a.defItem} : null, atkItem: a.atkItem ? {item: a.atkItem} : null};
+}
+
+// 入力をあとから直せるか (最初の状態が残っていて、すべての出来事に入力の控えがある)
+export function canReplay(b) {
+  if (!(b.start || b.turns[0]?.before)) return false;
+  return b.turns.every(t => t.acts.every(a => a.in || a.type !== 'event'));
+}
+
+/**
+ * 最初の状態から全ターンを入れ直す。行動を直した・消したときに使う。
+ * 相手の判明情報のうち、行動から分かったもの (技・持ち物・能力の絞り込み) は作り直し、
+ * 手で入れた情報 (行動に出てこない技・持ち物・特性) は残す。
+ */
+export function replay(b, usage, opts = {}) {
+  const start = b.start || b.turns[0]?.before;
+  if (!start) return false;
+  const old = b.turns;
+  const fromActs = new Set();
+  for (const t of old) for (const a of t.acts) if (a.side === 'opp' && a.type === 'move') fromActs.add(a.move);
+  for (const m of opts.fromActs || []) fromActs.add(m);
+  const prev = clone(b.opp);
+  b.start = clone(start);
+  b.state = clone(start.state);
+  b.pick = clone(start.pick);
+  b.opp.forEach((o, i) => {
+    const s0 = start.opp?.[i];
+    if (!s0 || s0.species !== o.species) return;
+    Object.assign(o, {item: s0.item || '', ability: s0.ability || '', moves: [...(s0.moves || [])], statOk: s0.statOk ?? null, speOk: s0.speOk ?? null, scarfLikely: !!s0.scarfLikely, megaSeen: !!s0.megaSeen});
+  });
+  b.turns = [];
+  for (const t of old) {
+    for (const a of t.acts) {
+      const inp = a.in || legacyInput(a);
+      if (!inp) continue;
+      if (a.type === 'event') addEvent(b, inp, usage);
+      else addAct(b, {...inp, sameTurn: true}, usage);
+    }
+    const nt = ensureTurn(b);
+    nt.note = t.note || '';
+    if (t.noOrder) nt.noOrder = true;
+    if (!t.open) endTurn(b, usage, t.end || {});
+  }
+  b.opp.forEach((o, i) => {
+    const p = prev[i];
+    if (!p || p.species !== o.species) return;
+    if (!o.item && p.item && !p.megaSeen) o.item = p.item;
+    if (!o.ability && p.ability) o.ability = p.ability;
+    for (const m of p.moves || []) if (!fromActs.has(m) && !o.moves.includes(m) && o.moves.length < 4) o.moves.push(m);
+    o.assume = p.assume; o.note = p.note;
+  });
+  b.updatedAt = Date.now();
+  return true;
+}
+
+/** ti ターン目の ai 番目の行動を input に置き換える (null で削除)。置き換え後、全体を入れ直す。 */
+export function editAct(b, ti, ai, input, usage) {
+  const t = b.turns[ti];
+  if (!t || !t.acts[ai] || !canReplay(b)) return false;
+  const was = t.acts[ai];
+  const fromActs = was.side === 'opp' && was.type === 'move' ? [was.move] : [];
+  if (input == null) t.acts.splice(ai, 1);
+  else t.acts[ai] = {...t.acts[ai], in: inputCopy(input)};
+  // 空になった入力途中のターンは消す
+  if (!t.acts.length && t.open) b.turns.splice(ti, 1);
+  return replay(b, usage, {fromActs});
+}
+
+/** 入力途中のターンを、ターン終了前に戻す (閉じたターンを開き直す) */
+export function reopenLastTurn(b, usage) {
+  const t = b.turns[b.turns.length - 1];
+  if (!t || t.open || !canReplay(b)) return false;
+  t.open = true;
+  delete t.end;
+  return replay(b, usage);
+}
+
+// ---- ターン終了時の処理 (たべのこし・定数ダメージなど) ----
+const RESIDUAL_JA = {sand: 'すなあらしのダメージ', grassy: 'グラスフィールドで回復', leftovers: 'たべのこしで回復', blacksludge: 'くろいヘドロ', psn: 'どくのダメージ', tox: 'もうどくのダメージ',
+  brn: 'やけどのダメージ', poisonheal: 'ポイズンヒールで回復', raindish: 'あめうけざらで回復', dryskin: 'かんそうはだ', solarpower: 'サンパワーのダメージ', icebody: 'アイスボディで回復'};
+const RESIDUAL_ITEM = {leftovers: 'leftovers', blacksludge: 'blacksludge'};
+export {RESIDUAL_JA};
+
+function residualFrac(b, side, mon, key) {
+  const build = buildOf(b, side, mon), cond = condOf(b, side, mon);
+  const types = dex.species[currentSpecies(build, cond)]?.t || [];
+  const w = b.state.field.weather;
+  switch (key) {
+    case 'sand': return -1 / 16;
+    case 'grassy': case 'leftovers': case 'raindish': case 'icebody': return 1 / 16;
+    case 'blacksludge': return types.includes('Poison') ? 1 / 16 : -1 / 8;
+    case 'psn': return -1 / 8;
+    case 'tox': return -Math.min(15, cond.toxicCounter || 1) / 16;
+    case 'brn': return -1 / 16;
+    case 'poisonheal': return 1 / 8;
+    case 'dryskin': return w === 'Rain' ? 1 / 8 : -1 / 8;
+    case 'solarpower': return -1 / 8;
+    default: return 0;
+  }
+}
+
+// 1回分の変化量 {pct: HP割合の変化, hp: 自分なら実数の変化}。満タンで回復しないときは null
+function residualDelta(b, side, mon, key) {
+  const cond = condOf(b, side, mon), build = buildOf(b, side, mon);
+  if (!cond || cond.fainted) return null;
+  const f = residualFrac(b, side, mon, key);
+  if (!f || (f > 0 && cond.hp >= 100)) return null;
+  if (side === 'me') {
+    const max = statsOf(currentSpecies(build, cond), build.sp, build.nature)[0];
+    const now = Math.round((cond.hp * max) / 100);
+    let d = Math.max(1, Math.floor(max * Math.abs(f))) * Math.sign(f);
+    d = Math.max(-now, Math.min(max - now, d));
+    return {pct: (d / max) * 100, hp: d};
+  }
+  return {pct: Math.max(-cond.hp, Math.min(100 - cond.hp, f * 100))};
+}
+
+/**
+ * いまの盤面で、ターン終了時に起きそうな処理の候補。
+ * checked: 確実に起きる (持ち物・特性・状態が判明している) もの。false は「起きたら選ぶ」候補。
+ */
+export function residualCandidates(b, usage) {
+  const ctx = boardContext(b, usage);
+  const out = [];
+  const w = b.state.field.weather, terrain = b.state.field.terrain;
+  for (const side of ['me', 'opp']) {
+    for (const mon of b.state.sides[side].active) {
+      if (mon == null) continue;
+      const build = buildOf(b, side, mon), cond = condOf(b, side, mon);
+      if (!build || !cond || cond.fainted) continue;
+      const types = dex.species[currentSpecies(build, cond)]?.t || [];
+      const known = ctx.strictAbility(b, side, mon);
+      const abs = known ? [known] : side === 'opp' ? (dex.species[currentSpecies(build, cond)]?.ab || []) : [];
+      const sure = ab => known === ab;
+      const maybe = ab => abs.includes(ab);
+      if (maybe('magicguard') && sure('magicguard')) { /* 定数ダメージを受けない */ }
+      const itemKnown = side === 'me' || !!build.item;
+      const item = cond.itemGone ? '' : side === 'me' ? build.item : build.item;
+      const itemRates = side === 'opp' && !build.item ? Object.fromEntries(ctx.views[mon]?.items || []) : {};
+      const push = (key, checked) => { const r = residualDelta(b, side, mon, key); if (r) out.push({side, mon, key, label: RESIDUAL_JA[key], pct: r.pct, hp: r.hp, checked}); };
+      const noIndirect = sure('magicguard');
+      if (w === 'Sand' && !noIndirect && !types.some(t => ['Rock', 'Ground', 'Steel'].includes(t)) && item !== 'safetygoggles' && !['sandveil', 'sandrush', 'sandforce', 'overcoat'].some(sure))
+        push('sand', !['sandveil', 'sandrush', 'sandforce', 'overcoat', 'magicguard'].some(maybe));
+      if (terrain === 'Grassy' && !types.includes('Flying') && !sure('levitate') && item !== 'airballoon') push('grassy', !maybe('levitate'));
+      if (!cond.itemGone) {
+        if (itemKnown) { if (item === 'leftovers') push('leftovers', true); if (item === 'blacksludge') push('blacksludge', true); }
+        else {
+          if ((itemRates.leftovers || 0) > 0) push('leftovers', false);
+          if ((itemRates.blacksludge || 0) > 0) push('blacksludge', false);
+        }
+      }
+      if ((cond.status === 'psn' || cond.status === 'tox') && maybe('poisonheal')) push('poisonheal', sure('poisonheal'));
+      if (cond.status === 'psn' && !noIndirect && !sure('poisonheal')) push('psn', !maybe('poisonheal') && !maybe('magicguard'));
+      if (cond.status === 'tox' && !noIndirect && !sure('poisonheal')) push('tox', !maybe('poisonheal') && !maybe('magicguard'));
+      if (cond.status === 'brn' && !noIndirect) push('brn', !maybe('magicguard'));
+      if (w === 'Rain' && maybe('raindish')) push('raindish', sure('raindish'));
+      if ((w === 'Rain' || w === 'Sun') && maybe('dryskin')) push('dryskin', sure('dryskin'));
+      if (w === 'Sun' && maybe('solarpower')) push('solarpower', sure('solarpower'));
+      if (w === 'Snow' && maybe('icebody')) push('icebody', sure('icebody'));
+    }
+  }
+  return out;
+}
+
+/** ターンを締める: 選んだターン終了時の処理を記録してから endTurn */
+export function finishTurn(b, usage, {residual = [], noOrder = false} = {}) {
+  ensureTurn(b);
+  const log = [];
+  for (const r of residual) log.push(...addEvent(b, {kind: 'residual', side: r.side, mon: r.mon, key: r.key}, usage));
+  log.push(...endTurn(b, usage, {noOrder}));
+  return log;
+}

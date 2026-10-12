@@ -287,7 +287,7 @@ function MonCard({side, idx, slot, battle, ctx, mut, onOpen, onSwap}) {
     : (battle.opp[idx].item ? [megaTarget(battle, side, idx)].filter(Boolean) : (base.megas || []));
   const canMega = megaOptions.length > 0 && (isMega || !sd.megaUsed);
   const anyBoost = BOOST_KEYS.some(k => rawCond.boosts[k]);
-  const guessMega = side === 'opp' && !rawCond.forme && view?.megaForme;
+  const guessMega = false;
   return (
     <div class={cx('moncard', rawCond.fainted && 'fainted')}>
       <div class="mc-top">
