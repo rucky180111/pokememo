@@ -34,7 +34,7 @@ export function DamageTab({battle, ctx, mut, toast}) {
   let atk = sel[dir];
   if (atk == null || !list[atk] || condOf(battle, dir, atk)?.fainted) atk = defaultAttacker(battle, dir);
   const table = useMemo(() => (atk == null ? null : attackTable(ctx, dir, atk, {crit, helpingHand: hh, hits})), [ctx, dir, atk, crit, hh, hits]);
-  if (!battle.my.length || !battle.opp.length) return <div class="page-in"><Empty>自分と相手のポケモンを登録すると、ダメージ表が出ます。</Empty></div>;
+  if (!battle.my.length || !battle.opp.length) return <div class="page-in"><Empty>自分と相手のポケモンを登録すると、ダメージ計算の表が出ます。</Empty></div>;
   const view = dir === 'opp' && atk != null ? ctx.views[atk] : null;
   return (
     <div class="page-in">

@@ -13,7 +13,7 @@ import {Arena} from './arena.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
 import {DamageTab, SpeedTab, PredictTab} from './analysis.jsx';
 
-const TABS = [['setup', '① 選出'], ['board', '② 対戦'], ['dmg', '③ ダメージ表']];
+const TABS = [['setup', '① 選出'], ['board', '② 対戦'], ['dmg', '③ ダメージ計算']];
 const RESULT_OPTS = [['', '未決'], ['win', '勝ち'], ['lose', '負け'], ['draw', '引分']];
 
 function useWide() {
@@ -351,18 +351,18 @@ function speedRangeText(o, v, battle, idx) {
 export function LogTab({battle, mut, onDelete}) {
   return (
     <div class="page-in">
-      {!battle.turns.length && <Empty>まだターンの記録がありません。左の入力欄から記録します。記録の修正は時系列の行をタップしてください。</Empty>}
+      {!battle.turns.length && <Empty>まだターンの記録がありません。ターン入力から記録すると、ここにターンごとのメモ欄が並びます。記録の修正はバトルログの行をタップしてください。</Empty>}
       <ol class="log">
         {battle.turns.map((t, ti) => (
           <li key={t.n}>
-            <div class="log-head"><strong>ターン {t.n}</strong>{t.orderKnown && <span class="tag">行動順あり</span>}</div>
+            <div class="log-head"><strong>ターン {t.n}</strong>{t.orderKnown && <span class="tag">行動順を推定に使用</span>}</div>
             {t.acts.map(a => <div class={cx('log-act', a.side)}>{describeAct(battle, a)}</div>)}
             {(t.auto || []).map(x => <div class="log-auto">{x}</div>)}
             <input class="input log-note" placeholder="このターンのメモ" value={t.note || ''} onChange={e => mut(b => { b.turns[ti].note = e.currentTarget.value; })} />
           </li>
         ))}
       </ol>
-      <label class="field"><span>対戦メモ (反省点・気づき)</span>
+      <label class="field"><span>対戦のメモ (反省点・気づき)</span>
         <textarea class="input" rows={5} value={battle.memo} onChange={e => mut(b => { b.memo = e.currentTarget.value; })} />
       </label>
       <div class="field"><span>種類</span>

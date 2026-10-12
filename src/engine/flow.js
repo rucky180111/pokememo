@@ -52,7 +52,7 @@ export function endTurn(b, usage, opts = {}) {
   for (const [key, label, base, ext] of [['weather', '天候', 5, 8], ['terrain', 'フィールド', 5, 8]]) {
     if (!f[key] || f.since?.[key] == null) continue;
     const n = t.n - f.since[key] + 1;
-    if (n === base) log.push(`${label}が${base}ターン目を終えました${ext ? ` (延長する持ち物がなければここで終了。あれば${ext}ターン)` : ' (ここで終了)'}。切れたら「出来事」で解除してください`);
+    if (n === base) log.push(`${label}が${base}ターン目を終えました${ext ? ` (延長する持ち物がなければここで終了。あれば${ext}ターン)` : ' (ここで終了)'}。終わったら「その他の変化」で解除してください`);
   }
   t.open = false;
   t.end = {noOrder: !!(opts.noOrder || t.noOrder)};
@@ -478,7 +478,7 @@ function simultaneousEntry(b, usage, side, mon, res) {
   const sThis = spd(side, mon), sOther = spd(os, om);
   for (const [map, setter, ja, label] of kinds) {
     if (!map[abThis] || !map[abOther] || map[abThis] === map[abOther]) continue;
-    if (sThis === sOther) { log.push(`同時に場に出た: 素早さが同じ見込みのため、${label}はどちらが残るか不確定 (違っていたら「その他の出来事」で直してください)`); continue; }
+    if (sThis === sOther) { log.push(`同時に場に出た: 素早さが同じ見込みのため、${label}はどちらが残るか不確定 (違っていたら「その他の変化」で直してください)`); continue; }
     // いま出した側のほうが速い → 先に発動して、遅い側 (先に出してあった側) の特性で上書きされる
     if (sThis > sOther) {
       setter(b, map[abOther]);

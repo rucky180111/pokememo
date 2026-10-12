@@ -24,10 +24,11 @@ export function Arena({battle, ctx, mut, usage, toast, wide, onDelete}) {
   const p = {battle, ctx, mut, usage, toast, setSheet, onDelete};
   return (
     <div class={cx('arena', wide && 'wide')}>
-      {!wide && <div class="arena-tabs"><Seg value={pane} options={[['left', '入力・時系列'], ['center', '盤面'], ['right', 'ダメージ表']]} onChange={setPane} /></div>}
+      {!wide && <div class="arena-tabs"><Seg value={pane} options={[['left', 'ターン入力'], ['center', '盤面'], ['right', 'ダメージ・傾向']]} onChange={setPane} /></div>}
       {(wide || pane === 'left') && <Timeline {...p} />}
       {(wide || pane === 'center') && (
         <div class="ar-center">
+          <PartyStrip battle={battle} onOpen={i => setSheet({side: 'opp', idx: i})} />
           <SidePanels side="opp" {...p} />
           <FieldRow battle={battle} />
           <SidePanels side="me" {...p} />
@@ -44,6 +45,32 @@ export function Arena({battle, ctx, mut, usage, toast, wide, onDelete}) {
 }
 
 // ---- 中央: 盤面 ----
+// 相手のパーティ6体。まだ出てきていないポケモンは暗く、場に出て選出が分かったら明るくする
+function PartyStrip({battle, onOpen}) {
+  if (!battle.opp.length) return null;
+  const seen = battle.pick.opp || [];
+  const active = battle.state.sides.opp.active;
+  const n = battle.format === 'double' ? 4 : 3;
+  return (
+    <div class="party-strip">
+      <span class="ps-lb">相手の選出 <b class="num">{Math.min(seen.length, n)}/{n}</b></span>
+      <div class="ps-mons">
+        {battle.opp.map((o, i) => {
+          const c = condOf(battle, 'opp', i);
+          const st = active.includes(i) ? 'active' : c?.fainted ? 'fainted' : seen.includes(i) ? 'seen' : 'unseen';
+          return (
+            <button class={cx('ps-mon', st)} onClick={() => onOpen(i)} title={speciesName(o.species)}>
+              <Sprite id={c?.forme || o.species} size={48} />
+              <span class="ps-nm">{speciesName(o.species)}</span>
+              {st !== 'unseen' && <span class="ps-hp"><i style={{width: `${c?.hp ?? 100}%`}} /></span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function FieldRow({battle}) {
   const f = battle.state.field;
   const W = Object.fromEntries(WEATHERS), T = Object.fromEntries(TERRAINS);
@@ -197,7 +224,7 @@ function RightPane(props) {
   const [tab, setTab] = useState('dmg');
   return (
     <div class="ar-right">
-      <Seg value={tab} options={[['dmg', 'ダメージ'], ['stat', '統計'], ['log', 'ログ']]} onChange={setTab} />
+      <Seg value={tab} options={[['dmg', 'ダメージ'], ['stat', '傾向'], ['log', 'メモ']]} onChange={setTab} />
       {tab === 'dmg' && <DamagePane {...props} />}
       {tab === 'stat' && <PredictTab battle={props.battle} ctx={props.ctx} />}
       {tab === 'log' && <LogTab battle={props.battle} mut={props.mut} onDelete={props.onDelete} />}

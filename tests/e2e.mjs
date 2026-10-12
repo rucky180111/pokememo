@@ -121,8 +121,8 @@ await shot(page, 'select');
 await page.getByRole('button', {name: /この選出で対戦開始/}).click();
 await page.waitForSelector('.arena .mon-panel.me');
 const pane = async n => { await page.locator('.arena-tabs button', {hasText: n}).click(); };
-await pane('入力');
-await page.locator('.composer .tc-box.warn .chip', {hasText: 'バンギラス'}).click();
+await pane('ターン入力');
+await page.locator('.composer .tc-box.warn .mon-btn', {hasText: 'バンギラス'}).click();
 let b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.sides.me.active[0] === 0 && b.state.sides.opp.active[0] === 1, '初手が場に出る');
 check(b.pick.opp.join() === '1', '相手の選出に自動で入る');
@@ -150,7 +150,7 @@ check(b.state.mons.me[0].boosts.atk === 2, 'つるぎのまいで A+2');
 check(b.state.sides.me.sr === true, '自分の場にステルスロック');
 check(b.opp[1].moves.includes('stealthrock'), '相手の技が判明済みに入る');
 check(await page.locator('.tl-act').count() === 3, '時系列に3行 (場に出す + 2行動)');
-check(await page.locator('.res-list, .wz-page', {hasText: '自動で処理'}).count() + await page.locator('.res-list').count() > 0, '全員記録したら ③ ターン終了の画面に進む');
+check(await page.locator('.res-list, .wz-page', {hasText: '自動で反映'}).count() + await page.locator('.res-list').count() > 0, '全員記録したら ③ ターン終了の画面に進む');
 await shot(page, 'endturn');
 await page.getByRole('button', {name: 'ターンを終える'}).click();
 // ターン2: 相手=がんせきふうじ (自分の残り70) → 自分=じしん (相手の残り20%)
@@ -177,7 +177,7 @@ b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(Math.round(b.state.mons.me[0].hp) === Math.round(80 / 185 * 100) && b.state.mons.opp[1].hp === 20 && b.state.mons.me[0].boosts.atk === 2, `修正が反映され、ほかの記録は残る (${b.state.mons.me[0].hp})`);
 await page.getByRole('button', {name: 'ターンを終える'}).click();
 // 出来事: 相手のオボンのみ発動 (+25%)
-await page.locator('.composer .cp-head .seg button', {hasText: 'その他の出来事'}).click();
+await page.locator('.composer .cp-head .seg button', {hasText: 'その他の変化'}).click();
 await page.locator('.ev .seg button', {hasText: '相手'}).click();
 await page.locator('.ev .chip', {hasText: 'オボンのみ'}).click();
 await page.locator('.ev .btn.primary', {hasText: '追加'}).click();
@@ -187,22 +187,23 @@ check(await page.locator('.tl-act', {hasText: 'オボンのみ 発動'}).count()
 await page.locator('.composer .cp-head .seg button', {hasText: '行動'}).click();
 await pane('盤面');
 check(await page.locator('.mon-panel input, .mon-panel select, .ar-field select').count() === 0, '中央は表示専用 (入力欄なし)');
+check(await page.locator('.party-strip .ps-mon.unseen').count() === 5 && await page.locator('.party-strip .ps-mon.active').count() === 1, '相手の6体のうち場に出た1体だけが明るい');
 await shot(page, 'arena-center');
 check(await page.locator('.mon-panel.opp .mp-table tbody tr').count() === 4, '相手の表に 種族値/推定Pt/能力上昇/実数値');
 check(await page.locator('.mon-panel.opp .mp-speed li').count() >= 5, '素早さ一覧に自分の位置が入る');
 check(await page.locator('.mon-panel.me .mv-box').count() === 4, '自分の技4つ');
-await pane('ダメージ表');
+await pane('ダメージ・傾向');
 await page.waitForSelector('.dp-move');
 await shot(page, 'arena-damage');
 check(await page.locator('.dp-move .dp-bar').count() >= 8, '無振り/全振りの2本ずつ帯が出る');
 // 出来事の削除
-await pane('入力');
+await pane('ターン入力');
 await page.locator('.tl-act', {hasText: 'オボンのみ 発動'}).click();
 await page.getByRole('button', {name: '削除'}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.mons.opp[1].hp === 20 && !b.state.mons.opp[1].itemGone, `出来事を消すと盤面も戻る (${b.state.mons.opp[1].hp})`);
 // 交代 (①で交代を選んで記録)
-await page.locator('.composer .plan .chip', {hasText: 'ガオガエン'}).click();
+await page.locator('.composer .plan .mon-btn', {hasText: 'ガオガエン'}).click();
 await page.locator('.actor-btn.me').click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.sides.me.active[0] === 2 && b.state.mons.opp[1].boosts.atk === -1, '交代でガオガエンが出て、いかくが入る');
@@ -216,17 +217,17 @@ const allDragon = await page.locator('.overlay .picker-list .row .type').evaluat
 check(rows > 5 && allDragon, `技をタイプで絞り込める (${rows}件)`);
 await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
 // 既存の詳細タブ
-await page.getByRole('tab', {name: '③ ダメージ表'}).click();
+await page.getByRole('tab', {name: '③ ダメージ計算'}).click();
 await page.waitForSelector('table.dmg');
 check(await page.locator('table.dmg thead th').count() === 7, 'ダメージ表タブは相手6体ぶん');
 check(await page.locator('table.dmg td .dbar').count() > 0, 'ダメージ表にゲージが出る');
 await shot(page, 'dmg-tab');
 check(await page.getByRole('tab').count() === 3, '大きいタブは 選出・対戦・ダメージ表 の3つ');
 await page.getByRole('tab', {name: '② 対戦'}).click();
-await pane('ダメージ表');
-await page.locator('.ar-right > .seg button', {hasText: 'ログ'}).click();
-check(await page.locator('.ar-right .log li').count() >= 3, '右側のログにターンが並ぶ');
-await page.locator('.ar-right > .seg button', {hasText: '統計'}).click();
+await pane('ダメージ・傾向');
+await page.locator('.ar-right > .seg button', {hasText: 'メモ'}).click();
+check(await page.locator('.ar-right .log li').count() >= 3, '右側のメモにターンが並ぶ');
+await page.locator('.ar-right > .seg button', {hasText: '傾向'}).click();
 await page.locator('.ar-right > .seg button', {hasText: 'ダメージ'}).click();
 await page.getByRole('tab', {name: '② 対戦'}).click();
 // 勝敗をつけて統計へ
@@ -262,7 +263,7 @@ for (const h of ['#/battles', '#/teams', '#/stats', '#/settings']) {
 const bid = await page.evaluate(() => window.__pokememo.store.battles()[0].id);
 await page.goto(`${url}#/battle/${bid}`);
 await page.waitForSelector('.battle');
-for (const t of ['① 選出', '② 対戦', '③ ダメージ表']) {
+for (const t of ['① 選出', '② 対戦', '③ ダメージ計算']) {
   await page.getByRole('tab', {name: t}).click();
   await page.waitForTimeout(120);
   await scrollOK(page, `対戦/${t}`);

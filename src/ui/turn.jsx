@@ -6,7 +6,7 @@ import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../eng
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engine/calc.js';
 import {megaTarget, buildOf, condOf, other, PIVOT_MOVES} from '../engine/battle.js';
 import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn} from '../engine/flow.js';
-import {Picker, Sheet, Seg, Toggle, TypeChip, cx} from './common.jsx';
+import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, cx} from './common.jsx';
 
 const SIDE_JA = {me: '自分', opp: '相手'};
 const FLAGS = [['reflect', 'リフレクター'], ['lightScreen', 'ひかりのかべ'], ['auroraVeil', 'オーロラベール'], ['tailwind', 'おいかぜ'], ['sr', 'ステルスロック']];
@@ -36,6 +36,19 @@ const megaFormes = (b, side, mon) => {
 const megaLabel = (fm, many) => `メガシンカ${many ? (/[XYZＸＹＺ]$/.exec(speciesName(fm))?.[0] || '') : ''}`;
 const canMegaNow = (b, side, mon) => !!megaTarget(b, side, mon) && !b.state.sides[side].megaUsed && !dex.species[condOf(b, side, mon)?.forme]?.mega;
 
+// ポケモンをアイコンで選ぶボタン (交代先・場に出すポケモン)
+function MonBtn({battle, side, mon, on, onClick}) {
+  const sid = currentSpecies(buildOf(battle, side, mon), condOf(battle, side, mon));
+  const hp = condOf(battle, side, mon)?.hp ?? 100;
+  return (
+    <button class={cx('mon-btn', side, on && 'on')} onClick={onClick} title={speciesName(sid)}>
+      <Sprite id={sid} size={44} />
+      <span class="mb-nm">{speciesName(sid)}</span>
+      {hp < 100 && <span class="mb-hp"><i style={{width: `${hp}%`}} /></span>}
+    </button>
+  );
+}
+
 // 自分の行動予定 (ターンをまたいで画面を切り替えても残す)
 const plans = new Map();
 
@@ -48,9 +61,9 @@ export function Timeline({battle, ctx, mut, usage, toast}) {
   const double = battle.format === 'double';
   return (
     <div class="ar-left">
-      <h3>時系列 {editable && battle.turns.length > 0 && <small class="muted">(タップで修正)</small>}</h3>
+      <h3>バトルログ {editable && battle.turns.length > 0 && <small class="muted">(タップして修正)</small>}</h3>
       <div class="tl" ref={tlRef}>
-        {!battle.turns.length && <p class="muted">下の入力欄で、まず自分の行動を選び、そのあと動いた順に記録します。記録した順が行動順として扱われ、相手の素早さの絞り込みに使われます。</p>}
+        {!battle.turns.length && <p class="muted">下のターン入力で、自分の行動を選んでから、動いた順に記録します。記録した順番は行動順として、相手の素早さの推定に使います。</p>}
         {battle.turns.map((t, ti) => (
           <div class="tl-turn" key={t.n}>
             <div class="tl-n">— ターン {t.n}{t.open ? ' (入力中)' : ''} —</div>
@@ -67,7 +80,7 @@ export function Timeline({battle, ctx, mut, usage, toast}) {
             )}
           </div>
         ))}
-        {!editable && battle.turns.length > 0 && <p class="hint">この対戦は以前の形式で記録されているため、過去の行動は直せません。</p>}
+        {!editable && battle.turns.length > 0 && <p class="hint">この対戦は以前の形式で記録されているため、過去の記録は修正できません。</p>}
       </div>
       <Composer battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} />
       {edit && <EditSheet battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} {...edit} onClose={() => setEdit(null)} />}
@@ -77,7 +90,7 @@ export function Timeline({battle, ctx, mut, usage, toast}) {
 
 // ---- 入力欄 (1画面ずつ進む) ----
 // ページ: plan (① 自分の行動) → who (② 次に動いたのは) → act (技 → 結果 → ダメージ) → who ... → end (③ ターン終了)
-const PAGE_TITLE = {plan: '① 自分の行動を選ぶ', who: '② 動いたポケモン', act: '② 行動を記録', end: '③ ターン終了時の処理'};
+const PAGE_TITLE = {plan: '① 自分の行動', who: '② 行動順', act: '② 行動の内容', end: '③ ターン終了'};
 
 function Composer({battle, ctx, mut, usage, toast}) {
   const [mode, setMode] = useState('flow');
@@ -135,14 +148,14 @@ function Composer({battle, ctx, mut, usage, toast}) {
     <div class="composer">
       <div class="cp-head">
         <strong>ターン {turnNo}</strong>
-        <Seg small value={mode} options={[['flow', '行動'], ['ev', 'その他の出来事']]} onChange={v => { setMode(v); }} />
+        <Seg small value={mode} options={[['flow', '行動'], ['ev', 'その他の変化']]} onChange={v => { setMode(v); }} />
       </div>
 
       {needSend.map(side => (
         <div class="tc-box warn">
           <div class="tc-h">{SIDE_JA[side]}が場に出すポケモン</div>
           <div class="chips">
-            {benchOf(battle, side).map(i => <button class="chip add" onClick={() => { mut(b => addEvent(b, {kind: 'send', side, to: i}, usage)); }}>{speciesName(buildOf(battle, side, i).species)}</button>)}
+            {benchOf(battle, side).map(i => <MonBtn battle={battle} side={side} mon={i} onClick={() => { mut(b => addEvent(b, {kind: 'send', side, to: i}, usage)); }} />)}
           </div>
         </div>
       ))}
@@ -159,16 +172,16 @@ function Composer({battle, ctx, mut, usage, toast}) {
         {page === 'plan' && (
           <div class="tc-box wz-page">
             {planMon != null ? <>
-              <p class="hint">相手の選択を待つ間に、{battle.format === 'double' ? `${monName(battle, 'me', planMon)}の` : ''}行動を選んでおきます。選ぶと次へ進みます。</p>
+              <p class="hint">相手の選択を待つ間に、{battle.format === 'double' ? `${monName(battle, 'me', planMon)}の` : ''}行動を選んでおきます。選ぶと次の画面に進みます。</p>
               <PlanRow key={planMon} battle={battle} mon={planMon} plan={plan[planMon]} onDone={planDone} onChange={p => setPlan({...plan, [planMon]: p})} />
-              <div class="btnrow"><button class="btn ghost sm" onClick={() => go('who')}>選ばずに進む</button></div>
-            </> : <p class="muted">自分のポケモンが場にいません。上で出すポケモンを選んでください。</p>}
+              <div class="btnrow"><button class="btn ghost sm" onClick={() => go('who')}>あとで選ぶ</button></div>
+            </> : <p class="muted">自分のポケモンが場にいません。上で場に出すポケモンを選んでください。</p>}
           </div>
         )}
 
         {page === 'who' && (
           <div class="tc-box wz-page">
-            <p class="hint">{open?.acts.some(a => a.type !== 'event') ? '次に動いたポケモンを選んでください。' : '先に動いたポケモンを選んでください。'}</p>
+            <p class="hint">{open?.acts.some(a => a.type !== 'event') ? '次に行動したポケモンを選んでください。' : '先に行動したポケモンを選んでください。'}</p>
             <div class="actor-row">
               {remaining.map(a => {
                 const p = a.side === 'me' ? plan[a.mon] : null;
@@ -185,7 +198,7 @@ function Composer({battle, ctx, mut, usage, toast}) {
                 );
               })}
             </div>
-            {!remaining.length && <p class="muted">全員の行動を記録しました。</p>}
+            {!remaining.length && <p class="muted">すべてのポケモンの行動を記録しました。</p>}
             {actors.some(a => megaFormes(battle, a.side, a.mon).length) && (
               <div class="mega-row">
                 <span class="muted">ターンの最初にメガシンカ:</span>
@@ -214,7 +227,7 @@ function Composer({battle, ctx, mut, usage, toast}) {
               toast(log?.length ? log[log.length - 1] : 'ターンを終了しました');
             }} />
         )}
-        {page === 'end' && !open && <p class="muted pad-s">このターンはまだ何も記録していません。</p>}
+        {page === 'end' && !open && <p class="muted pad-s">このターンの記録はまだありません。</p>}
       </>}
     </div>
   );
@@ -245,11 +258,10 @@ function PlanRow({battle, mon, plan, onChange, onDone}) {
       {needTarget && (
         <div class="chips pivot"><span class="muted">対象:</span>{foes.map(i => <button class="chip" onClick={() => onDone({...needTarget, target: {side: 'opp', mon: i}})}>{monName(battle, 'opp', i)}</button>)}</div>
       )}
-      <div class="chips">
-        {bench.length > 0 && <span class="muted">交代:</span>}
-        {bench.map(i => <button class={cx('chip', plan?.type === 'switch' && plan.to === i && 'on')} onClick={() => onDone({type: 'switch', to: i})}>{speciesName(battle.my[i].species)}</button>)}
-        {canMegaNow(battle, 'me', mon) && <Toggle small on={!!plan?.mega} onChange={v => onChange({...(plan || {}), mega: v})}>メガシンカする</Toggle>}
-      </div>
+      {canMegaNow(battle, 'me', mon) && <div class="chips"><Toggle small on={!!plan?.mega} onChange={v => onChange({...(plan || {}), mega: v})}>メガシンカする</Toggle></div>}
+      {bench.length > 0 && <div class="sw-row"><span class="muted">交代</span>
+        {bench.map(i => <MonBtn battle={battle} side="me" mon={i} on={plan?.type === 'switch' && plan.to === i} onClick={() => onDone({type: 'switch', to: i})} />)}
+      </div>}
     </div>
   );
 }
@@ -342,8 +354,8 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
         <button class="mv-btn add" onClick={() => setPick('move')}>ほかの技…</button>
       </div>
       {bench.length > 0 && (
-        <div class="chips"><span class="muted">交代:</span>
-          {bench.map(i => <button class={cx('chip', f.type === 'switch' && f.to === i && 'on')} onClick={() => chooseSwitch(i)}>{speciesName(buildOf(battle, side, i).species)}</button>)}
+        <div class="sw-row"><span class="muted">交代</span>
+          {bench.map(i => <MonBtn battle={battle} side={side} mon={i} on={f.type === 'switch' && f.to === i} onClick={() => chooseSwitch(i)} />)}
         </div>
       )}
       <div class="chips">
@@ -410,8 +422,8 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
         <button class={cx('chip', f.atkItem ? 'on' : 'add')} onClick={() => (f.atkItem ? set({atkItem: ''}) : setPick('atk'))}>{f.atkItem ? itemName(f.atkItem) : '判明したら選ぶ…'}</button>
       </div>
       {pivot && bench.length > 0 && (
-        <div class="chips pivot"><span class="muted">交代先:</span>
-          {bench.map(i => <button class={cx('chip', f.to === i && 'on')} onClick={() => set({to: f.to === i ? null : i})}>{speciesName(buildOf(battle, side, i).species)}</button>)}
+        <div class="sw-row pivot"><span class="muted">交代先</span>
+          {bench.map(i => <MonBtn battle={battle} side={side} mon={i} on={f.to === i} onClick={() => set({to: f.to === i ? null : i})} />)}
         </div>
       )}
     </>
@@ -459,8 +471,8 @@ function EndTurn({battle, usage, onBack, onDone}) {
             </label></li>
           ))}
         </ul>
-      ) : <p class="muted">自動で処理するものはありません。</p>}
-      <p class="hint">チェックした処理をHPに反映します。ほかに起きたこと (やどりぎ・ゴツゴツメットなど) は「その他の出来事」から入れてください。</p>
+      ) : <p class="muted">自動で反映する処理はありません。</p>}
+      <p class="hint">チェックした処理をHPに反映します。ほかに起きたこと (やどりぎ・ゴツゴツメットなど) は「その他の変化」から記録してください。</p>
       <label class="check"><input type="checkbox" checked={noOrder} onChange={e => setNoOrder(e.currentTarget.checked)} />このターンの行動順は素早さの推定に使わない (せんせいのツメ・クイックドロウなど)</label>
       <div class="btnrow">
         {onBack && <button class="btn" onClick={onBack}>戻る</button>}
@@ -483,7 +495,7 @@ function EditSheet({battle, ctx, mut, usage, toast, ti, ai, onClose}) {
       {a.type === 'event' ? (
         <div class="pad">
           <p><b>{SIDE_JA[a.side] || ''} {a.sp ? speciesName(a.sp) : ''}</b> {a.text}</p>
-          <p class="hint">出来事は削除して、入れ直してください。</p>
+          <p class="hint">「その他の変化」は修正できないため、削除してから記録し直してください。</p>
           <div class="btnrow"><button class="btn" onClick={onClose}>閉じる</button><button class="btn danger" onClick={del}>削除</button></div>
         </div>
       ) : (

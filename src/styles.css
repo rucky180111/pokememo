@@ -635,3 +635,28 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .outcome-grid { grid-template-columns: 1fr 1fr 1fr; }
 .mega-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
 .mega-btn.on { background: #8a3fc0; color: #fff; }
+
+/* ---- アイコンで選ぶ ---- */
+.sw-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.sw-row > .muted { flex-basis: 100%; font-size: 12px; }
+.mon-btn { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 72px; padding: 4px 2px 5px; border: 1.5px solid var(--border); border-radius: 10px; background: var(--surface); }
+.mon-btn.on { border-color: var(--accent); background: var(--accent-soft); }
+.mon-btn .sprite { margin: -4px 0 -2px; }
+.mb-nm { font-size: 11px; font-weight: 600; line-height: 1.2; text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-hp, .ps-hp { display: block; width: 80%; height: 4px; border-radius: 2px; background: var(--surface2); overflow: hidden; }
+.mb-hp i, .ps-hp i { display: block; height: 100%; background: var(--ok); }
+.tc-box.warn .mon-btn { background: var(--surface); color: var(--text); }
+
+/* ---- 相手のパーティ (中央の上) ---- */
+.party-strip { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px 8px; }
+.ps-lb { font-size: 11px; color: var(--muted); white-space: nowrap; writing-mode: horizontal-tb; }
+.ps-lb b { color: var(--text); font-size: 13px; }
+.ps-mons { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; flex: 1; }
+.ps-mon { display: flex; flex-direction: column; align-items: center; gap: 1px; border: 0; background: none; padding: 2px 0; border-radius: 8px; transition: opacity .25s, filter .25s; }
+.ps-mon .sprite { margin: -6px 0 -4px; }
+.ps-nm { font-size: 10px; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ps-mon.unseen { opacity: .32; filter: grayscale(1) brightness(.7); }
+.ps-mon.seen { opacity: 1; }
+.ps-mon.active { background: var(--opp-soft); box-shadow: inset 0 0 0 2px var(--opp); }
+.ps-mon.fainted { opacity: .55; filter: grayscale(1); }
+.ps-mon.fainted .ps-nm { text-decoration: line-through; }
