@@ -686,3 +686,27 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .rg-hp > span:first-child { flex-basis: 100%; }
 .rg-hp .input { width: 84px; text-align: right; font-size: 16px; }
 .res-q { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 0; border-top: 1px dashed var(--border); font-size: 13px; }
+
+/* ---- 対戦の履歴 (1行に1対戦) ---- */
+.brows { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.brow { display: grid; grid-template-columns: 52px 46px minmax(90px, 140px) 278px 128px 40px minmax(0, 1fr); align-items: center; gap: 8px; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 10px; padding: 6px 10px; min-height: 58px; }
+.brow.r-win { border-left-color: var(--ok); } .brow.r-lose { border-left-color: var(--bad); }
+.brow:not(.head):hover { background: var(--surface2); }
+.brow.head { background: none; border: 0; min-height: 0; padding: 0 10px; font-size: 11px; color: var(--muted); }
+.br-vs { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.br-vs b, .br-vs small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-opp, .br-mine { display: flex; gap: 2px; min-width: 0; overflow: hidden; }
+.br-mon { display: inline-flex; flex-direction: column; align-items: center; width: 44px; flex: none; border-radius: 6px; padding: 1px 0; }
+.br-mine .br-mon { width: 40px; }
+.br-mon small { font-size: 9px; line-height: 1.1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-mon .sprite { margin: -4px 0 -3px; }
+.br-mon.out { opacity: .35; filter: grayscale(1); }
+.br-mon.lead { box-shadow: inset 0 0 0 2px var(--accent); }
+.br-turn { text-align: right; font-weight: 700; } .br-turn small { font-weight: 400; color: var(--muted); margin-left: 1px; }
+.br-memo { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) {
+  .brow.head { display: none; }
+  .brow { grid-template-columns: 52px 40px minmax(0, 1fr) 34px; grid-template-areas: 'res date vs turn' 'opp opp opp opp' 'mine mine mine memo'; row-gap: 4px; }
+  .br-res { grid-area: res; } .br-date { grid-area: date; } .br-vs { grid-area: vs; } .br-turn { grid-area: turn; }
+  .br-opp { grid-area: opp; } .br-mine { grid-area: mine; } .br-memo { grid-area: memo; }
+}

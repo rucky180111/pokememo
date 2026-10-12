@@ -250,12 +250,12 @@ await shot(page, 'settings');
 await page.getByRole('link', {name: '対戦', exact: true}).click();
 await page.waitForSelector('.page-head h1');
 await page.waitForTimeout(200);
-check(await page.locator('.card.link').count() === 1, '対戦一覧に1件');
+check(await page.locator('.brow:not(.head)').count() === 1, '対戦の履歴に1行');
 await shot(page, 'home');
 
 // 再読み込みしてもデータが残る
 await page.reload();
-await page.waitForSelector('.card.link');
+await page.waitForSelector('.brow:not(.head)');
 check(await page.evaluate(() => window.__pokememo.store.battles().length === 1 && window.__pokememo.store.teams().length === 1), '再読み込み後もデータが残る');
 
 // 横にはみ出していないか
@@ -325,6 +325,12 @@ check(await ipad.locator('.sel-table .sprite').count() >= 9, 'ポケモンの画
 await shot(ipad, 'ipad-select-records');
 await ipad.locator('.sel-table tbody tr').last().scrollIntoViewIfNeeded();
 await shot(ipad, 'ipad-select-cells');
+// 対戦の履歴: 1行に1対戦、新しいものが上
+await ipad.goto(`${url}#/battles`);
+await ipad.waitForSelector('.brow:not(.head)');
+check(await ipad.locator('.brow:not(.head)').count() === 2, '対戦の履歴に2行');
+check((await ipad.locator('.brow:not(.head) .br-turn').first().innerText()).startsWith('0'), '新しい対戦 (まだ0ターン) がいちばん上');
+await shot(ipad, 'ipad-history');
 
 await browser.close();
 server.close();
