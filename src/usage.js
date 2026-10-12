@@ -7,7 +7,7 @@ export const DEFAULT_SOURCES = {single: 'gen9championsbattlestadiumsingles', dou
 
 // 同梱のスナップショットを読む (端末に更新済みのデータがあればそちらを使う)
 export async function loadBundledUsage(store, fetchFn = fetch) {
-  for (const key of ['single', 'double']) {
+  for (const key of ['single']) {
     if (store.state.usage[key]) continue;
     try {
       const res = await fetchFn(`./usage-${key}.json`);
@@ -24,7 +24,7 @@ export async function refreshUsage(store, sources = DEFAULT_SOURCES, fetchFn = f
     if (st.ok) month = (await st.json()).last || '';
   } catch { /* 月が取れなくても続行 */ }
   const done = [];
-  for (const key of ['single', 'double']) {
+  for (const key of ['single']) {
     const name = sources[key] || DEFAULT_SOURCES[key];
     const res = await fetchFn(`${USAGE_BASE}${name}.json`);
     if (!res.ok) throw new Error(`${name} を取得できませんでした (${res.status})。集計名が変わった可能性があります。`);

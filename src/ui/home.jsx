@@ -14,7 +14,7 @@ export function BattleList() {
   const all = store.battles();
   const list = all.filter(b => !fmt || b.format === fmt);
   const create = async (team, kind) => {
-    const b = newBattle({team, kind, format: team ? team.format : store.state.settings.format});
+    const b = newBattle({team, kind, format: 'single'});
     await store.saveBattle(b);
     nav(`#/battle/${b.id}`);
   };
@@ -32,7 +32,6 @@ export function BattleList() {
         </div>
       </div>
       {!teams.length && <div class="box"><p>はじめに「構築」で自分の6体を登録してください。登録した構築を選ぶと、対戦のメモとダメージ計算がすぐ始められます。</p><button class="btn primary" onClick={() => nav('#/teams')}>構築を作る</button></div>}
-      {all.length > 0 && <Seg small value={fmt} options={[['', 'すべて'], ['single', 'シングル'], ['double', 'ダブル']]} onChange={setFmt} />}
       {teams.length > 0 && !list.length && <Empty>まだ対戦の記録がありません。「対戦を記録」で見せ合いから入力できます。「仮想盤面」は統計に含めない計算用の盤面です。</Empty>}
       <div class="cards">
         {list.map(b => {
@@ -49,7 +48,7 @@ export function BattleList() {
                 {b.opp.map((o, i) => <span class={cx('chip', b.pick.opp.includes(i) && 'on', leads.includes(i) && 'lead')}>{speciesName(o.species)}</span>)}
                 {!b.opp.length && <span class="muted">相手未入力</span>}
               </div>
-              <div class="card-foot muted">{b.date}・{b.format === 'double' ? 'ダブル' : 'シングル'}・{b.turns.length}ターン{b.memo ? `・${b.memo.slice(0, 40)}` : ''}</div>
+              <div class="card-foot muted">{b.date}・{b.turns.length}ターン{b.memo ? `・${b.memo.slice(0, 40)}` : ''}</div>
             </button>
           );
         })}
@@ -59,7 +58,7 @@ export function BattleList() {
           <div class="picker-list">
             {teams.map(t => (
               <button class="row" onClick={() => { setChoose(null); create(t, choose); }}>
-                <span class="nm">{t.name}</span><span class="row-sub">{t.format === 'double' ? 'ダブル' : 'シングル'}・{t.mons.map(m => speciesName(m.species)).join(' ')}</span>
+                <span class="nm">{t.name}</span><span class="row-sub">{t.mons.map(m => speciesName(m.species)).join(' ')}</span>
               </button>
             ))}
             {choose === 'sim' && <button class="row" onClick={() => { setChoose(null); create(null, 'sim'); }}><span class="muted">構築を使わず空の盤面で始める</span></button>}

@@ -7,7 +7,7 @@ import {useApp, Sheet, Seg, Empty, MonName, cx, rate} from './common.jsx';
 
 export function StatsScreen() {
   const {store} = useApp();
-  const [fmt, setFmt] = useState(store.state.settings.format);
+  const fmt = 'single';
   const [teamId, setTeamId] = useState('');
   const [sort, setSort] = useState('seen');
   const [detail, setDetail] = useState(null);
@@ -29,7 +29,7 @@ export function StatsScreen() {
   const usageList = useMemo(() => (usage?.pokemon ? Object.entries(usage.pokemon).sort((a, b) => b[1].u - a[1].u).slice(0, 100) : []), [usage]);
   return (
     <div class="page">
-      <div class="page-head"><h1>統計</h1><Seg small value={fmt} options={[['single', 'シングル'], ['double', 'ダブル']]} onChange={setFmt} /></div>
+      <div class="page-head"><h1>統計</h1></div>
       <Seg value={tab} options={[['mine', '自分の対戦記録'], ['usage', '使用率データ']]} onChange={setTab} />
       {tab === 'mine' && <>
         <label class="field pad-s"><span>構築で絞り込む</span>

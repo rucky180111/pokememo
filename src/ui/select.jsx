@@ -58,13 +58,12 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
     <div class="page-in select">
       <div class="sel-head">
         <h3>相手のパーティ <span class="muted">{battle.opp.length}/6</span></h3>
-        <button class="btn ghost sm" onClick={() => setInfo(v => !v)}>{info ? '対戦情報をたたむ' : '対戦情報 (名前・ルール)'}</button>
+        <button class="btn ghost sm" onClick={() => setInfo(v => !v)}>{info ? '対戦情報をたたむ' : '対戦情報 (相手の名前・日付)'}</button>
       </div>
       {info && (
         <div class="form">
           <label class="field grow"><span>相手の名前</span><input class="input" value={battle.oppName} onChange={e => mut(b => { b.oppName = e.currentTarget.value; })} /></label>
           <label class="field"><span>日付</span><input class="input" type="date" value={battle.date} onChange={e => mut(b => { b.date = e.currentTarget.value; })} /></label>
-          <div class="field"><span>ルール</span><Seg value={battle.format} options={FORMAT_OPTS} onChange={v => mut(b => { b.format = v; })} /></div>
         </div>
       )}
       <div class="opp-grid">

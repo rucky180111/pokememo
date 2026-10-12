@@ -60,11 +60,6 @@ export function SettingsScreen() {
       <div class="page-head"><h1>設定</h1></div>
 
       <section class="box">
-        <h4>よく使うルール</h4>
-        <Seg value={st.format} options={[['single', 'シングル'], ['double', 'ダブル']]} onChange={v => store.saveSettings({format: v})} />
-      </section>
-
-      <section class="box">
         <h4>表示</h4>
         <label class="check"><input type="checkbox" checked={st.sprites !== false} onChange={e => store.saveSettings({sprites: e.currentTarget.checked})} />ポケモンの画像を表示する</label>
         <p class="hint">画像は Pokémon Showdown の公開スプライト (play.pokemonshowdown.com) から読み込みます。通信量を抑えたいときや表示されないときはオフにしてください。</p>
@@ -98,10 +93,9 @@ export function SettingsScreen() {
 
       <section class="box">
         <h4>使用率データ</h4>
-        <p class="hint">いまのデータ: シングル {usage.single ? `${usage.single.month} (${Object.keys(usage.single.pokemon).length}体)` : 'なし'} / ダブル {usage.double ? `${usage.double.month} (${Object.keys(usage.double.pokemon).length}体)` : 'なし'}。Pokémon Showdown の月次集計 (pkmn/smogon 経由) から取得します。合計で約8MB の通信が発生します。</p>
+        <p class="hint">いまのデータ: シングル {usage.single ? `${usage.single.month} (${Object.keys(usage.single.pokemon).length}体)` : 'なし'}。Pokémon Showdown の月次集計 (pkmn/smogon 経由) から取得します。約4MB の通信が発生します。</p>
         <div class="form">
           <label class="field grow"><span>シングルの集計名</span><input class="input" value={sources.single} onChange={e => store.saveSettings({usageSources: {...sources, single: e.currentTarget.value.trim()}})} /></label>
-          <label class="field grow"><span>ダブルの集計名</span><input class="input" value={sources.double} onChange={e => store.saveSettings({usageSources: {...sources, double: e.currentTarget.value.trim()}})} /></label>
         </div>
         <button class="btn" disabled={busy === 'usage'} onClick={doRefresh}>{busy === 'usage' ? '取得中…' : '最新の使用率に更新'}</button>
       </section>

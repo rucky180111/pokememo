@@ -70,7 +70,7 @@ export function TeamList() {
   const teams = store.teams();
   const battles = store.battles();
   const create = async () => {
-    const t = newTeam(store.state.settings.format);
+    const t = newTeam('single');
     await store.saveTeam(t);
     nav(`#/team/${t.id}`);
   };
@@ -88,7 +88,6 @@ export function TeamList() {
             <button class="card link" key={t.id} onClick={() => nav(`#/team/${t.id}`)}>
               <div class="card-top">
                 <strong>{t.name || '(名前なし)'}</strong>
-                <span class="tag">{t.format === 'double' ? 'ダブル' : 'シングル'}</span>
               </div>
               <div class="chips">{t.mons.map(m => <span class="chip">{speciesName(m.species)}</span>)}{!t.mons.length && <span class="muted">ポケモン未登録</span>}</div>
               <div class="card-foot muted">{rec.n ? `${rec.win}勝 ${rec.lose}敗${rec.draw ? ` ${rec.draw}分` : ''} (勝率 ${Math.round((rec.win / rec.n) * 100)}%)` : '対戦記録なし'}</div>
@@ -135,7 +134,6 @@ export function TeamEditor({id}) {
         <label class="field grow"><span>構築名</span>
           <input class="input" value={team.name} onChange={e => save(t => { t.name = e.currentTarget.value; })} />
         </label>
-        <div class="field"><span>ルール</span><Seg value={team.format} options={FORMAT_OPTS} onChange={v => save(t => { t.format = v; })} /></div>
       </div>
       {rec.n > 0 && <p class="muted pad-s">戦績: {rec.win}勝 {rec.lose}敗{rec.draw ? ` ${rec.draw}分` : ''} / 選出回数: {Object.entries(rec.picks).sort((a, b) => b[1] - a[1]).map(([s, n]) => `${speciesName(s)} ${n}`).join('、')}</p>}
       {warnings.length > 0 && <ul class="warn">{warnings.map(w => <li>{w}</li>)}</ul>}

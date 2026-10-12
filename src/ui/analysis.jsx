@@ -298,7 +298,7 @@ export function PredictTab({battle, ctx}) {
       </div>
 
       <div class="box">
-        <h4>自分の対戦記録から <span class="muted">({battle.format === 'double' ? 'ダブル' : 'シングル'}・実戦のみ)</span></h4>
+        <h4>自分の対戦記録から <span class="muted">(実戦のみ)</span></h4>
         {st.seen === 0 && <p class="muted">{speciesName(o.species)} との対戦記録はまだありません。記録が増えるほど、この欄が当たるようになります。</p>}
         {st.seen > 0 && <p>見せ合いに {st.seen}回 / 選出 {st.picked}回 ({pct(st.picked, st.seen)}%) / 初手 {st.lead}回 / 選出された試合 {st.pickedWin}勝 {st.pickedLose}敗</p>}
         {myActive.map(ms => {

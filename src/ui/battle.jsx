@@ -63,7 +63,6 @@ export function BattleScreen({id}) {
           <strong>{battle.teamName || '構築なし'}</strong>
           <span class="muted"> vs {battle.oppName || '相手'}</span>
           {battle.kind === 'sim' && <span class="tag accent">仮想盤面</span>}
-          <span class="tag">{battle.format === 'double' ? 'ダブル' : 'シングル'}</span>
         </div>
         {battle.kind !== 'sim' && <Seg small value={battle.result} options={RESULT_OPTS} onChange={v => mut(b => { b.result = v; })} />}
       </div>
@@ -115,7 +114,6 @@ function SetupTab({battle, ctx, mut, usage, setTab, toast}) {
       <div class="form">
         <label class="field grow"><span>相手の名前 (任意)</span><input class="input" value={battle.oppName} onChange={e => mut(b => { b.oppName = e.currentTarget.value; })} /></label>
         <label class="field"><span>日付</span><input class="input" type="date" value={battle.date} onChange={e => mut(b => { b.date = e.currentTarget.value; })} /></label>
-        <div class="field"><span>ルール</span><Seg value={battle.format} options={FORMAT_OPTS} onChange={v => mut(b => { b.format = v; })} /></div>
       </div>
 
       <h3>相手のパーティ <span class="muted">タップで情報を入力 / 番号は選出された順</span></h3>
