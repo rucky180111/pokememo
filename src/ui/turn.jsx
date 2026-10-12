@@ -5,7 +5,7 @@ import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engine/calc.js';
 import {megaTarget, buildOf, condOf, other, PIVOT_MOVES} from '../engine/battle.js';
-import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn} from '../engine/flow.js';
+import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn, replay} from '../engine/flow.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, cx} from './common.jsx';
 
 const SIDE_JA = {me: '自分', opp: '相手'};
@@ -47,6 +47,50 @@ function MonBtn({battle, side, mon, on, onClick}) {
       {hp < 100 && <span class="mb-hp"><i style={{width: `${hp}%`}} /></span>}
     </button>
   );
+}
+
+// 場に出ただけで表示される特性 (かならず表示されるもの / 条件しだいで表示されるもの)
+const ENTRY_ALWAYS = new Set(['intimidate', 'drizzle', 'drought', 'sandstream', 'snowwarning', 'electricsurge', 'grassysurge', 'psychicsurge', 'mistysurge', 'pressure', 'moldbreaker', 'teravolt', 'turboblaze', 'unnerve', 'trace', 'download', 'intrepidsword', 'dauntlessshield', 'airlock', 'cloudnine', 'forewarn', 'screencleaner', 'supremeoverlord', 'neutralizinggas', 'comatose', 'vesselofruin', 'swordofruin', 'tabletsofruin', 'beadsofruin', 'hadronengine', 'orichalcumpulse', 'asoneglastrier', 'asonespectrier', 'curiousmedicine']);
+const ENTRY_MAYBE = new Set(['anticipation', 'frisk', 'protosynthesis', 'quarkdrive', 'hospitality', 'zerotohero', 'costar', 'imposter']);
+
+// 相手が場に出たとき: 特性が表示されたかを聞く (表示されなかったら、かならず表示される特性は候補から外す)
+function EntryAbilityAsk({battle, mut, usage, toast}) {
+  const asks = battle.state.sides.opp.active.filter(i => {
+    if (i == null) return false;
+    const o = battle.opp[i], c = condOf(battle, 'opp', i);
+    if (!o || o.ability || o.entryAsked || c?.fainted || dex.species[c?.forme]?.mega) return false;
+    const ab = (dex.species[o.species]?.ab || []).filter(a => !(o.abilityNot || []).includes(a));
+    return ab.length > 1 && ab.some(a => ENTRY_ALWAYS.has(a) || ENTRY_MAYBE.has(a));
+  });
+  if (!asks.length) return null;
+  const decide = (i, ab) => {
+    mut(b => {
+      const o = b.opp[i];
+      o.entryAsked = true;
+      if (ab) o.ability = ab;
+      else {
+        o.abilityNot = [...new Set([...(o.abilityNot || []), ...dex.species[o.species].ab.filter(a => ENTRY_ALWAYS.has(a))])];
+        const left = dex.species[o.species].ab.filter(a => !o.abilityNot.includes(a));
+        if (left.length === 1) o.ability = left[0];
+      }
+      if (canReplay(b)) replay(b, usage);
+    });
+    toast(ab ? `特性を${abilityName(ab)}で確定しました` : '場に出たときに表示される特性を候補から外しました');
+  };
+  return asks.map(i => {
+    const o = battle.opp[i];
+    const ab = dex.species[o.species].ab.filter(a => !(o.abilityNot || []).includes(a));
+    return (
+      <div class="tc-box ask">
+        <div class="tc-h">相手の{speciesName(o.species)}が場に出たとき、特性は表示されましたか?</div>
+        <div class="chips">
+          {ab.filter(a => ENTRY_ALWAYS.has(a) || ENTRY_MAYBE.has(a)).map(a => <button class="chip add" onClick={() => decide(i, a)}>{abilityName(a)} が表示された</button>)}
+          <button class="chip" onClick={() => decide(i, '')}>表示されなかった</button>
+        </div>
+        <p class="hint">候補: {ab.map(abilityName).join(' / ')}。{ab.some(a => ENTRY_ALWAYS.has(a)) ? '表示されなかったときは、場に出ると必ず表示される特性を候補から外します。' : ''}</p>
+      </div>
+    );
+  });
 }
 
 // 自分の行動予定 (ターンをまたいで画面を切り替えても残す)
@@ -159,6 +203,8 @@ function Composer({battle, ctx, mut, usage, toast}) {
           </div>
         </div>
       ))}
+
+      <EntryAbilityAsk battle={battle} mut={mut} usage={usage} toast={toast} />
 
       {mode === 'ev' && <EventForm battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} />}
 
@@ -283,7 +329,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
     }
     return {type: i.type || null, move: i.move || '', to: i.to ?? null, target: t, mega: !!i.mega, megaForme: i.megaForme || '',
       outcome: i.cant ? 'cant' : i.miss ? 'miss' : i.protect ? 'protect' : 'hit', hp, crit: !!i.crit, hits: i.hits || 0,
-      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, healedBy: i.healedBy || [], hpMode: 'left', inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
+      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, healedBy: i.healedBy || [], hpMode: 'left', secFx: i.secFx || [], inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
   };
   const [f, setF] = useState(fromInit);
   const [pick, setPick] = useState(null);
@@ -334,6 +380,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
       exact: !!tgtMax, endured: h && ff.endured, hits: h && ff.hits ? ff.hits : undefined,
       defItem: h && ff.defItem ? {item: ff.defItem, consumed: consumable(ff.defItem)} : null,
       atkItem: ff.atkItem ? {item: ff.atkItem, consumed: consumable(ff.atkItem)} : null,
+      secFx: h && ff.secFx?.length ? ff.secFx : undefined,
       target: double ? tgt : null, hpAfter, healedBy: h && hpAfter != null && ff.healedBy.length ? ff.healedBy : undefined, inflict: h && ff.inflict ? ff.inflict : '',
       to: m2 && PIVOT_MOVES.has(ff.move) && h && ff.to != null ? ff.to : null,
     });
@@ -346,10 +393,38 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
   const chooseSwitch = i => { if (wizard) submit({type: 'switch', to: i, move: ''}); else set({type: 'switch', to: i, move: ''}); };
   // 結果を選んだ → ダメージなどの入力が要るなら次へ、要らなければ記録
   const needDetail = m => m && (m.c !== 'Z' || STATUS_MOVE[f.move] || (PIVOT_MOVES.has(f.move) && bench.length) || (double && !m.sp && foes.length > 1));
+  // 確率で起きる追加効果: ダメージのあとに「起きたか」を聞く
+  const STAT_NAME = {atk: 'こうげき', def: 'ぼうぎょ', spa: 'とくこう', spd: 'とくぼう', spe: 'すばやさ', accuracy: '命中率', evasion: '回避率'};
+  const tgtName = tgt ? `${SIDE_JA[tgt.side]}の${monName(battle, tgt.side, tgt.mon)}` : '';
+  const selfName = `${SIDE_JA[side]}の${monName(battle, side, mon)}`;
+  const boostText = (who, bo) => Object.entries(bo).map(([k, v]) => `${who}の${STAT_NAME[k] || k}が${Math.abs(v) > 1 ? `${Math.abs(v)}段階` : ''}${v > 0 ? '上がった' : '下がった'}`).join('・');
+  const secList = ff => {
+    const m = dex.moves[ff.move];
+    if (!m?.sec || ff.outcome !== 'hit' || !tgt) return [];
+    const ko = ff.hp !== '' && Number(ff.hp) <= 0 && (!tgtMax || ff.hpMode !== 'dmg');
+    const tc = condOf(battle, tgt.side, tgt.mon);
+    const tgtActed = !!openTurn(battle)?.acts.some(x => x.type !== 'event' && x.side === tgt.side && x.mon === tgt.mon);
+    const out = [];
+    for (const e of m.sec) {
+      if (e.sb) out.push({e: {sb: e.sb}, ch: e.ch, label: boostText(selfName, e.sb)});
+      if (ko) continue;
+      if (e.bo) out.push({e: {bo: e.bo}, ch: e.ch, label: boostText(tgtName, e.bo)});
+      if (e.st && !tc?.status && !ff.inflict) for (const st of [].concat(e.st)) out.push({e: {st}, ch: e.ch, label: `${tgtName}が${STATUS_OPTS.find(x => x[0] === st)?.[1] || st}になった`});
+      if (e.vo === 'flinch' && !tgtActed) out.push({e: {vo: 'flinch'}, ch: e.ch, label: `${tgtName}がひるんだ`});
+      if (e.vo === 'confusion') out.push({e: {vo: 'confusion'}, ch: e.ch, label: `${tgtName}がこんらんした`});
+    }
+    return out;
+  };
+  // 記録する前に、追加効果の確認が要るならその画面へ
+  const finish = (patch = {}) => {
+    const ff = {...f, ...patch};
+    if (wizard && secList(ff).length && !patch.secDone) { set(patch); goStep('sec'); return; }
+    submit(patch);
+  };
   const chooseOutcome = o => {
     if (!wizard) { set({outcome: o}); return; }
     if (o === 'hit' && needDetail(mv)) { set({outcome: o}); goStep('detail'); return; }
-    submit({outcome: o});
+    finish({outcome: o});
   };
 
   const ref = useRef(null);
@@ -409,7 +484,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
             {f.endured || f.defItem === 'focussash' ? <b class="num">1{tgtMax ? '' : '%'} (耐えた)</b> : <>
               <input class="input num" type="number" inputMode="decimal" min={0} max={tgtMax || 100} value={f.hp} autoFocus={wizard}
                 placeholder={tgtMax && f.hpMode === 'dmg' ? '0' : String(Math.round(tgtMax ? (tgtNow * tgtMax) / 100 : tgtNow))} onInput={e => set({hp: e.currentTarget.value})}
-                onKeyDown={e => { if (e.key === 'Enter' && ready) submit(); }} />
+                onKeyDown={e => { if (e.key === 'Enter' && ready) finish(); }} />
               <span class="muted">{tgtMax ? (f.hpMode === 'dmg' ? `(いま ${Math.round((tgtNow * tgtMax) / 100)}/${tgtMax})` : `/ ${tgtMax}`) : '%'}</span>
               <button class="chip" onClick={() => set(tgtMax && f.hpMode === 'dmg' ? {hp: String(Math.round((tgtNow * tgtMax) / 100))} : {hp: '0'})}>ひんし</button>
             </>}
@@ -457,11 +532,45 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
       {show('move') && moveSection}
       {show('result') && resultSection}
       {show('detail') && detailSection}
+      {wizard && step === 'sec' && (() => {
+        const list = secList(f);
+        if (list.length === 1) return (
+          <div class="sec-ask">
+            <div class="wz-sub">追加効果で「{list[0].label}」は発生しましたか? <small class="muted">({list[0].ch}%)</small></div>
+            <div class="outcome-grid two">
+              <button class="oc-btn" onClick={() => submit({secFx: [list[0].e], secDone: true})}>発生した</button>
+              <button class="oc-btn" onClick={() => submit({secFx: [], secDone: true})}>発生しなかった</button>
+            </div>
+          </div>
+        );
+        return (
+          <div class="sec-ask">
+            <div class="wz-sub">追加効果は発生しましたか?</div>
+            {list.map(x => (
+              <div class="sec-q">
+                <span>{x.label} <small class="muted">({x.ch}%)</small></span>
+                <div class="sec-btns">
+                  <button class={cx('btn', f.secFx.some(y => JSON.stringify(y) === JSON.stringify(x.e)) && 'primary')} onClick={() => set({secFx: [...f.secFx.filter(y => JSON.stringify(y) !== JSON.stringify(x.e)), x.e]})}>発生した</button>
+                </div>
+              </div>
+            ))}
+            <div class="btnrow">
+              <button class="btn grow" onClick={() => submit({secFx: [], secDone: true})}>発生しなかった</button>
+              <button class="btn primary grow" disabled={!f.secFx.length} onClick={() => submit({secDone: true})}>発生した効果で記録</button>
+            </div>
+          </div>
+        );
+      })()}
+      {!wizard && f.type === 'move' && secList({...f, secFx: []}).length > 0 && (
+        <div class="chips"><span class="muted">追加効果:</span>
+          {secList({...f, secFx: []}).map(x => { const on = f.secFx.some(y => JSON.stringify(y) === JSON.stringify(x.e)); return <button class={cx('chip', on && 'on')} onClick={() => set({secFx: on ? f.secFx.filter(y => JSON.stringify(y) !== JSON.stringify(x.e)) : [...f.secFx, x.e]})}>{x.label}</button>; })}
+        </div>
+      )}
       {(!wizard || step === 'detail') && (
         <div class="btnrow">
           {onCancel && <button class="btn" onClick={onCancel}>やめる</button>}
           {onDelete && <button class="btn danger" onClick={onDelete}>削除</button>}
-          <button class="btn primary grow" disabled={!ready} onClick={() => submit()}>{submitLabel}</button>
+          <button class="btn primary grow" disabled={!ready} onClick={() => (wizard ? finish() : submit())}>{wizard && secList(f).length ? '次へ' : submitLabel}</button>
         </div>
       )}
       {pick === 'move' && <Picker kind="moves" title="使った技" onClose={() => setPick(null)} prefer={dex.learn[build.species]} preferLabel="覚えない技も表示"

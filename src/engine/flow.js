@@ -183,6 +183,18 @@ export function addAct(b, input, usage) {
       condOf(b, side, mon).tricked = true; condOf(b, tgt.side, tgt.mon).tricked = true;
       log.push('持ち物が入れ替わったため、この2体は以後の推定 (ダメージ・行動順) の対象から外します');
     }
+    // 確率で起きる追加効果のうち、実際に起きたもの (ダメージのあとに確認した結果)
+    if (!failed && tgt && input.secFx?.length) {
+      a.secFx = input.secFx;
+      const tc3 = condOf(b, tgt.side, tgt.mon);
+      for (const e of input.secFx) {
+        if (e.bo && !tc3.fainted) applyBoosts(b, tgt.side, tgt.mon, e.bo, {log, fromOpp: true, resolveAbility: res});
+        if (e.sb) applyBoosts(b, side, mon, e.sb, {log, resolveAbility: res});
+        if (e.st && !tc3.fainted && !tc3.status) { tc3.status = e.st; tc3.toxicCounter = 1; log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は${STATUS_JA[e.st]}になった`); }
+        if (e.vo === 'flinch') log.push('ひるんだ');
+        if (e.vo === 'confusion') log.push('こんらんした');
+      }
+    }
     const hpBeforeHit = tgt ? condOf(b, tgt.side, tgt.mon).hp : null;
     if (a.hpAfter != null && tgt) setHP(b, tgt.side, tgt.mon, a.hpAfter);
     // 被弾時の特性は「判明している特性」だけで反映する (使用率からの推測で能力ランクを動かさない)
@@ -293,7 +305,7 @@ export function actLine(b, a) {
   const tags = [a.mega && 'メガ', f.crit && '急所', f.miss && '外れ', f.protect && 'まもる', f.cant && '行動不能'].filter(Boolean).join('・');
   const items = [a.atkItem && `${itemName(a.atkItem)}`, a.defItem && `相手側 ${itemName(a.defItem)} 発動`].filter(Boolean).join('・');
   if (a.type === 'move' && !a.move) return f.cant ? '行動できず' : '(技不明)';
-  return `${moveName(a.move)}${a.inflict ? ` ${STATUS_JA[a.inflict]}` : ''}${a.hpAfter != null ? ` ${a.hpAfter > 0 && a.hpAfter < 1 ? 1 : Math.round(a.hpAfter)}%` : ''}${tags ? ` ${tags}` : ''}${items ? ` (${items})` : ''}${a.toSp ? ` → ${speciesName(a.toSp)}` : ''}`;
+  return `${moveName(a.move)}${a.inflict ? ` ${STATUS_JA[a.inflict]}` : ''}${a.secFx?.length ? ' 追加効果' : ''}${a.hpAfter != null ? ` ${a.hpAfter > 0 && a.hpAfter < 1 ? 1 : Math.round(a.hpAfter)}%` : ''}${tags ? ` ${tags}` : ''}${items ? ` (${items})` : ''}${a.toSp ? ` → ${speciesName(a.toSp)}` : ''}`;
 }
 export {turnNumber, defaultAbilityResolver};
 
@@ -337,7 +349,8 @@ export function replay(b, usage, opts = {}) {
   b.opp.forEach((o, i) => {
     const s0 = start.opp?.[i];
     if (!s0 || s0.species !== o.species) return;
-    Object.assign(o, {item: s0.item || '', ability: s0.ability || '', moves: [...(s0.moves || [])], statOk: s0.statOk ?? null, speOk: s0.speOk ?? null, scarfLikely: !!s0.scarfLikely, megaSeen: !!s0.megaSeen});
+    // 特性は対戦を通して変わらないので、分かっていれば最初から入れて再生する (登場時の特性の処理が正しくなる)
+    Object.assign(o, {item: s0.item || '', ability: prev[i]?.species === o.species && prev[i].ability ? prev[i].ability : s0.ability || '', moves: [...(s0.moves || [])], statOk: s0.statOk ?? null, speOk: s0.speOk ?? null, scarfLikely: !!s0.scarfLikely, megaSeen: !!s0.megaSeen});
   });
   b.turns = [];
   for (const t of old) {

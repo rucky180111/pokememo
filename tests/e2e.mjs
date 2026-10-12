@@ -126,6 +126,9 @@ await page.locator('.composer .tc-box.warn .mon-btn', {hasText: 'バンギラス
 let b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.sides.me.active[0] === 0 && b.state.sides.opp.active[0] === 1, '初手が場に出る');
 check(b.pick.opp.join() === '1', '相手の選出に自動で入る');
+check(await page.locator('.tc-box.ask', {hasText: 'バンギラス'}).count() === 1, '場に出たら特性が表示されたかを聞く');
+await page.locator('.tc-box.ask .chip', {hasText: 'すなおこし'}).click();
+check((await page.evaluate(() => window.__pokememo.store.battles()[0].opp[1].ability)) === 'sandstream' && await page.locator('.tc-box.ask').count() === 0, '選ぶと特性が確定して質問が消える');
 check(b.state.field.weather === 'Sand', `バンギラスのすなおこしで砂 (${b.state.field.weather})`);
 const realActs = t => t.acts.filter(a => a.type !== 'event').length;
 
@@ -288,9 +291,17 @@ await ipad.locator('.actor-btn.opp').click();
 await ipad.locator('.actform .mv-btn').first().click();
 await shot(ipad, 'ipad-actform');
 check(await ipad.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 0, 'iPad横: 入力を開いても横にはみ出さない');
+// 追加効果の確認: れいとうビーム (10% こおり) を当てたら「発生しましたか?」と聞かれる
 await ipad.locator('.wz-back').click();
-await ipad.locator('.wz-back').click();
-await ipad.getByRole('button', {name: /ターン終了へ/}).click();
+await ipad.locator('.actform .mv-btn', {hasText: 'れいとうビーム'}).click();
+await ipad.locator('.oc-btn.hit').click();
+await ipad.locator('.af-hp input').fill('150');
+await ipad.locator('.actform .btn.primary', {hasText: '次へ'}).click();
+check((await ipad.locator('.sec-ask').innerText()).includes('こおり'), 'ダメージのあとに追加効果 (こおり) が発生したか聞かれる');
+await shot(ipad, 'ipad-secondary');
+await ipad.locator('.sec-ask .oc-btn', {hasText: '発生した'}).first().click();
+let b3 = await ipad.evaluate(() => window.__pokememo.store.battles().find(x => x.turns.length >= 3));
+check(b3.state.mons.me[2].status === 'frz', `発生したを押すと状態異常が付く (${b3.state.mons.me[2].status})`);
 const hs = await ipad.evaluate(() => [...document.querySelectorAll('.arena.wide > *')].map(e => Math.round(e.getBoundingClientRect().height)));
 check(hs.length === 3 && Math.max(...hs) - Math.min(...hs) <= 2, `iPad横: 3列の高さがそろう (${hs.join(', ')})`);
 await shot(ipad, 'ipad-endturn');

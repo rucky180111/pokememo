@@ -844,3 +844,25 @@ test('被弾時の特性・持ち物 (判明しているときだけ)、やど�
   assert.ok(b2.state.mons.me[0].seeded);
   assert.ok(residualCandidates(b2, usage).some(c => c.side === 'me' && c.key === 'leechseed' && c.checked));
 });
+
+test('場に出て特性が表示されなかったら、必ず表示される特性を候補から外し、入れ直す', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 0);
+  addEvent(b, {kind: 'send', side: 'opp', to: 0}, usage); // ボーマンダ
+  const atkBefore = b.state.mons.me[0].boosts.atk;
+  b.opp[0].entryAsked = true;
+  b.opp[0].abilityNot = ['intimidate'];
+  const left = dex.species.salamence.ab.filter(a => a !== 'intimidate');
+  if (left.length === 1) b.opp[0].ability = left[0];
+  replay(b, usage);
+  assert.equal(b.state.mons.me[0].boosts.atk, 0, `いかくは入らない (前: ${atkBefore})`);
+  assert.ok(!oppView(b.opp[0], usage).abilities.some(([a]) => a === 'intimidate'));
+});
+
+test('追加効果が起きたら反映する (シャドーボールの特防ダウン)', () => {
+  const b = makeBattle();
+  sendOut(b, 'me', 0, 0); sendOut(b, 'opp', 0, 4);
+  addAct(b, {side: 'me', type: 'move', move: 'earthquake', hpAfter: 60, secFx: [{bo: {spd: -1}}]}, usage);
+  assert.equal(b.state.mons.opp[4].boosts.spd, -1);
+  assert.ok(dex.moves.shadowball.sec?.[0]?.ch === 20);
+});

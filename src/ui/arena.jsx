@@ -143,10 +143,17 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
         <button class="mp-name" onClick={() => setSheet({side, idx})}>{s.j}</button>
         <MegaButtons battle={battle} side={side} mon={idx} mut={mut} usage={usage} />
         <span class="types">{s.t.map(t => <TypeChip type={t} />)}</span>
-        <span class={cx('mp-item-txt', raw.itemGone && 'strike', side === 'opp' && !opp.item && 'guess')}>
-          {side === 'opp' ? (opp.item ? itemName(opp.item) : `${itemName(view?.build.item) || '持ち物'}?`) : itemName(build.item) || '持ち物なし'}{raw.itemGone ? ' (消費)' : ''}
+      </div>
+      <div class="mp-info">
+        <span class="mi"><span class="mi-lb">持ち物</span>
+          <b class={cx(raw.itemGone && 'strike', side === 'opp' && !opp.item && 'guess')}>{side === 'opp' ? (opp.item ? itemName(opp.item) : `${itemName(view?.build.item) || '不明'}?`) : itemName(build.item) || 'なし'}</b>{raw.itemGone ? <small class="muted"> (消費)</small> : null}
         </span>
-        <span class="muted mp-ab">{abilityName(currentAbility(build, cond))}{side === 'opp' && view?.abilityGuess && !s.mega ? '?' : ''}</span>
+        <span class="mi"><span class="mi-lb">特性</span>
+          {side === 'me' || opp.ability || s.mega || !view?.abilityGuess
+            ? <b>{abilityName(currentAbility(build, cond))}</b>
+            : <span class="ab-cands">{(view.abilities || []).map(([a, r]) => <span class="ab-cand">{abilityName(a)}{r > 0 ? <small> {Math.round(r * 100)}%</small> : null}</span>)}</span>}
+          {side === 'opp' && (opp.ability || s.mega) ? <small class="tag sm">確定</small> : null}
+        </span>
       </div>
       <div class="mp-hp">
         <div class="hpbar"><div class={cx('hpfill', raw.hp > 50 ? 'g' : raw.hp > 20 ? 'y' : 'r')} style={{width: `${raw.hp}%`}} /></div>

@@ -104,9 +104,20 @@ export function oppView(opp, usage, ctx = {}) {
   }
   // 特性
   let ability = opp.ability || '', abilityGuess = false;
+  // 「場に出ても表示されなかった」等で否定された特性は候補から外し、残りで割合を付け直す
+  const notAb = new Set(opp.abilityNot || []);
+  const abRates = (() => {
+    const left = s.ab.filter(a => !notAb.has(a));
+    const raw = (baseEntry?.ab || []).filter(([a]) => left.includes(a));
+    const tot = raw.reduce((x, [, r]) => x + r, 0);
+    const out = tot ? raw.map(([a, r]) => [a, r / tot]) : left.map(a => [a, 1 / left.length]);
+    for (const a of left) if (!out.some(([x]) => x === a)) out.push([a, 0]);
+    return out;
+  })();
   if (!ability) {
     if (s.ab.length === 1) ability = s.ab[0];
-    else { abilityGuess = true; ability = baseEntry?.ab?.[0]?.[0] || s.ab[0] || ''; }
+    else if (abRates.length === 1) ability = abRates[0][0];
+    else { abilityGuess = true; ability = abRates[0]?.[0] || s.ab[0] || ''; }
   }
 
   // 技の候補: 判明済み → 使用率
@@ -131,7 +142,7 @@ export function oppView(opp, usage, ctx = {}) {
     spreadSource, spreadRate, spreads,
     moves,
     items: itemRates(entries, opp.species, itemKnown ? [[opp.item, 1]] : null),
-    abilities: baseEntry?.ab || [],
+    abilities: opp.ability ? [[opp.ability, 1]] : abRates,
     usage: variant?.u ?? null,
     // 通常の姿とメガの集計を合算した値 (使用率 = パーティ採用率、lead = 全初手に占める割合)
     usageAll: entries.reduce((a, e) => a + (e.d.u || 0), 0),
