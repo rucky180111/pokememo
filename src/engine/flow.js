@@ -401,7 +401,7 @@ export function reopenLastTurn(b, usage) {
 
 // ---- ターン終了時の処理 (たべのこし・定数ダメージなど) ----
 const RESIDUAL_JA = {sand: 'すなあらしのダメージ', grassy: 'グラスフィールドで回復', leftovers: 'たべのこしで回復', blacksludge: 'くろいヘドロ', psn: 'どくのダメージ', tox: 'もうどくのダメージ',
-  brn: 'やけどのダメージ', leechseed: 'やどりぎのタネ', poisonheal: 'ポイズンヒールで回復', raindish: 'あめうけざらで回復', dryskin: 'かんそうはだ', solarpower: 'サンパワーのダメージ', icebody: 'アイスボディで回復'};
+  brn: 'やけどのダメージ', leechseed: 'やどりぎのタネ', leechheal: 'やどりぎのタネで回復', poisonheal: 'ポイズンヒールで回復', raindish: 'あめうけざらで回復', dryskin: 'かんそうはだ', solarpower: 'サンパワーのダメージ', icebody: 'アイスボディで回復'};
 const RESIDUAL_ITEM = {leftovers: 'leftovers', blacksludge: 'blacksludge'};
 export {RESIDUAL_JA};
 
@@ -425,10 +425,24 @@ function residualFrac(b, side, mon, key) {
 }
 
 // 1回分の変化量 {pct: HP割合の変化, hp: 自分なら実数の変化}。満タンで回復しないときは null
+// 最大HPの実数 (相手は能力ポイントが分からないので HP に 16 振った見込みで近似)
+const maxHPOf = (b, side, mon) => {
+  const bd = buildOf(b, side, mon), c = condOf(b, side, mon);
+  return statsOf(currentSpecies(bd, c), side === 'me' ? bd.sp : [16, 0, 0, 0, 0, 0], side === 'me' ? bd.nature : 'Serious')[0];
+};
 function residualDelta(b, side, mon, key, hpNow) {
   const cond = condOf(b, side, mon), build = buildOf(b, side, mon);
   const cur = hpNow ?? cond?.hp;
   if (!cond || cond.fainted || cur <= 0) return null;
+  if (key === 'leechheal') {
+    // やどりぎのタネを植えた相手から吸い取った分だけ回復する
+    const fs = other(side), fm = b.state.sides[fs].active.find(i => i != null && condOf(b, fs, i)?.seeded && !condOf(b, fs, i)?.fainted);
+    if (fm == null || cur >= 100) return null;
+    const drain = Math.max(1, Math.floor(maxHPOf(b, fs, fm) / 8));
+    const myMax = maxHPOf(b, side, mon);
+    if (side === 'me') { const now = Math.round((cur * myMax) / 100); const d = Math.min(myMax - now, drain); return {pct: (d / myMax) * 100, hp: d}; }
+    return {pct: Math.min(100 - cur, (drain / myMax) * 100)};
+  }
   const f = residualFrac(b, side, mon, key);
   if (!f || (f > 0 && cur >= 100)) return null;
   if (side === 'me') {
@@ -491,6 +505,7 @@ export function residualCandidates(b, usage) {
       if (cond.status === 'tox' && !noIndirect && !sure('poisonheal')) push('tox', !maybe('poisonheal') && !maybe('magicguard'));
       if (cond.status === 'brn' && !noIndirect) push('brn', !maybe('magicguard'));
       if (cond.seeded && !noIndirect) push('leechseed', !maybe('magicguard'));
+      { const fs = other(side); if (b.state.sides[fs].active.some(i => i != null && condOf(b, fs, i)?.seeded && !condOf(b, fs, i)?.fainted)) push('leechheal', true); }
       if (w === 'Rain' && maybe('raindish')) push('raindish', sure('raindish'));
       if ((w === 'Rain' || w === 'Sun') && maybe('dryskin')) push('dryskin', sure('dryskin'));
       if (w === 'Sun' && maybe('solarpower')) push('solarpower', sure('solarpower'));

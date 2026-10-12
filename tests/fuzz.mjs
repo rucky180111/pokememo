@@ -148,8 +148,14 @@ function runOne(n) {
 
   const RES_FROM = [[/item: Leftovers/, 'leftovers'], [/item: Black Sludge/, 'blacksludge'], [/\[from\] (psn|tox)/, 'psn'], [/\[from\] brn/, 'brn'], [/\[from\] Sandstorm/, 'sand'], [/\[from\] Grassy Terrain/, 'grassy'],
     [/ability: Poison Heal/, 'poisonheal'], [/ability: Rain Dish/, 'raindish'], [/ability: Dry Skin/, 'dryskin'], [/ability: Solar Power/, 'solarpower'], [/ability: Ice Body/, 'icebody'], [/\[from\] Leech Seed/, 'leechseed']];
+  let lastSeedDmg = null;
   let resSeen = [];
   function apply(line) {
+    if (lastSeedDmg && /^\|-heal\|.*\[silent\]/.test(line)) {
+      const q = line.split('|'); const sd = sideOf(q[2].slice(0, 2)), mi = idxOf(q[2].slice(0, 2), q[2]);
+      resSeen.push({side: sd, mon: mi, key: 'leechheal', hp: hpOf(q[3]), prev: T[sd].mons[mi].hp});
+    }
+    lastSeedDmg = /\[from\] Leech Seed/.test(line);
     if (/^\|-(heal|damage)\|/.test(line)) {
       const q = line.split('|');
       for (const [re, key] of RES_FROM) if (re.test(line)) {
