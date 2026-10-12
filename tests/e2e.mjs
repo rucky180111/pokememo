@@ -14,6 +14,9 @@ const check = (cond, msg) => { if (!cond) { errors.push(`NG: ${msg}`); console.l
 
 async function open(viewport, name) {
   const ctx = await browser.newContext({viewport, deviceScaleFactor: 2, hasTouch: viewport.width < 800, locale: 'ja-JP'});
+  // 外部のスプライトはテストでは取得できないので、手元のアイコン画像で代用する (レイアウト確認用)
+  const placeholder = fs.readFileSync(new URL('../docs/icon-192.png', import.meta.url));
+  await ctx.route('https://play.pokemonshowdown.com/**', r => r.fulfill({status: 200, contentType: 'image/png', body: placeholder}));
   const page = await ctx.newPage();
   page.on('console', m => { if (m.type() === 'error') errors.push(`[${name}] console: ${m.text()}`); });
   page.on('pageerror', e => errors.push(`[${name}] pageerror: ${e.message}`));
@@ -286,7 +289,9 @@ await ipad.waitForSelector('.sel-table tr.rec');
 check(await ipad.locator('.sel-table tr.rec').count() === 3, '選出表の上に 選出率・勝率・初手率 の3段');
 const recTxt = await ipad.locator('.sel-table tr.rec').nth(0).locator('td').nth(1).innerText();
 check(recTxt.trim() === '100%', `バンギラスの選出率 (1戦中1回) = ${recTxt}`);
-check(await ipad.locator('.sel-table .rec-c').count() >= 6, '自分×相手のマスに 選出率・勝率');
+check(await ipad.locator('.sel-table .cx-rec', {hasText: '選出率 100%'}).count() >= 6, '自分×相手のマスに 選出率・勝率 (ラベル付き)');
+check(await ipad.locator('.sel-table .cx-row.me .eff').count() > 0, '弱点を突けるタイプが出る');
+check(await ipad.locator('.sel-table .sprite').count() >= 9, 'ポケモンの画像が出る');
 await shot(ipad, 'ipad-select-records');
 await ipad.locator('.sel-table tbody tr').last().scrollIntoViewIfNeeded();
 await shot(ipad, 'ipad-select-cells');

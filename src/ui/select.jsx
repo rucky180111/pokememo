@@ -1,12 +1,12 @@
 // 選出フェーズ: 相手6体を入れて、その場で「誰を出すか」を決める
 import {useMemo, useState} from 'preact/hooks';
-import {dex, speciesName, itemName, moveName} from '../engine/dex.js';
+import {dex, speciesName, itemName, moveName, typeEffect} from '../engine/dex.js';
 import {newOpp, sendOut, activeCount, pickCount} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {finalSpeed, newCond} from '../engine/calc.js';
 import {oppCond, leadRate} from '../engine/assume.js';
 import {oppSpeciesStats, similarTeams, leadsOf, matchupMatrix} from '../engine/predict.js';
-import {useApp, Picker, Seg, TypeChip, cx, rate, fmtPct} from './common.jsx';
+import {useApp, Picker, Seg, TypeChip, Sprite, cx, rate, fmtPct} from './common.jsx';
 import {MonEditor, FORMAT_OPTS} from './teams.jsx';
 import {OppSheet, dmgClass} from './battle.jsx';
 
@@ -48,12 +48,27 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
     const ms = spd('me', mi), os = spd('opp', oi);
     return {g, t, first: ms > os ? 'me' : ms < os ? 'opp' : 'tie'};
   };
-  // 有利 = 先に倒せる見込み (確定数が少ない。同数なら先手側)
-  const verdict = c => {
-    const gn = c.g && !c.g.immune ? c.g.n || 9 : 99, tn = c.t && !c.t.immune ? c.t.n || 9 : 99;
-    if (gn < tn || (gn === tn && gn < 99 && c.first === 'me')) return 'win';
-    if (tn < gn || (gn === tn && tn < 99 && c.first === 'opp')) return 'lose';
-    return 'even';
+  // タイプの打点: 自分の攻撃技で弱点を突けるタイプ / 相手から弱点を突かれるタイプ (相手はタイプ一致 + 判明・推定の技)
+  const typeHits = (moves, defTypes) => {
+    const best = {};
+    for (const m of moves) {
+      const mv = dex.moves[m];
+      if (!mv || mv.c === 'Z' || !mv.bp) continue;
+      const e = typeEffect(mv.t, defTypes);
+      if (e >= 2) best[mv.t] = Math.max(best[mv.t] || 0, e);
+    }
+    return Object.entries(best).sort((a, b) => b[1] - a[1]);
+  };
+  const myHits = (mi, oi) => typeHits(battle.my[mi].moves || [], dex.species[battle.opp[oi].species]?.t || []);
+  const oppHits = (oi, mi) => {
+    const o = battle.opp[oi];
+    const s = dex.species[o.species];
+    const myTypes = dex.species[battle.my[mi].species]?.t || [];
+    const best = {};
+    for (const t of s?.t || []) { const e = typeEffect(t, myTypes); if (e >= 2) best[t] = e; }
+    const known = (ctx.views[oi]?.moves || []).filter(m => m.known || m.rate >= 0.3).map(m => m.id);
+    for (const [t, e] of typeHits(known, myTypes)) best[t] = Math.max(best[t] || 0, e);
+    return Object.entries(best).sort((a, b) => b[1] - a[1]);
   };
   const togglePick = i => mut(b => {
     const list = b.pick.me;
@@ -88,6 +103,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
           const s = dex.species[o.species];
           return (
             <button class="opp-tile" onClick={() => setOppEdit(i)}>
+              <Sprite id={o.species} size={48} />
               <span class="nm">{speciesName(o.species)}</span>
               <span class="types">{s.t.map(t => <TypeChip type={t} small />)}</span>
               <span class="sub">{itemName(v?.build.item) || '持ち物?'}{v?.itemGuess ? '?' : ''}{v?.megaP > 0.05 ? ` (メガ${rate(v.megaP)})` : ''}</span>
@@ -114,12 +130,16 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
         <h3>自分の選出 <span class="muted">{battle.pick.me.length}/{nPick}・タップした順。先頭{nLead}体が初手</span></h3>
       </div>
       {battle.opp.length > 0 && battle.my.length > 0 && (
-        <p class="legend"><span class="lg v-win">有利</span><span class="lg v-lose">不利</span><span class="muted">各マス: 上 = 自分の最大打点 / 下 = 相手の最大打点。「先」は素早さで上を取れる相手。相手は推定型です。表の上の3段と、各マスの「選・勝」は自分の過去の対戦記録 (同じルール) から: 選 = その相手がいた対戦で自分がそのポケモンを選出した率、勝 = 選出したときの勝率。</span></p>
+        <p class="hint sel-legend">
+          各マス: <b class="lg-me">弱点を突ける</b> = 自分の技で弱点を突けるタイプ (×2/×4)、<b class="lg-opp">突かれる</b> = 相手のタイプ一致・よく使う技で弱点を突かれるタイプ。
+          与/被 = 最大ダメージ (相手は推定型)、「先」 = 素早さで上を取れる。
+          選出率・勝率 = 自分の過去の対戦 (同じルール) で、その相手がいたときに自分がそのポケモンを選出した率と、選出したときの勝率。
+        </p>
       )}
       <div class="scroll-x">
         <table class="sel-table">
           <thead>
-            <tr><th></th>{battle.opp.map(o => <th>{speciesName(o.species)}</th>)}</tr>
+            <tr class="sel-oppnames"><th></th>{battle.opp.map(o => <th><Sprite id={o.species} size={44} /><span>{speciesName(o.species)}</span></th>)}</tr>
             <tr class="rec"><th class="rec-l">選出率</th>{colStats.map(c => <td class={cx('num', c.seen && c.picked / c.seen >= 0.6 && 'hi')} title={`見せ合い ${c.seen}回中 ${c.picked}回選出`}>{pr(c.picked, c.seen)}</td>)}</tr>
             <tr class="rec"><th class="rec-l">勝率</th>{colStats.map(c => <td class="num" title={`相手が選出した対戦 ${c.pickedWin}勝${c.pickedLose}敗`}>{pr(c.pickedWin, c.pickedWin + c.pickedLose)}</td>)}</tr>
             <tr class="rec"><th class="rec-l">初手率</th>{colStats.map(c => <td class={cx('num', c.picked && c.lead / c.picked >= 0.6 && 'hi')} title={`選出 ${c.picked}回中 初手 ${c.lead}回`}>{pr(c.lead, c.picked)}</td>)}</tr>
@@ -128,26 +148,38 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
             {battle.my.map((m, mi) => {
               const order = battle.pick.me.indexOf(mi);
               const cells = battle.opp.map((_, oi) => cell(mi, oi));
-              const wins = cells.filter(c => verdict(c) === 'win').length, loses = cells.filter(c => verdict(c) === 'lose').length;
               return (
                 <tr class={cx(order >= 0 && 'picked')}>
                   <th>
                     <button class={cx('sel-mon', order >= 0 && 'on', order >= 0 && order < nLead && 'lead')} onClick={() => togglePick(mi)} aria-pressed={order >= 0}>
                       <span class="no">{order >= 0 ? order + 1 : ''}</span>
+                      <Sprite id={m.species} size={40} class="sm-sprite" />
                       <span class="nm">{speciesName(m.species)}</span>
-                      {battle.opp.length > 0 && <span class="wl"><b class="w">有利{wins}</b> <b class="l">不利{loses}</b></span>}
-                      {mx.row[m.species]?.n > 0 && <span class="rec-s">選出{pr(mx.row[m.species].picked, mx.row[m.species].n)} 勝{pr(mx.row[m.species].win, mx.row[m.species].win + mx.row[m.species].lose)}</span>}
+                      {mx.row[m.species]?.n > 0 && <span class="rec-s">選出率 {pr(mx.row[m.species].picked, mx.row[m.species].n)}<br />勝率 {pr(mx.row[m.species].win, mx.row[m.species].win + mx.row[m.species].lose)}</span>}
                     </button>
                   </th>
                   {cells.map((c, oi) => {
                     const r = mx.cell[m.species]?.[battle.opp[oi].species];
+                    const mine = myHits(mi, oi), theirs = oppHits(oi, mi);
+                    const wr = r && r.win + r.lose > 0 ? r.win / (r.win + r.lose) : null;
                     return (
-                      <td class={`v-${verdict(c)}`}>
-                        <span class={cx('mx', dmgClass(c.g))}>{c.g ? (c.g.immune ? '無効' : `${fmtPct(c.g.maxPct)}%`) : '—'}{c.first === 'me' && <i>先</i>}</span>
-                        <span class={cx('mx', dmgClass(c.t))}>{c.t ? (c.t.immune ? '無効' : `${fmtPct(c.t.maxPct)}%`) : '—'}</span>
-                        {r?.n > 0 && <span class="rec-c" title={`この相手がいた ${r.n}戦: 選出 ${r.picked}回 (${r.win}勝${r.lose}敗)`}>
-                          <span>選{pr(r.picked, r.n)}</span><span class={cx(r.win + r.lose > 0 && (r.win / (r.win + r.lose) >= 0.6 ? 'good' : r.win / (r.win + r.lose) <= 0.4 ? 'bad' : ''))}>勝{pr(r.win, r.win + r.lose)}</span>
-                        </span>}
+                      <td class="sel-cell">
+                        <div class="cx-row me">
+                          <span class="cx-lb">弱点を突ける</span>
+                          {mine.length ? mine.map(([t, e]) => <span class="eff"><TypeChip type={t} small /><b>×{e}</b></span>) : <span class="muted cx-none">なし</span>}
+                        </div>
+                        <div class="cx-row opp">
+                          <span class="cx-lb">突かれる</span>
+                          {theirs.length ? theirs.map(([t, e]) => <span class="eff"><TypeChip type={t} small /><b>×{e}</b></span>) : <span class="muted cx-none">なし</span>}
+                        </div>
+                        <div class="cx-dmg">
+                          <span class={cx('mx', dmgClass(c.g))}><small>与</small>{c.g ? (c.g.immune ? '無効' : `${fmtPct(c.g.maxPct)}%`) : '—'}{c.first === 'me' && <i>先</i>}</span>
+                          <span class={cx('mx', dmgClass(c.t))}><small>被</small>{c.t ? (c.t.immune ? '無効' : `${fmtPct(c.t.maxPct)}%`) : '—'}</span>
+                        </div>
+                        <div class="cx-rec" title={r?.n ? `この相手がいた ${r.n}戦: 選出 ${r.picked}回 (${r.win}勝${r.lose}敗)` : '記録なし'}>
+                          <span>選出率 <b>{r?.n ? pr(r.picked, r.n) : '-'}</b></span>
+                          <span>勝率 <b class={cx(wr != null && (wr >= 0.6 ? 'good' : wr <= 0.4 ? 'bad' : ''))}>{wr != null ? rate(wr) : '-'}</b></span>
+                        </div>
                       </td>
                     );
                   })}

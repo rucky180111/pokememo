@@ -7,7 +7,7 @@ import {attackTable} from '../engine/board.js';
 import {speedOutlook} from '../engine/assume.js';
 import {addAct, addEvent, endTurn, openTurn, actLine} from '../engine/flow.js';
 import {estimateStats, scenarioBuild} from '../engine/estimate.js';
-import {Picker, Seg, Toggle, TypeChip, Empty, cx, fmtPct, rate} from './common.jsx';
+import {Picker, Seg, Toggle, TypeChip, Sprite, Empty, cx, fmtPct, rate} from './common.jsx';
 import {OppSheet, dmgClass} from './battle.jsx';
 import {MonEditor} from './teams.jsx';
 import {HPControl, DmgBar} from './board.jsx';
@@ -112,6 +112,7 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet}) {
     <section class={cx('mon-panel', side, raw.fainted && 'fainted')}>
       <div class="mp-head">
         <span class={cx('side-tag', side)}>{SIDE_JA[side]}</span>
+        <Sprite id={sid} size={44} />
         <button class="mp-name" onClick={() => setSheet({side, idx})}>{s.j}</button>
         <MegaButtons battle={battle} side={side} mon={idx} mut={mut} usage={usage} />
         <span class="types">{s.t.map(t => <TypeChip type={t} />)}</span>

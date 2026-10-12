@@ -563,3 +563,31 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .sel-mon .rec-s { display: block; font-size: 10px; color: var(--muted); font-weight: 500; }
 .sel-mon .rec-s { grid-column: 1 / 3; white-space: nowrap; }
 @media (min-width: 700px) { .sel-mon { width: 128px; } .sel-mon .nm { font-size: 13.5px; } }
+
+/* ---- 選出表 (タイプ打点・記録・画像) ---- */
+.sprite { image-rendering: auto; object-fit: contain; flex: none; }
+.opp-tile .sprite { display: block; margin: -4px auto -2px; }
+.sel-oppnames th { vertical-align: bottom; }
+.sel-oppnames th .sprite { display: block; margin: 0 auto 2px; }
+.sel-oppnames th span { display: block; }
+.sel-table td.sel-cell { min-width: 132px; vertical-align: top; padding: 4px 5px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.cx-row { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; min-height: 22px; margin-bottom: 3px; }
+.cx-lb { flex-basis: 100%; font-size: 9.5px; font-weight: 700; line-height: 1.1; }
+.cx-row.me .cx-lb { color: var(--me); } .cx-row.opp .cx-lb { color: var(--opp); }
+.cx-none { font-size: 10px; }
+.eff { display: inline-flex; align-items: center; gap: 1px; font-size: 10.5px; }
+.eff b { font-size: 10px; }
+.cx-row.opp .eff .type { opacity: .85; box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.25); }
+.cx-dmg { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin: 3px 0; }
+.cx-dmg .mx { margin: 0; text-align: center; font-size: 10.5px; border-radius: 5px; padding: 2px 1px; }
+.cx-dmg .mx small { font-size: 9px; margin-right: 2px; opacity: .8; }
+.cx-rec { display: flex; justify-content: space-between; gap: 4px; font-size: 10px; color: var(--muted); border-top: 1px dashed var(--border); padding-top: 2px; }
+.cx-rec b { color: var(--text); font-size: 11px; } .cx-rec b.good { color: var(--ok); } .cx-rec b.bad { color: var(--bad); }
+.sel-mon { width: 104px; display: flex; flex-direction: column; align-items: center; position: relative; padding: 4px; min-height: 92px; }
+.sel-mon .no { position: absolute; top: 4px; left: 4px; }
+.sel-mon .nm { max-width: 100%; text-align: center; }
+.sel-mon .rec-s { text-align: center; line-height: 1.3; }
+.sel-legend .lg-me { color: var(--me); } .sel-legend .lg-opp { color: var(--opp); }
+.mp-head .sprite { margin: -6px 0 -6px -4px; }
+.picker-list .row .sprite { margin: -6px 0; }
+.row-mon { display: inline-flex; align-items: center; gap: 6px; }

@@ -2,7 +2,7 @@
 import {createContext} from 'preact';
 import {createPortal} from 'preact/compat';
 import {useContext, useEffect, useMemo, useRef, useState} from 'preact/hooks';
-import {dex, search, TYPE_JA, speciesName} from '../engine/dex.js';
+import {dex, search, TYPE_JA, speciesName, toID} from '../engine/dex.js';
 
 export const AppCtx = createContext(null);
 const DepthCtx = createContext(0);
@@ -119,7 +119,7 @@ export function Picker({kind, title, onPick, onClose, filter, rank, prefer, pref
         {allowClear && !q && <button class="row" onClick={() => onPick('')}><span class="muted">{clearLabel || '(なし / 未設定)'}</span></button>}
         {list.map(e => (
           <button class="row" key={e.id} onClick={() => onPick(e.id)}>
-            {kind === 'species' ? <MonName id={e.id} /> : <span class="nm">{e.j}</span>}
+            {kind === 'species' ? <span class="row-mon"><Sprite id={e.id} size={36} /><MonName id={e.id} /></span> : <span class="nm">{e.j}</span>}
             <span class="row-sub">
               {kind === 'moves' && (() => { const m = dex.moves[e.id]; return <><TypeChip type={m.t} small /><span class="tag">{CAT_JA[m.c]}</span>{m.bp ? <span class="num">{m.bp}</span> : null}{m.pr ? <span class="tag">優先{m.pr > 0 ? '+' : ''}{m.pr}</span> : null}</>; })()}
               {kind === 'species' && <span class="num dim">{dex.species[e.id].bs.join('-')}</span>}
@@ -178,3 +178,25 @@ export function Confirm({title, message, okLabel = 'OK', danger, onOk, onClose})
 export const fmtPct = v => (v >= 100 ? v.toFixed(0) : v.toFixed(1));
 export const rate = (v, digits = 0) => `${(v * 100).toFixed(digits)}%`;
 export const fmtDate = ts => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()}`; };
+
+// ---- ポケモンの画像 (Pokémon Showdown の公開スプライトを読み込む。設定でオフにできる) ----
+const HYPHEN_NAMES = new Set(['Kommo-o', 'Hakamo-o', 'Jangmo-o', 'Ho-Oh', 'Porygon-Z', 'Ting-Lu', 'Chien-Pao', 'Wo-Chien', 'Chi-Yu']);
+export function spriteIds(id) {
+  const s = dex.species[id];
+  if (!s) return [];
+  const n = s.n;
+  const at = n.indexOf('-');
+  const ids = [];
+  if (at > 0 && !HYPHEN_NAMES.has(n)) ids.push(`${toID(n.slice(0, at))}-${toID(n.slice(at + 1))}`, toID(n.slice(0, at)));
+  else ids.push(toID(n));
+  return [...new Set(ids)];
+}
+export function Sprite({id, size = 40, class: cls}) {
+  const app = useApp();
+  const on = app?.store?.state?.settings?.sprites !== false;
+  const ids = useMemo(() => spriteIds(id), [id]);
+  const [k, setK] = useState(0);
+  useEffect(() => setK(0), [id]);
+  if (!on || !ids.length || k >= ids.length) return null;
+  return <img class={cx('sprite', cls)} src={`https://play.pokemonshowdown.com/sprites/gen5/${ids[k]}.png`} width={size} height={size} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onError={() => setK(k + 1)} />;
+}
