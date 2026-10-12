@@ -131,12 +131,17 @@ const realActs = t => t.acts.filter(a => a.type !== 'event').length;
 
 // ターン1: ① 自分=つるぎのまい を先に選ぶ → ② 相手が先に ステルスロック → 自分
 await page.locator('.composer .plan .mv-btn', {hasText: 'つるぎのまい'}).click();
+check(await page.locator('.actor-btn').count() === 2, '技を選ぶと ② の画面に進む');
 await page.locator('.actor-btn.opp').click();
 await page.locator('.actform .mv-btn', {hasText: 'ステルスロック'}).click();
-await page.locator('.actform .btn.primary').click();
+check(await page.locator('.oc-btn').count() === 4, '技を選ぶと結果の画面に進む');
+await page.locator('.oc-btn.hit').click();
 await page.locator('.actor-btn.me').click();
-check(await page.locator('.actform .mv-btn.on', {hasText: 'つるぎのまい'}).count() === 1, '自分の行動は①で選んだ技が入った状態で開く');
-await page.locator('.actform .btn.primary').click();
+check((await page.locator('.wz-sub').innerText()).includes('つるぎのまい'), '自分の行動は①で選んだ技の結果から始まる');
+await page.locator('.wz-back').click();
+check(await page.locator('.actform .mv-btn.on', {hasText: 'つるぎのまい'}).count() === 1, '戻るで技の選択に戻れる');
+await page.locator('.actform .mv-btn', {hasText: 'つるぎのまい'}).click();
+await page.locator('.oc-btn.hit').click();
 await shot(page, 'timeline');
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.turns.length === 1 && realActs(b.turns[0]) === 2, '同じターンに2行動が入る');
@@ -144,16 +149,18 @@ check(b.state.mons.me[0].boosts.atk === 2, 'つるぎのまいで A+2');
 check(b.state.sides.me.sr === true, '自分の場にステルスロック');
 check(b.opp[1].moves.includes('stealthrock'), '相手の技が判明済みに入る');
 check(await page.locator('.tl-act').count() === 3, '時系列に3行 (場に出す + 2行動)');
-await page.getByRole('button', {name: /ターン終了へ/}).click();
+check(await page.locator('.res-list, .wz-page', {hasText: '自動で処理'}).count() + await page.locator('.res-list').count() > 0, '全員記録したら ③ ターン終了の画面に進む');
 await shot(page, 'endturn');
 await page.getByRole('button', {name: 'ターンを終える'}).click();
 // ターン2: 相手=がんせきふうじ (自分の残り70) → 自分=じしん (相手の残り20%)
 await page.locator('.composer .plan .mv-btn', {hasText: 'じしん'}).click();
 await page.locator('.actor-btn.opp').click();
 await page.locator('.actform .mv-btn', {hasText: 'がんせきふうじ'}).click();
+await page.locator('.oc-btn.hit').click();
 await page.locator('.af-hp input').fill('70');
 await page.locator('.actform .btn.primary').click();
 await page.locator('.actor-btn.me').click();
+await page.locator('.oc-btn.hit').click();
 await page.locator('.af-hp input').fill('20');
 await page.locator('.actform .btn.primary').click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
@@ -167,7 +174,6 @@ await page.locator('.overlay .af-hp input').fill('80');
 await page.getByRole('button', {name: 'この内容で直す'}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(Math.round(b.state.mons.me[0].hp) === Math.round(80 / 185 * 100) && b.state.mons.opp[1].hp === 20 && b.state.mons.me[0].boosts.atk === 2, `修正が反映され、ほかの記録は残る (${b.state.mons.me[0].hp})`);
-await page.getByRole('button', {name: /ターン終了へ/}).click();
 await page.getByRole('button', {name: 'ターンを終える'}).click();
 // 出来事: 相手のオボンのみ発動 (+25%)
 await page.locator('.composer .cp-head .seg button', {hasText: 'その他の出来事'}).click();
@@ -197,7 +203,6 @@ check(b.state.mons.opp[1].hp === 20 && !b.state.mons.opp[1].itemGone, `出来事
 // 交代 (①で交代を選んで記録)
 await page.locator('.composer .plan .chip', {hasText: 'ガオガエン'}).click();
 await page.locator('.actor-btn.me').click();
-await page.locator('.actform .btn.primary').click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.sides.me.active[0] === 2 && b.state.mons.opp[1].boosts.atk === -1, '交代でガオガエンが出て、いかくが入る');
 // 検索パネルのタイプ絞り込み
@@ -281,8 +286,11 @@ await ipad.locator('.actor-btn.opp').click();
 await ipad.locator('.actform .mv-btn').first().click();
 await shot(ipad, 'ipad-actform');
 check(await ipad.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 0, 'iPad横: 入力を開いても横にはみ出さない');
-await ipad.locator('.actform .btn', {hasText: 'やめる'}).click();
+await ipad.locator('.wz-back').click();
+await ipad.locator('.wz-back').click();
 await ipad.getByRole('button', {name: /ターン終了へ/}).click();
+const hs = await ipad.evaluate(() => [...document.querySelectorAll('.arena.wide > *')].map(e => Math.round(e.getBoundingClientRect().height)));
+check(hs.length === 3 && Math.max(...hs) - Math.min(...hs) <= 2, `iPad横: 3列の高さがそろう (${hs.join(', ')})`);
 await shot(ipad, 'ipad-endturn');
 // 2戦目の選出画面: 1戦目の記録から 選出率・勝率・初手率 が出る
 await ipad.goto(`${url}#/battles`);

@@ -605,3 +605,31 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .ar-right > *:not(.seg) { flex-shrink: 0; }
 .tl-turn > .tl-auto { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 10.5px; }
 .dmg thead th .sprite { display: block; margin: 0 auto; }
+
+/* ---- 入力欄: 1画面ずつ ---- */
+.wz-nav { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
+.wz-back { flex: none; min-width: 64px; }
+.wz-title { font-weight: 700; font-size: 13.5px; flex: 1; min-width: 0; }
+.wz-dots { display: flex; gap: 3px; }
+.wz-dots i { font-style: normal; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; background: var(--surface2); color: var(--muted); }
+.wz-dots i.on { background: var(--accent); color: var(--accent-text); }
+.wz-page { animation: wzIn .16s ease-out; }
+@keyframes wzIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .wz-page { animation: none; } }
+.move-grid.big .mv-btn { min-height: 48px; font-size: 14px; }
+.wz-sub { font-weight: 700; font-size: 14px; margin: 4px 0 8px; }
+.outcome-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.oc-btn { min-height: 56px; border-radius: 10px; border: 2px solid var(--border); background: var(--surface); font-weight: 700; font-size: 15px; }
+.oc-btn.hit { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); grid-column: 1 / -1; min-height: 64px; font-size: 17px; }
+
+/* ---- iPad横: 3列とも同じ高さで、それぞれの中でスクロール ---- */
+.arena.wide { height: calc(100dvh - var(--top-h) - 110px - var(--nav-h) - 16px); min-height: 420px; }
+.arena.wide .ar-left, .arena.wide .ar-right, .arena.wide .ar-center { position: static; height: 100%; max-height: none; min-height: 0; }
+.arena.wide .ar-center { overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+.arena.wide .ar-right { overflow-y: auto; overscroll-behavior: contain; }
+.arena.wide .tl, .arena.wide .composer { overscroll-behavior: contain; }
+.arena.wide { grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+.composer .wz-nav { position: sticky; top: 0; z-index: 2; background: var(--surface); padding: 4px 0; }
+.oc-btn { min-height: 46px; font-size: 14px; }
+.oc-btn.hit { min-height: 54px; font-size: 16px; }
+.outcome-grid { grid-template-columns: 1fr 1fr 1fr; }

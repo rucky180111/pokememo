@@ -67,39 +67,67 @@ export function Timeline({battle, ctx, mut, usage, toast}) {
   );
 }
 
-// ---- 入力欄 ----
+// ---- 入力欄 (1画面ずつ進む) ----
+// ページ: plan (① 自分の行動) → who (② 次に動いたのは) → act (技 → 結果 → ダメージ) → who ... → end (③ ターン終了)
+const PAGE_TITLE = {plan: '① 自分の行動を選ぶ', who: '② 動いたポケモン', act: '② 行動を記録', end: '③ ターン終了時の処理'};
+
 function Composer({battle, ctx, mut, usage, toast}) {
   const [mode, setMode] = useState('flow');
   const [actor, setActor] = useState(null); // {side, mon}
-  const [ending, setEnding] = useState(false);
   const open = openTurn(battle);
   const turnNo = open ? open.n : battle.turns.length + 1;
   const planKey = `${battle.id}:${turnNo}`;
   const [plan, setPlanState] = useState(() => plans.get(planKey) || {});
-  useEffect(() => { setPlanState(plans.get(planKey) || {}); setActor(null); setEnding(false); }, [planKey]);
+  const startStack = () => (open?.acts.some(a => a.type !== 'event') ? ['plan', 'who'] : ['plan']);
+  const [stack, setStack] = useState(startStack);
+  const [pendingNext, setPendingNext] = useState(false);
+  const backRef = useRef(null);
+  useEffect(() => { setPlanState(plans.get(planKey) || {}); setActor(null); setStack(startStack()); }, [planKey]);
   const setPlan = p => { plans.set(planKey, p); setPlanState(p); };
+  const page = stack[stack.length - 1];
+  const go = p => setStack(s => [...s, p]);
+  const back = () => {
+    if (page === 'act' && backRef.current?.()) return;
+    setStack(s => (s.length > 1 ? s.slice(0, -1) : s));
+  };
 
   const acted = (side, mon) => !!open?.acts.some(a => a.type !== 'event' && a.side === side && (a.mon === mon || a.to === mon));
   const actors = ['me', 'opp'].flatMap(side => alive(battle, side).map(mon => ({side, mon, done: acted(side, mon)})));
   const remaining = actors.filter(a => !a.done);
-  const allDone = actors.length > 0 && !remaining.length && !!open;
-  // 場が空いている (ひんし・初手前) → 出すポケモンを選ぶ
+  const myTodo = alive(battle, 'me').filter(m => !acted('me', m));
   const needSend = ['me', 'opp'].filter(side => {
     const sd = battle.state.sides[side];
     return sd.active.some(x => x == null || condOf(battle, side, x)?.fainted) && benchOf(battle, side).length > 0;
   });
+  // 記録したあと: まだ動いていないポケモンがいれば ②、いなければ ③ へ
+  useEffect(() => {
+    if (!pendingNext) return;
+    setPendingNext(false);
+    setStack(['plan', 'who', ...(remaining.length ? [] : ['end'])]);
+  }, [battle]);
+  // ① で決めることがない (全員行動済み・場にいない) ときは ② へ
+  useEffect(() => { if (mode === 'flow' && page === 'plan' && !myTodo.length && alive(battle, 'opp').length && !needSend.length) setStack(['plan', 'who']); }, [page, myTodo.length, needSend.length]);
 
-  const record = (input, label) => {
+  const record = input => {
     const log = mut(b => addAct(b, {...input, sameTurn: true}, usage));
-    toast(log?.length ? log[log.length - 1] : `${label}を記録しました`);
+    toast(log?.length ? log[log.length - 1] : '記録しました');
     setActor(null);
+    setPendingNext(true);
+  };
+  // ① で次に決めるポケモン (ダブルは1体ずつ)
+  const [planIdx, setPlanIdx] = useState(0);
+  const planMon = myTodo[Math.min(planIdx, myTodo.length - 1)];
+  const planDone = p => {
+    const next = myTodo.indexOf(planMon) + 1;
+    setPlan({...plan, [planMon]: p});
+    if (next < myTodo.length) setPlanIdx(next); else { setPlanIdx(0); go('who'); }
   };
 
   return (
     <div class="composer">
       <div class="cp-head">
         <strong>ターン {turnNo}</strong>
-        <Seg small value={mode} options={[['flow', '行動'], ['ev', 'その他の出来事']]} onChange={v => { setMode(v); setActor(null); }} />
+        <Seg small value={mode} options={[['flow', '行動'], ['ev', 'その他の出来事']]} onChange={v => { setMode(v); }} />
       </div>
 
       {needSend.map(side => (
@@ -113,91 +141,104 @@ function Composer({battle, ctx, mut, usage, toast}) {
 
       {mode === 'ev' && <EventForm battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} />}
 
-      {mode === 'flow' && !ending && <>
-        {/* ① 自分の行動を決める */}
-        <div class="tc-box">
-          <div class="tc-h"><span class="tc-no">1</span>自分の行動 <small class="muted">相手の選択を待つ間に</small></div>
-          {alive(battle, 'me').filter(m => !acted('me', m)).map(m => (
-            <PlanRow key={m} battle={battle} mon={m} plan={plan[m]} onChange={p => setPlan({...plan, [m]: p})} />
-          ))}
-          {!alive(battle, 'me').length && <p class="muted">自分のポケモンが場にいません。</p>}
+      {mode === 'flow' && <>
+        <div class="wz-nav">
+          <button class="btn sm wz-back" disabled={stack.length <= 1 && page !== 'act'} onClick={back}>‹ 戻る</button>
+          <span class="wz-title">{PAGE_TITLE[page]}</span>
+          <span class="wz-dots">{['plan', 'who', 'end'].map((k, i) => <i class={cx((page === k || (k === 'who' && page === 'act')) && 'on')}>{i + 1}</i>)}</span>
         </div>
 
-        {/* ② 動いた順に記録 */}
-        <div class="tc-box">
-          <div class="tc-h"><span class="tc-no">2</span>{open?.acts.some(a => a.type !== 'event') ? '次に動いたのは?' : '先に動いたのは?'}</div>
-          <div class="actor-row">
-            {remaining.filter(a => !actor || (actor.side === a.side && actor.mon === a.mon)).map(a => {
-              const p = a.side === 'me' ? plan[a.mon] : null;
-              return (
-                <button class={cx('actor-btn', a.side, actor?.side === a.side && actor?.mon === a.mon && 'on')} onClick={() => setActor({side: a.side, mon: a.mon})}>
-                  <span class="ab-side">{SIDE_JA[a.side]}</span>
-                  <span class="ab-name">{monName(battle, a.side, a.mon)}</span>
-                  <span class="ab-sub">{p ? (p.type === 'switch' ? `交代→${speciesName(buildOf(battle, 'me', p.to).species)}` : moveName(p.move)) : a.side === 'opp' ? '技・交代を入力' : '未選択'}</span>
-                </button>
-              );
-            })}
-            {!remaining.length && actors.length > 0 && <p class="muted">全員の行動を記録しました。</p>}
+        {page === 'plan' && (
+          <div class="tc-box wz-page">
+            {planMon != null ? <>
+              <p class="hint">相手の選択を待つ間に、{battle.format === 'double' ? `${monName(battle, 'me', planMon)}の` : ''}行動を選んでおきます。選ぶと次へ進みます。</p>
+              <PlanRow key={planMon} battle={battle} mon={planMon} plan={plan[planMon]} onDone={planDone} onChange={p => setPlan({...plan, [planMon]: p})} />
+              <div class="btnrow"><button class="btn ghost sm" onClick={() => go('who')}>選ばずに進む</button></div>
+            </> : <p class="muted">自分のポケモンが場にいません。上で出すポケモンを選んでください。</p>}
           </div>
-          {actor && remaining.some(a => a.side === actor.side && a.mon === actor.mon) && (
-            <ActForm key={`${actor.side}${actor.mon}${turnNo}`} battle={battle} ctx={ctx} usage={usage} side={actor.side} mon={actor.mon}
-              init={actor.side === 'me' ? plan[actor.mon] : null}
-              onCancel={() => setActor(null)}
-              onSubmit={inp => record(inp, monName(battle, actor.side, actor.mon))} />
-          )}
-        </div>
+        )}
 
-        {/* ③ ターン終了 */}
-        <div class="btnrow tc-end">
-          <button class={cx('btn grow', allDone ? 'primary' : '')} disabled={!open} onClick={() => setEnding(true)}>
-            <span class="tc-no inv">3</span>ターン終了へ{!allDone && remaining.length > 0 && <small class="muted">&nbsp;(未記録 {remaining.length}体)</small>}
-          </button>
-        </div>
+        {page === 'who' && (
+          <div class="tc-box wz-page">
+            <p class="hint">{open?.acts.some(a => a.type !== 'event') ? '次に動いたポケモンを選んでください。' : '先に動いたポケモンを選んでください。'}</p>
+            <div class="actor-row">
+              {remaining.map(a => {
+                const p = a.side === 'me' ? plan[a.mon] : null;
+                return (
+                  <button class={cx('actor-btn', a.side)} onClick={() => {
+                    // ① で交代を選んでいたら、そのまま記録する
+                    if (p?.type === 'switch') { record({side: 'me', mon: a.mon, type: 'switch', to: p.to}); return; }
+                    setActor({side: a.side, mon: a.mon}); go('act');
+                  }}>
+                    <span class="ab-side">{SIDE_JA[a.side]}</span>
+                    <span class="ab-name">{monName(battle, a.side, a.mon)}</span>
+                    <span class="ab-sub">{p ? (p.type === 'switch' ? `交代→${speciesName(buildOf(battle, 'me', p.to).species)}` : moveName(p.move)) : a.side === 'opp' ? '技・交代を入力' : '行動を入力'}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {!remaining.length && <p class="muted">全員の行動を記録しました。</p>}
+            <div class="btnrow">
+              <button class={cx('btn grow', !remaining.length && 'primary')} disabled={!open} onClick={() => go('end')}>ターン終了へ{remaining.length > 0 && <small class="muted">&nbsp;(未記録 {remaining.length}体)</small>}</button>
+            </div>
+          </div>
+        )}
+
+        {page === 'act' && actor && (
+          <ActForm key={`${actor.side}${actor.mon}${turnNo}`} wizard backRef={backRef} battle={battle} ctx={ctx} usage={usage} side={actor.side} mon={actor.mon}
+            init={actor.side === 'me' ? plan[actor.mon] : null} onSubmit={record} />
+        )}
+
+        {page === 'end' && open && (
+          <EndTurn battle={battle} usage={usage}
+            onDone={(residual, noOrder) => {
+              const log = mut(b => finishTurn(b, usage, {residual, noOrder}));
+              toast(log?.length ? log[log.length - 1] : 'ターンを終了しました');
+            }} />
+        )}
+        {page === 'end' && !open && <p class="muted pad-s">このターンはまだ何も記録していません。</p>}
       </>}
-
-      {mode === 'flow' && ending && open && (
-        <EndTurn battle={battle} usage={usage} onBack={() => setEnding(false)}
-          onDone={(residual, noOrder) => {
-            const log = mut(b => finishTurn(b, usage, {residual, noOrder}));
-            setEnding(false);
-            toast(log?.length ? log[log.length - 1] : 'ターンを終了しました');
-          }} />
-      )}
     </div>
   );
 }
 
-// ① 自分の行動予定
-function PlanRow({battle, mon, plan, onChange}) {
+// ① 自分の行動予定 (技か交代を押すと決定)
+function PlanRow({battle, mon, plan, onChange, onDone}) {
   const build = battle.my[mon];
   const double = battle.format === 'double';
   const foes = alive(battle, 'opp');
   const bench = benchOf(battle, 'me');
-  const mv = plan?.type === 'move' ? dex.moves[plan.move] : null;
+  const [needTarget, setNeedTarget] = useState(null);
+  const pickMove = m => {
+    const p = {...(plan || {}), type: 'move', move: m, target: null};
+    const mv = dex.moves[m];
+    if (double && !mv.sp && foes.length > 1) { onChange(p); setNeedTarget(p); return; }
+    onDone(p);
+  };
   return (
     <div class="plan">
-      {double && <div class="plan-who">{monName(battle, 'me', mon)}</div>}
-      <div class="move-grid">
+      <div class="move-grid big">
         {(build.moves || []).filter(m => dex.moves[m]).map(m => (
-          <button class={cx('mv-btn', plan?.type === 'move' && plan.move === m && 'on')} onClick={() => onChange(plan?.move === m ? null : {...plan, type: 'move', move: m})}>
+          <button class={cx('mv-btn', plan?.type === 'move' && plan.move === m && 'on')} onClick={() => pickMove(m)}>
             <span class={cx('mv-bar', `t-${dex.moves[m].t}`)} /><span class="mv-nm">{moveName(m)}</span>
           </button>
         ))}
       </div>
+      {needTarget && (
+        <div class="chips pivot"><span class="muted">対象:</span>{foes.map(i => <button class="chip" onClick={() => onDone({...needTarget, target: {side: 'opp', mon: i}})}>{monName(battle, 'opp', i)}</button>)}</div>
+      )}
       <div class="chips">
         {bench.length > 0 && <span class="muted">交代:</span>}
-        {bench.map(i => <button class={cx('chip', plan?.type === 'switch' && plan.to === i && 'on')} onClick={() => onChange({type: 'switch', to: i})}>{speciesName(battle.my[i].species)}</button>)}
-        {canMegaNow(battle, 'me', mon) && <Toggle small on={!!plan?.mega} onChange={v => onChange({...(plan || {}), mega: v})}>メガシンカ</Toggle>}
+        {bench.map(i => <button class={cx('chip', plan?.type === 'switch' && plan.to === i && 'on')} onClick={() => onDone({type: 'switch', to: i})}>{speciesName(battle.my[i].species)}</button>)}
+        {canMegaNow(battle, 'me', mon) && <Toggle small on={!!plan?.mega} onChange={v => onChange({...(plan || {}), mega: v})}>メガシンカする</Toggle>}
       </div>
-      {double && mv && !mv.sp && foes.length > 1 && (
-        <div class="chips"><span class="muted">対象:</span>{foes.map(i => <button class={cx('chip', plan?.target?.mon === i && 'on')} onClick={() => onChange({...plan, target: {side: 'opp', mon: i}})}>{monName(battle, 'opp', i)}</button>)}</div>
-      )}
     </div>
   );
 }
 
 // 1体ぶんの行動の入力 (新規・修正で共用)
-export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel, submitLabel = '記録する', onDelete}) {
+// wizard: 「技 → 結果 → ダメージ」と1画面ずつ進む。backRef.current() で1つ前の画面に戻る (戻れたら true)
+export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel, submitLabel = '記録する', onDelete, wizard, backRef}) {
   const foeSide = other(side);
   const double = battle.format === 'double';
   const foes = alive(battle, foeSide);
@@ -212,10 +253,15 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
     }
     return {type: i.type || null, move: i.move || '', to: i.to ?? null, target: t, mega: !!i.mega,
       outcome: i.cant ? 'cant' : i.miss ? 'miss' : i.protect ? 'protect' : 'hit', hp, crit: !!i.crit, hits: i.hits || 0,
-      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, inflict: i.inflict || ''};
+      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
   };
   const [f, setF] = useState(fromInit);
   const [pick, setPick] = useState(null);
+  // 予定の技が決まっていれば「結果」から始める
+  const [steps, setSteps] = useState(() => (init?.type === 'move' && init.move ? ['result'] : ['move']));
+  const step = steps[steps.length - 1];
+  const goStep = st => setSteps(s => [...s, st]);
+  if (backRef) backRef.current = () => { if (steps.length > 1) { setSteps(s => s.slice(0, -1)); return true; } if (step !== 'move') { setSteps(['move']); return true; } return false; };
   const set = patch => setF(prev => ({...prev, ...patch}));
   const build = buildOf(battle, side, mon);
   const mv = f.type === 'move' && f.move ? dex.moves[f.move] : null;
@@ -230,32 +276,45 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
     ? (build.moves || []).filter(m => dex.moves[m]).map(id => ({id, known: true}))
     : (ctx.views[mon]?.moves || []).slice(0, 10);
   if (f.move && !moves.some(m => m.id === f.move)) moves.push({id: f.move, known: false});
-  const chooseMove = id => set({type: 'move', move: id, inflict: STATUS_MOVE[id] || '', hits: 0});
 
-  const submit = () => {
-    if (!f.type) return;
-    const input = {side, mon, type: f.type};
-    if (f.type === 'switch') { input.to = f.to; onSubmit(input); return; }
+  const build_input = (ff = f) => {
+    const input = {side, mon, type: ff.type};
+    if (ff.type === 'switch') { input.to = ff.to; return input; }
+    const h = ff.outcome === 'hit';
+    const m2 = dex.moves[ff.move];
     let hpAfter = null;
-    if (hit && damaging && f.hp !== '' && !f.endured && f.defItem !== 'focussash') hpAfter = tgtMax ? (Number(f.hp) / tgtMax) * 100 : Number(f.hp);
-    Object.assign(input, {
-      move: f.move, mega: f.mega, crit: hit && f.crit, miss: f.outcome === 'miss', protect: f.outcome === 'protect', cant: f.outcome === 'cant',
-      exact: !!tgtMax, endured: hit && f.endured, hits: hit && f.hits ? f.hits : undefined,
-      defItem: hit && f.defItem ? {item: f.defItem, consumed: consumable(f.defItem)} : null,
-      atkItem: f.atkItem ? {item: f.atkItem, consumed: consumable(f.atkItem)} : null,
-      target: double ? tgt : null, hpAfter, inflict: hit && f.inflict ? f.inflict : '',
-      to: pivot && f.to != null ? f.to : null,
+    if (h && m2 && m2.c !== 'Z' && ff.hp !== '' && !ff.endured && ff.defItem !== 'focussash') hpAfter = tgtMax ? (Number(ff.hp) / tgtMax) * 100 : Number(ff.hp);
+    return Object.assign(input, {
+      move: ff.move, mega: ff.mega, crit: h && ff.crit, miss: ff.outcome === 'miss', protect: ff.outcome === 'protect', cant: ff.outcome === 'cant',
+      exact: !!tgtMax, endured: h && ff.endured, hits: h && ff.hits ? ff.hits : undefined,
+      defItem: h && ff.defItem ? {item: ff.defItem, consumed: consumable(ff.defItem)} : null,
+      atkItem: ff.atkItem ? {item: ff.atkItem, consumed: consumable(ff.atkItem)} : null,
+      target: double ? tgt : null, hpAfter, inflict: h && ff.inflict ? ff.inflict : '',
+      to: m2 && PIVOT_MOVES.has(ff.move) && h && ff.to != null ? ff.to : null,
     });
-    onSubmit(input);
   };
+  const submit = (patch = {}) => { const ff = {...f, ...patch}; if (!ff.type) return; onSubmit(build_input(ff)); };
   const ready = f.type === 'switch' ? f.to != null : f.type === 'move' && (!!f.move || f.outcome === 'cant');
 
+  // 技を選んだ → 結果へ / 交代を選んだ → そのまま記録 (ウィザード時)
+  const chooseMove = id => { set({type: 'move', move: id, inflict: STATUS_MOVE[id] || '', hits: 0, outcome: 'hit'}); if (wizard) goStep('result'); };
+  const chooseSwitch = i => { if (wizard) submit({type: 'switch', to: i, move: ''}); else set({type: 'switch', to: i, move: ''}); };
+  // 結果を選んだ → ダメージなどの入力が要るなら次へ、要らなければ記録
+  const needDetail = m => m && (m.c !== 'Z' || STATUS_MOVE[f.move] || (PIVOT_MOVES.has(f.move) && bench.length) || (double && !m.sp && foes.length > 1));
+  const chooseOutcome = o => {
+    if (!wizard) { set({outcome: o}); return; }
+    if (o === 'hit' && needDetail(mv)) { set({outcome: o}); goStep('detail'); return; }
+    submit({outcome: o});
+  };
+
   const ref = useRef(null);
-  useEffect(() => { ref.current?.scrollIntoView?.({block: 'nearest'}); }, []);
-  return (
-    <div class={cx('actform', side)} ref={ref}>
-      <div class="af-h">{SIDE_JA[side]}の{monName(battle, side, mon)}の行動{onCancel && !onDelete && <button class="btn ghost sm" onClick={onCancel}>選び直す</button>}</div>
-      <div class="move-grid">
+  // 画面が変わったら入力欄の先頭 (戻るボタンのある位置) を見せる
+  useEffect(() => { const c = ref.current?.closest('.composer'); if (c && wizard) c.scrollTop = 0; }, [step]);
+  const show = st => !wizard || step === st;
+
+  const moveSection = (
+    <>
+      <div class="move-grid big">
         {moves.map(m => (
           <button class={cx('mv-btn', f.type === 'move' && f.move === m.id && 'on', !m.known && 'guess')} onClick={() => chooseMove(m.id)}>
             <span class={cx('mv-bar', `t-${dex.moves[m.id]?.t}`)} /><span class="mv-nm">{moveName(m.id)}</span>
@@ -266,63 +325,91 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
       </div>
       {bench.length > 0 && (
         <div class="chips"><span class="muted">交代:</span>
-          {bench.map(i => <button class={cx('chip', f.type === 'switch' && f.to === i && 'on')} onClick={() => set({type: 'switch', to: i, move: ''})}>{speciesName(buildOf(battle, side, i).species)}</button>)}
+          {bench.map(i => <button class={cx('chip', f.type === 'switch' && f.to === i && 'on')} onClick={() => chooseSwitch(i)}>{speciesName(buildOf(battle, side, i).species)}</button>)}
         </div>
       )}
-      {f.type === 'move' && <>
-        <div class="af-row">
-          <Seg small value={f.outcome} options={OUTCOMES} onChange={v => set({outcome: v})} />
-          {canMegaNow(battle, side, mon) && <Toggle small on={f.mega} onChange={v => set({mega: v})}>メガシンカ</Toggle>}
-        </div>
-        {double && mv && !mv.sp && foes.length > 1 && (
-          <div class="chips"><span class="muted">対象:</span>{foes.map(i => <button class={cx('chip', tgt?.mon === i && 'on')} onClick={() => set({target: {side: foeSide, mon: i}})}>{monName(battle, foeSide, i)}</button>)}</div>
-        )}
-        {hit && damaging && tgt && (
-          <div class="af-dmg">
-            <label class="af-hp">
-              <span>{monName(battle, tgt.side, tgt.mon)}の残りHP</span>
-              {f.endured || f.defItem === 'focussash' ? <b class="num">1{tgtMax ? '' : '%'} (耐えた)</b> : <>
-                <input class="input num" type="number" inputMode="decimal" min={0} max={tgtMax || 100} value={f.hp}
-                  placeholder={String(Math.round(tgtMax ? (tgtNow * tgtMax) / 100 : tgtNow))} onInput={e => set({hp: e.currentTarget.value})} />
-                <span class="muted">{tgtMax ? `/ ${tgtMax}` : '%'}</span>
-                <button class="chip" onClick={() => set({hp: '0'})}>ひんし</button>
-              </>}
-            </label>
-            {!tgtMax && <p class="hint">相手のHPはゲーム画面のバーの割合 (%) を入れます。自分のHPは実数値です。</p>}
-            <div class="chips">
-              <Toggle small on={f.crit} onChange={v => set({crit: v})}>急所</Toggle>
-              {Array.isArray(mv.mh) && <><span class="muted">回数:</span>{Array.from({length: mv.mh[1] - mv.mh[0] + 1}, (_, k) => mv.mh[0] + k).map(n => <button class={cx('chip', f.hits === n && 'on')} onClick={() => set({hits: f.hits === n ? 0 : n})}>{n}</button>)}</>}
-            </div>
-            <div class="chips">
-              <span class="muted">受けた側:</span>
-              <button class={cx('chip', f.defItem === 'focussash' && 'on')} onClick={() => set({defItem: f.defItem === 'focussash' ? '' : 'focussash'})}>タスキで耐えた</button>
-              <button class={cx('chip', f.endured && 'on')} onClick={() => set({endured: !f.endured})}>がんじょう・こらえる</button>
-              <button class={cx('chip', f.defItem === 'sitrusberry' && 'on')} onClick={() => set({defItem: f.defItem === 'sitrusberry' ? '' : 'sitrusberry'})}>オボンで回復</button>
-              <button class={cx('chip', f.defItem && !['focussash', 'sitrusberry'].includes(f.defItem) ? 'on' : 'add')} onClick={() => (f.defItem && !['focussash', 'sitrusberry'].includes(f.defItem) ? set({defItem: ''}) : setPick('def'))}>{f.defItem && !['focussash', 'sitrusberry'].includes(f.defItem) ? `${itemName(f.defItem)} 発動` : 'ほかの持ち物…'}</button>
-            </div>
-            {f.defItem === 'sitrusberry' && <p class="hint">残りHPには、オボンで回復したあとの値を入れてください。</p>}
-          </div>
-        )}
-        {hit && mv && tgt && (
-          <div class="chips"><span class="muted">相手が:</span>
-            {STATUS_OPTS.map(([k, l]) => <button class={cx('chip', f.inflict === k && 'on')} onClick={() => set({inflict: f.inflict === k ? '' : k})}>{l}</button>)}
-          </div>
-        )}
-        <div class="chips">
-          <span class="muted">攻撃側の持ち物:</span>
-          <button class={cx('chip', f.atkItem ? 'on' : 'add')} onClick={() => (f.atkItem ? set({atkItem: ''}) : setPick('atk'))}>{f.atkItem ? itemName(f.atkItem) : '判明したら選ぶ…'}</button>
-        </div>
-        {pivot && bench.length > 0 && (
-          <div class="chips pivot"><span class="muted">交代先:</span>
-            {bench.map(i => <button class={cx('chip', f.to === i && 'on')} onClick={() => set({to: f.to === i ? null : i})}>{speciesName(buildOf(battle, side, i).species)}</button>)}
-          </div>
-        )}
-      </>}
-      <div class="btnrow">
-        {onCancel && <button class="btn" onClick={onCancel}>やめる</button>}
-        {onDelete && <button class="btn danger" onClick={onDelete}>削除</button>}
-        <button class="btn primary grow" disabled={!ready} onClick={submit}>{submitLabel}</button>
+      <div class="chips">
+        {canMegaNow(battle, side, mon) && <Toggle small on={f.mega} onChange={v => set({mega: v})}>メガシンカした</Toggle>}
+        {wizard && <button class="chip" onClick={() => submit({type: 'move', move: '', outcome: 'cant'})}>行動できず (ひるみ・まひ・ねむり等)</button>}
       </div>
+    </>
+  );
+
+  const resultSection = f.type === 'move' && f.move && (
+    <>
+      {wizard && <div class="wz-sub">{moveName(f.move)}{f.mega ? ' (メガシンカ)' : ''} の結果は?</div>}
+      {wizard ? (
+        <div class="outcome-grid">
+          {OUTCOMES.map(([k, l]) => <button class={cx('oc-btn', k)} onClick={() => chooseOutcome(k)}>{l}</button>)}
+        </div>
+      ) : (
+        <div class="af-row"><Seg small value={f.outcome} options={OUTCOMES} onChange={chooseOutcome} />
+          {canMegaNow(battle, side, mon) && <Toggle small on={f.mega} onChange={v => set({mega: v})}>メガシンカ</Toggle>}</div>
+      )}
+    </>
+  );
+
+  const detailSection = f.type === 'move' && f.move && hit && (
+    <>
+      {double && mv && !mv.sp && foes.length > 1 && (
+        <div class="chips"><span class="muted">対象:</span>{foes.map(i => <button class={cx('chip', tgt?.mon === i && 'on')} onClick={() => set({target: {side: foeSide, mon: i}})}>{monName(battle, foeSide, i)}</button>)}</div>
+      )}
+      {damaging && tgt && (
+        <div class="af-dmg">
+          <label class="af-hp">
+            <span>{monName(battle, tgt.side, tgt.mon)}の残りHP {tgtMax ? '(実数値)' : '(%)'}</span>
+            {f.endured || f.defItem === 'focussash' ? <b class="num">1{tgtMax ? '' : '%'} (耐えた)</b> : <>
+              <input class="input num" type="number" inputMode="decimal" min={0} max={tgtMax || 100} value={f.hp} autoFocus={wizard}
+                placeholder={String(Math.round(tgtMax ? (tgtNow * tgtMax) / 100 : tgtNow))} onInput={e => set({hp: e.currentTarget.value})}
+                onKeyDown={e => { if (e.key === 'Enter' && ready) submit(); }} />
+              <span class="muted">{tgtMax ? `/ ${tgtMax}` : '%'}</span>
+              <button class="chip" onClick={() => set({hp: '0'})}>ひんし</button>
+            </>}
+          </label>
+          <div class="chips">
+            <Toggle small on={f.crit} onChange={v => set({crit: v})}>急所</Toggle>
+            {Array.isArray(mv.mh) && <><span class="muted">回数:</span>{Array.from({length: mv.mh[1] - mv.mh[0] + 1}, (_, k) => mv.mh[0] + k).map(n => <button class={cx('chip', f.hits === n && 'on')} onClick={() => set({hits: f.hits === n ? 0 : n})}>{n}</button>)}</>}
+          </div>
+          <div class="chips">
+            <span class="muted">受けた側:</span>
+            <button class={cx('chip', f.defItem === 'focussash' && 'on')} onClick={() => set({defItem: f.defItem === 'focussash' ? '' : 'focussash'})}>タスキで耐えた</button>
+            <button class={cx('chip', f.endured && 'on')} onClick={() => set({endured: !f.endured})}>がんじょう・こらえる</button>
+            <button class={cx('chip', f.defItem === 'sitrusberry' && 'on')} onClick={() => set({defItem: f.defItem === 'sitrusberry' ? '' : 'sitrusberry'})}>オボンで回復</button>
+            <button class={cx('chip', f.defItem && !['focussash', 'sitrusberry'].includes(f.defItem) ? 'on' : 'add')} onClick={() => (f.defItem && !['focussash', 'sitrusberry'].includes(f.defItem) ? set({defItem: ''}) : setPick('def'))}>{f.defItem && !['focussash', 'sitrusberry'].includes(f.defItem) ? `${itemName(f.defItem)} 発動` : 'ほかの持ち物…'}</button>
+          </div>
+          {f.defItem === 'sitrusberry' && <p class="hint">残りHPには、オボンで回復したあとの値を入れてください。</p>}
+        </div>
+      )}
+      {tgt && (
+        <div class="chips"><span class="muted">相手が:</span>
+          {STATUS_OPTS.map(([k, l]) => <button class={cx('chip', f.inflict === k && 'on')} onClick={() => set({inflict: f.inflict === k ? '' : k})}>{l}</button>)}
+        </div>
+      )}
+      <div class="chips">
+        <span class="muted">攻撃側の持ち物:</span>
+        <button class={cx('chip', f.atkItem ? 'on' : 'add')} onClick={() => (f.atkItem ? set({atkItem: ''}) : setPick('atk'))}>{f.atkItem ? itemName(f.atkItem) : '判明したら選ぶ…'}</button>
+      </div>
+      {pivot && bench.length > 0 && (
+        <div class="chips pivot"><span class="muted">交代先:</span>
+          {bench.map(i => <button class={cx('chip', f.to === i && 'on')} onClick={() => set({to: f.to === i ? null : i})}>{speciesName(buildOf(battle, side, i).species)}</button>)}
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <div class={cx('actform', side, wizard && 'wz-page')} ref={ref}>
+      <div class="af-h">{SIDE_JA[side]}の{monName(battle, side, mon)}{wizard && step === 'move' ? ' の行動は?' : ''}</div>
+      {show('move') && moveSection}
+      {show('result') && resultSection}
+      {show('detail') && detailSection}
+      {(!wizard || step === 'detail') && (
+        <div class="btnrow">
+          {onCancel && <button class="btn" onClick={onCancel}>やめる</button>}
+          {onDelete && <button class="btn danger" onClick={onDelete}>削除</button>}
+          <button class="btn primary grow" disabled={!ready} onClick={() => submit()}>{submitLabel}</button>
+        </div>
+      )}
       {pick === 'move' && <Picker kind="moves" title="使った技" onClose={() => setPick(null)} prefer={dex.learn[build.species]} preferLabel="覚えない技も表示"
         onPick={id => { chooseMove(id); setPick(null); }} />}
       {(pick === 'def' || pick === 'atk') && <Picker kind="items" title="持ち物" onClose={() => setPick(null)} filter={id => !dex.items[id].ms}
@@ -340,8 +427,7 @@ function EndTurn({battle, usage, onBack, onDone}) {
   const toggle = k => setOn(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const fmt = c => (c.side === 'me' ? `${c.hp > 0 ? '+' : ''}${c.hp}` : `${c.pct > 0 ? '+' : ''}${Math.round(c.pct * 10) / 10}%`);
   return (
-    <div class="tc-box">
-      <div class="tc-h"><span class="tc-no">3</span>ターン終了時の処理</div>
+    <div class="tc-box wz-page">
       {cands.length ? (
         <ul class="res-list">
           {cands.map(c => (
@@ -357,7 +443,7 @@ function EndTurn({battle, usage, onBack, onDone}) {
       <p class="hint">チェックした処理をHPに反映します。ほかに起きたこと (やどりぎ・ゴツゴツメットなど) は「その他の出来事」から入れてください。</p>
       <label class="check"><input type="checkbox" checked={noOrder} onChange={e => setNoOrder(e.currentTarget.checked)} />このターンの行動順は素早さの推定に使わない (せんせいのツメ・クイックドロウなど)</label>
       <div class="btnrow">
-        <button class="btn" onClick={onBack}>戻る</button>
+        {onBack && <button class="btn" onClick={onBack}>戻る</button>}
         <button class="btn primary grow" onClick={() => onDone(cands.filter(c => on.has(keyOf(c))), noOrder)}>ターンを終える</button>
       </div>
     </div>
