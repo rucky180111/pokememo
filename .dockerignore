@@ -1,0 +1,7 @@
+node_modules
+docs/ocr
+docs/*.js
+e2e-out
+tests
+.git
+server/data

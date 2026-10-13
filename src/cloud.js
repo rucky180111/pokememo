@@ -1,6 +1,7 @@
 // アカウント同期の窓口: Firebase の部品の読み込み・ログイン状態・同期の開始と停止
 import {createCloudSync, parseFirebaseConfig} from './cloud-sync.js';
 import {serverAdapter, testServer} from './cloud-server.js';
+import {fetchServerUsage} from './usage.js';
 
 let libP = null;
 function loadLib() {
@@ -19,7 +20,7 @@ export function createCloud(store) {
   const st = {state: 'off', user: null, message: '', last: 0};
   const emit = () => { for (const f of subs) f({...st}); };
   const set = patch => { Object.assign(st, patch); emit(); };
-  let conn = null, sync = null, unUser = null, lib = null;
+  let conn = null, sync = null, unUser = null, lib = null, usageTimer = null;
 
   async function start() {
     stopAll();
@@ -28,6 +29,12 @@ export function createCloud(store) {
     if (c.provider === 'server' && c.url && c.key) {
       set({state: 'connecting', user: {server: c.url}, message: ''});
       sync = createCloudSync(store, serverAdapter(c.url, c.key), {onStatus: s => set({state: s.state, message: s.message, last: s.last || st.last})});
+      // ラズパイが取り込んだゲーム内の使用率があれば使う (起動時と6時間ごと)
+      if (store.state.settings.usageFromServer !== false) {
+        const pull = () => fetchServerUsage(store, c.url, c.key).catch(() => null);
+        setTimeout(pull, 3000);
+        usageTimer = setInterval(pull, 6 * 3600e3);
+      }
       return;
     }
     const cfg = c.config;
@@ -45,6 +52,7 @@ export function createCloud(store) {
     });
   }
   function stopAll() {
+    clearInterval(usageTimer); usageTimer = null;
     sync?.stop(); sync = null;
     try { unUser?.(); } catch { /* 無視 */ }
     unUser = null;

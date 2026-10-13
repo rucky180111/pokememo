@@ -18,7 +18,9 @@ export function boardContext(b, usage) {
   const views = b.opp.map((o, i) => {
     const c = b.state.mons.opp[i] || newCond();
     const selfMega = c.forme && dex.species[c.forme]?.mega;
-    const v = oppView(o, usage, {megaBlocked: megaBlocked && !selfMega});
+    // 同じ持ち物は1つのパーティに1つだけ: ほかの相手で判明した持ち物は候補から外す
+    const takenItems = new Set(b.opp.filter((x, j) => j !== i && x.item).map(x => x.item));
+    const v = oppView(o, usage, {megaBlocked: megaBlocked && !selfMega, takenItems});
     if (v && (o.statOk || o.speOk)) {
       // 観測 (ダメージ・行動順) がある能力は、その範囲に合わせる
       v.build = fitBuild(o, v.build, c.forme || o.species);
@@ -27,7 +29,18 @@ export function boardContext(b, usage) {
     }
     return v;
   });
-  const build = (side, i) => (side === 'me' ? b.my[i] : views[i]?.build);
+  const ownBuild = (side, i) => (side === 'me' ? b.my[i] : views[i]?.build);
+  // へんしん中 (メタモン): 相手の姿・能力・技・特性で、HP だけ自分のもの。持ち物は自分のまま
+  const build = (side, i) => {
+    const own = ownBuild(side, i);
+    const t = b.state.mons[side]?.[i]?.transformed;
+    if (!own || !t) return own;
+    const tb = ownBuild(t.side, t.mon), tc = b.state.mons[t.side]?.[t.mon];
+    if (!tb || !tc || tc.transformed) return own;
+    const sid = currentSpecies(tb, tc);
+    return {...tb, species: sid, item: own.item, hpBase: dex.species[own.species]?.bs[0], sp: [own.sp?.[0] || 0, ...(tb.sp || [0, 0, 0, 0, 0, 0]).slice(1)],
+      ability: currentAbility(tb, tc), moves: tb.moves || [], transformedFrom: own.species};
+  };
   const cond = (side, i) => (side === 'me' ? b.state.mons.me[i] : oppCond(b.state.mons.opp[i], views[i]));
   // 計算用: 相手の未判明の特性は推定値を使う
   const ability = (side, i) => {

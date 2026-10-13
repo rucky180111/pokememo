@@ -9,11 +9,14 @@
 //   GET  /api/records?since=<seq>             → {seq, records: [{kind, id, u, d, j, seq}]}
 //   PUT  /api/records/<team|battle>/<id>      body {u, d, j} → {ok, stored, seq}  (u が新しいときだけ保存)
 //   GET  /api/stream?since=<seq>              → Server-Sent Events。変更があるたびに {seq, records} を送る
+//   GET  /api/usage                           → ゲーム内バトルデータの使用率 (usage-scrape.mjs があるときだけ、1日1回取り込む)
+//   GET  /api/usage/status                    → 最後に取り込んだ日時・件数・警告
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
+import {updateUsage, SCRAPER} from './usage-update.mjs';
 
 const KEY = process.env.SYNC_KEY || '';
 const PORT = Number(process.env.PORT || 8787);
@@ -69,6 +72,14 @@ const server = http.createServer((req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/api/records') return send(res, 200, {seq, records: rows(url.searchParams.get('since'))});
 
+  if (req.method === 'GET' && (url.pathname === '/api/usage' || url.pathname === '/api/usage/status')) {
+    const f = path.join(DATA_DIR, url.pathname === '/api/usage' ? 'usage-single.json' : 'usage-status.json');
+    if (!fs.existsSync(f)) return send(res, 404, {error: 'まだ使用率データを取り込んでいません'});
+    res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'});
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/stream') {
     res.writeHead(200, {'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', Connection: 'keep-alive'});
     res.write(`retry: 3000\n\n`);
@@ -102,6 +113,21 @@ const server = http.createServer((req, res) => {
   send(res, 404, {error: 'not found'});
 });
 server.listen(PORT, () => console.log(`pokememo sync server: port ${PORT}, data ${DATA_DIR}, origin ${ORIGINS.join(' ')}`));
+
+// 使用率の取り込み: 起動時 (前回から20時間以上たっていれば) と、その後 USAGE_HOURS 時間ごと
+const USAGE_HOURS = Number(process.env.USAGE_HOURS || 24);
+async function usageTick() {
+  if (!fs.existsSync(SCRAPER)) return;
+  const st = path.join(DATA_DIR, 'usage-status.json');
+  try { const last = JSON.parse(fs.readFileSync(st, 'utf8')); if (last.ok && Date.now() - Date.parse(last.at) < 20 * 3600e3) return; } catch { /* はじめて */ }
+  try { const r = await updateUsage(DATA_DIR); console.log(`使用率を取り込みました: ${r.month} ${r.count}体`); }
+  catch (e) {
+    console.error('使用率の取り込みに失敗:', e?.message || e);
+    try { fs.writeFileSync(st, JSON.stringify({ok: false, at: new Date().toISOString(), error: String(e?.message || e)}, null, 1)); } catch { /* 無視 */ }
+  }
+}
+setTimeout(usageTick, 5000).unref();
+setInterval(usageTick, Math.max(1, USAGE_HOURS) * 3600e3).unref();
 const stop = () => { for (const s of streams) s.end(); server.close(() => { db.close(); process.exit(0); }); setTimeout(() => process.exit(0), 3000).unref(); };
 process.on('SIGTERM', stop);
 process.on('SIGINT', stop);

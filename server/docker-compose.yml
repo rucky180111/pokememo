@@ -1,6 +1,8 @@
 services:
   pokememo-sync:
-    build: .
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
     container_name: pokememo-sync
     restart: unless-stopped
     environment:

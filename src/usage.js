@@ -38,3 +38,20 @@ export async function refreshUsage(store, sources = DEFAULT_SOURCES, fetchFn = f
   }
   return {month, done};
 }
+
+/**
+ * 自分のサーバー (ラズパイ) が取り込んだ「ゲーム内バトルデータ」の使用率を取ってくる。
+ * 端末のデータと同じものなら何もしない。戻り値: 取り込んだら {month, source, count}、変わりなし/無ければ null
+ */
+export async function fetchServerUsage(store, baseUrl, key, fetchFn = (...a) => fetch(...a)) {
+  const res = await fetchFn(`${baseUrl.replace(/\/+$/, '')}/api/usage`, {headers: {Authorization: `Bearer ${key}`}, cache: 'no-store'});
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`使用率データを取得できませんでした (${res.status})`);
+  const data = await res.json();
+  if (!data?.pokemon || Object.keys(data.pokemon).length < 20) throw new Error('サーバーの使用率データの形が想定と違います');
+  const cur = store.state.usage.single;
+  if (cur?.ingame && cur.updatedAt === data.updatedAt) return null;
+  data.fetchedAt = Date.now();
+  await store.saveUsage('single', data);
+  return {month: data.month, source: data.source, count: Object.keys(data.pokemon).length};
+}

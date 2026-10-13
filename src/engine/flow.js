@@ -91,6 +91,7 @@ export function endTurn(b, usage, opts = {}) {
 function unsafeForInference(b, t, side, mon, tgt, move, res, crit) {
   const ac = condOf(b, side, mon), tc = condOf(b, tgt.side, tgt.mon);
   if (ac?.tricked || tc?.tricked) return '持ち物が入れ替わっている';
+  if (ac?.transformed || tc?.transformed) return 'へんしんしている';
   if (tc?.glaive) return 'きょけんとつげきの直後で受けるダメージが2倍になっている';
   if (t.acts.some(x => x.type === 'move' && x.move === 'roost' && x.side === tgt.side && x.mon === tgt.mon && !x.flags?.miss && !x.flags?.cant)) return 'はねやすめでタイプが変わっている';
   if (crit && dex.moves[move]?.mh) return '連続技の急所は1発ごとに決まる';
@@ -131,7 +132,8 @@ export function addAct(b, input, usage) {
     sendOut(b, side, slot, a.to, {log, resolveAbility: res});
   } else {
     if (a.mega) { megaEvolve(b, side, mon, input.megaForme || null, {log, resolveAbility: res}); ctx = boardContext(b, usage); }
-    if (side === 'opp' && dex.moves[a.move] && !build.moves.includes(a.move) && build.moves.length < 4) build.moves.push(a.move);
+    // へんしん中に使った技は相手からコピーした技なので、判明した技には入れない
+    if (side === 'opp' && !condOf(b, side, mon)?.transformed && dex.moves[a.move] && !build.moves.includes(a.move) && build.moves.length < 4) build.moves.push(a.move);
     const foe = other(side);
     const tgt = a.target || (() => { const f = b.state.sides[foe].active.filter(i => i != null && !condOf(b, foe, i)?.fainted); return f.length === 1 ? {side: foe, mon: f[0]} : null; })();
     const failed = a.flags.miss || a.flags.protect || a.flags.cant;
@@ -434,6 +436,54 @@ export function editAct(b, ti, ai, input, usage) {
   // 空になった入力途中のターンは消す
   if (!t.acts.length && t.open) b.turns.splice(ti, 1);
   return replay(b, usage, {fromActs});
+}
+
+/**
+ * イリュージョン (ゾロアーク) の正体が分かった: いま場にいる相手 (化けていた姿) を、最後に場に出たところから
+ * ゾロアーク (zIdx) に置き換えて、全体を入れ直す。化けていた間のダメージなどはゾロアークの記録になる。
+ * 戻り値: 置き換えた行動の数 (入れ直せないときは -1)
+ */
+export function revealIllusion(b, usage, zIdx) {
+  if (!canReplay(b)) return -1;
+  const x = b.state.sides.opp.active.find(i => i != null && !condOf(b, 'opp', i)?.fainted);
+  if (x == null || x === zIdx || !b.opp[zIdx]) return -1;
+  // x が最後に場に出た行動を探す (なければ初手)
+  let from = null;
+  b.turns.forEach((t, ti) => t.acts.forEach((a, ai) => {
+    const inp = a.in || {};
+    const enters = a.side === 'opp' && ((a.type === 'switch' && (inp.to ?? a.to) === x) || (a.kind === 'send' && inp.to === x) || (a.type === 'move' && (inp.to ?? a.to) === x));
+    if (enters) from = {ti, ai};
+  }));
+  let n = 0;
+  const swap = v => (v === x ? zIdx : v);
+  const rewrite = (a, entering) => {
+    if (!a.in) return;
+    const inp = a.in;
+    if (entering) { inp.to = zIdx; n++; return; }
+    if (a.side === 'opp' && inp.mon === x) { inp.mon = zIdx; n++; }
+    if (a.side === 'opp' && a.type !== 'event' && inp.mon == null && a.mon === x) { inp.mon = zIdx; n++; }
+    if (inp.target?.side === 'opp' && inp.target.mon === x) { inp.target = {...inp.target, mon: zIdx}; n++; }
+  };
+  if (!from) {
+    // 初手から化けていた: 最初の盤面の先頭を入れ替える
+    const st = b.start || b.turns[0]?.before;
+    if (!st) return -1;
+    st.state.sides.opp.active = st.state.sides.opp.active.map(swap);
+    st.pick.opp = [...new Set(st.pick.opp.map(swap))];
+    b.turns.forEach(t => t.acts.forEach(a => rewrite(a, false)));
+  } else {
+    b.turns.forEach((t, ti) => t.acts.forEach((a, ai) => {
+      if (ti < from.ti || (ti === from.ti && ai < from.ai)) return;
+      rewrite(a, ti === from.ti && ai === from.ai);
+    }));
+  }
+  // 化けていたポケモンは「選出された」と決めつけない (実際に出てくるまで)
+  b.opp[x].moves = [];
+  b.opp[x].statOk = null; b.opp[x].speOk = null;
+  if (b.start?.opp?.[x]) { b.start.opp[x].moves = []; b.start.opp[x].statOk = null; b.start.opp[x].speOk = null; }
+  replay(b, usage, {fromActs: []});
+  b.opp[zIdx].illusionSeen = true;
+  return n;
 }
 
 /** 入力途中のターンを、ターン終了前に戻す (閉じたターンを開き直す) */

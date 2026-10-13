@@ -43,7 +43,8 @@ export function inferSpeeds(b, draft, opts = {}) {
     const ob = buildOf(sim, 'opp', oi), oc = condOf(sim, 'opp', oi);
     const target = buildOf(b, 'opp', oi);
     if (!ob || !oc || !target) continue;
-    if (oc.tricked) continue;
+    if (oc.tricked || oc.transformed) continue;
+    if (sim.state.sides.me.active.some(x => x != null && condOf(sim, 'me', x)?.transformed)) continue;
     const sid = currentSpecies(ob, oc);
     const s = dex.species[sid];
     const abilityKnown = !!ob.ability || s.ab.length === 1 || !!s.mega;

@@ -98,7 +98,7 @@ export function oppView(opp, usage, ctx = {}) {
     itemGuess = true;
     if (megaForme) item = dex.species[megaForme]?.stone || '';
     else {
-      const cands = (baseEntry?.it || []).filter(([id]) => !(ctx.megaBlocked && dex.items[id]?.ms));
+      const cands = (baseEntry?.it || []).filter(([id]) => !(ctx.megaBlocked && dex.items[id]?.ms) && !ctx.takenItems?.has(id));
       item = cands[0]?.[0] || '';
     }
   }
@@ -141,7 +141,7 @@ export function oppView(opp, usage, ctx = {}) {
     itemKnown, itemGuess, abilityGuess,
     spreadSource, spreadRate, spreads,
     moves,
-    items: itemRates(entries, opp.species, itemKnown ? [[opp.item, 1]] : null),
+    items: itemKnown ? [[opp.item, 1]] : renorm(itemRates(entries, opp.species, null).filter(([id]) => !ctx.takenItems?.has(id) && !(ctx.megaBlocked && dex.items[id]?.ms))),
     abilities: opp.ability ? [[opp.ability, 1]] : abRates,
     usage: variant?.u ?? null,
     // 通常の姿とメガの集計を合算した値 (使用率 = パーティ採用率、lead = 全初手に占める割合)
@@ -149,6 +149,12 @@ export function oppView(opp, usage, ctx = {}) {
     leadShare: entries.reduce((a, e) => a + (e.d.l || 0), 0),
     hasData: !!variant,
   };
+}
+
+// 候補を外したあと、残りの合計が 1 になるように割合を付け直す
+function renorm(list) {
+  const tot = list.reduce((a, [, r]) => a + r, 0);
+  return tot > 0 ? list.map(([id, r]) => [id, r / tot]) : list;
 }
 
 // 持ち物の採用率: 通常の姿とメガの集計を、それぞれの使用率で重みづけして合算する

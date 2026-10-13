@@ -21,6 +21,8 @@ export const currentSpecies = (build, cond) => (cond?.forme && dex.species[cond.
 
 // 現在の姿での特性。メガシンカ中はメガ側の特性に置き換わる。
 export function currentAbility(build, cond) {
+  // ダメージ計算で「特性を入れない / 別の特性にする」ときの上書き
+  if (build.abilityOverride !== undefined) return build.abilityOverride || '';
   const sid = currentSpecies(build, cond);
   const s = dex.species[sid];
   if (!s) return '';
@@ -38,7 +40,10 @@ export function toCalcPokemon(build, cond = newCond(), extra = {}) {
   const itemId = cond.itemGone ? '' : build.item;
   const boosts = {};
   for (const k of BOOST_KEYS) boosts[k] = Math.max(-6, Math.min(6, cond.boosts?.[k] || 0));
+  // へんしん (メタモン): HP 以外の能力は相手と同じ。HP の種族値だけ元のポケモンのものにする
+  const overrides = build.hpBase ? {baseStats: {hp: build.hpBase, atk: s.bs[1], def: s.bs[2], spa: s.bs[3], spd: s.bs[4], spe: s.bs[5]}} : undefined;
   const p = new Pokemon(gen, s.n, {
+    ...(overrides ? {overrides} : {}),
     item: dex.items[itemId]?.n,
     ability: dex.abilities[ability]?.n,
     nature: dex.natures[build.nature] ? build.nature : 'Serious',

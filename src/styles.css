@@ -785,3 +785,6 @@ h5 .sprite { vertical-align: middle; margin-right: 4px; }
 .cloud-steps > summary { cursor: pointer; font-weight: 600; margin: 6px 0; }
 .cloud-steps ol.steps li { margin: 6px 0; }
 .tag.good { background: #e3f5e8; color: #1d7a3a; }
+
+.dp-ab { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; font-size: 13px; }
+.dp-ab-lb { color: var(--muted); font-size: 12px; min-width: 64px; }

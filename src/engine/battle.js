@@ -70,6 +70,8 @@ const defaultAbilityResolver = (b, side, i) => {
   const build = buildOf(b, side, i);
   if (!build) return '';
   const cond = condOf(b, side, i);
+  // へんしん中は相手の特性になる
+  if (cond?.transformed) { const t = cond.transformed; const tc = condOf(b, t.side, t.mon); if (tc && !tc.transformed) return defaultAbilityResolver(b, t.side, t.mon); }
   const sid = currentSpecies(build, cond);
   const s = dex.species[sid];
   if (!s) return '';
@@ -159,6 +161,12 @@ export function applyEntryAbility(b, side, i, {log = [], resolveAbility} = {}) {
   const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(currentSpecies(build, cond))}`;
   if (WEATHER_ABILITY[ab] && setWeather(b, WEATHER_ABILITY[ab], {side, mon: i})) log.push(`${who}の${abilityName(ab)}: 天候が${WEATHER_JA[WEATHER_ABILITY[ab]]}に`);
   if (TERRAIN_ABILITY[ab] && setTerrain(b, TERRAIN_ABILITY[ab], {side, mon: i})) log.push(`${who}の${abilityName(ab)}: ${TERRAIN_JA[TERRAIN_ABILITY[ab]]}に`);
+  // かわりもの (メタモン): 場に出たとき、向かい合う相手にへんしんする
+  if (ab === 'imposter') {
+    const os = other(side);
+    const t = b.state.sides[os].active.find(x => x != null && !condOf(b, os, x)?.fainted);
+    if (t != null) transformInto(b, side, i, {side: os, mon: t}, log);
+  }
   if (ab === 'intimidate') {
     for (const t of b.state.sides[other(side)].active) {
       if (t == null || condOf(b, other(side), t)?.fainted) continue;
@@ -173,6 +181,20 @@ export function applyEntryAbility(b, side, i, {log = [], resolveAbility} = {}) {
   }
 }
 
+/**
+ * へんしん: HP 以外の能力・タイプ・特性・技・ランク変化を相手と同じにする (下がるまで続く)。
+ * 計算では「相手の姿 + 自分の HP」として扱う (board.js の build)。
+ */
+export function transformInto(b, side, i, into, log = []) {
+  const cond = condOf(b, side, i), tc = condOf(b, into.side, into.mon);
+  if (!cond || !tc) return log;
+  cond.transformed = {side: into.side, mon: into.mon};
+  cond.boosts = {...emptyBoosts(), ...tc.boosts};
+  const tb = buildOf(b, into.side, into.mon);
+  log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, side, i).species)}は${into.side === 'me' ? '自分' : '相手'}の${speciesName(currentSpecies(tb, tc))}にへんしんした`);
+  return log;
+}
+
 // 場から下がるときの処理 (ランクリセット、戦闘中フォルム解除、さいせいりょく、しぜんかいふく)
 function leaveField(b, side, i, {log = [], resolveAbility} = {}) {
   const cond = condOf(b, side, i), build = buildOf(b, side, i);
@@ -180,6 +202,7 @@ function leaveField(b, side, i, {log = [], resolveAbility} = {}) {
   const ab = (resolveAbility || defaultAbilityResolver)(b, side, i);
   cond.boosts = emptyBoosts();
   cond.abilityOn = false;
+  cond.transformed = null;
   cond.healBlock = 0;
   cond.seeded = false;
   if (cond.status === 'tox') cond.toxicCounter = 1;

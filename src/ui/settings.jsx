@@ -1,7 +1,7 @@
 // 設定: 同期・使用率データ・バックアップ
 import {useRef, useState} from 'preact/hooks';
 import {dex} from '../engine/dex.js';
-import {refreshUsage, DEFAULT_SOURCES} from '../usage.js';
+import {refreshUsage, fetchServerUsage, DEFAULT_SOURCES} from '../usage.js';
 import {useApp, Confirm, cx} from './common.jsx';
 import {CloudSettings} from './cloud-settings.jsx';
 
@@ -29,6 +29,15 @@ export function SettingsScreen() {
     const r = await syncer.run();
     setBusy('');
     toast(r ? `同期しました (取り込み ${r.pulled}件・送信 ${r.pushed}ファイル)` : `同期に失敗: ${store.state.settings.sync.lastError}`);
+  };
+  const srv = st.cloud?.provider === 'server' && st.cloud.url ? st.cloud : null;
+  const doServerUsage = async () => {
+    setBusy('usage');
+    try {
+      const r = await fetchServerUsage(store, srv.url, srv.key);
+      toast(r ? `ゲーム内の使用率を取り込みました (${r.month}・${r.count}体)` : 'ラズパイのデータは取り込み済みか、まだ用意されていません');
+    } catch (e) { toast(`取り込めませんでした: ${e.message}`); }
+    setBusy('');
   };
   const doRefresh = async () => {
     setBusy('usage');
@@ -122,11 +131,18 @@ export function SettingsScreen() {
 
       <section class="box">
         <h4>使用率データ</h4>
-        <p class="hint">いまのデータ: シングル {usage.single ? `${usage.single.month} (${Object.keys(usage.single.pokemon).length}体)` : 'なし'}。Pokémon Showdown の月次集計 (pkmn/smogon 経由) から取得します。約4MB の通信が発生します。</p>
+        <p class="hint">いまのデータ: {usage.single ? <><b>{usage.single.ingame ? 'ゲーム内のバトルデータ' : 'Pokémon Showdown の集計'}</b> {usage.single.month} ({Object.keys(usage.single.pokemon).length}体{usage.single.source ? ` / ${usage.single.source}` : ''}{usage.single.updatedAt ? ` / ${new Date(usage.single.updatedAt).toLocaleDateString('ja-JP')}` : ''})</> : 'なし'}</p>
+        {srv && <>
+          <p class="hint">自分のサーバー (ラズパイ) が「ゲーム内のバトルデータ」の使用率を1日1回取り込んでいれば、自動でそれを使います (ランクバトルの実際の採用率に近い)。</p>
+          <div class="btnrow pad-s">
+            <button class="btn primary" disabled={busy === 'usage'} onClick={doServerUsage}>{busy === 'usage' ? '取得中…' : 'ラズパイから最新を取り込む'}</button>
+          </div>
+        </>}
+        <p class="hint">Pokémon Showdown の月次集計 (pkmn/smogon 経由) に切り替えることもできます。約4MB の通信が発生します。</p>
         <div class="form">
           <label class="field grow"><span>シングルの集計名</span><input class="input" value={sources.single} onChange={e => store.saveSettings({usageSources: {...sources, single: e.currentTarget.value.trim()}})} /></label>
         </div>
-        <button class="btn" disabled={busy === 'usage'} onClick={doRefresh}>{busy === 'usage' ? '取得中…' : '最新の使用率に更新'}</button>
+        <button class="btn" disabled={busy === 'usage'} onClick={doRefresh}>{busy === 'usage' ? '取得中…' : 'Showdown の集計に更新'}</button>
       </section>
 
       <section class="box">
