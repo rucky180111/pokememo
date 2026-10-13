@@ -379,6 +379,24 @@ await ipad.locator('.seg button', {hasText: '戦績と分析'}).click();
 await ipad.waitForSelector('.ta-row');
 check(await ipad.locator('.ta-row:not(.head)').count() === 3, '構築画面の戦績と分析タブ');
 await shot(ipad, 'ipad-team-report');
+// スクショから構築を追加 (端末内の文字認識)
+{
+  await ipad.goto(`${url}#/teams`);
+  await ipad.getByRole('button', {name: 'スクショから追加'}).click();
+  const t0 = Date.now();
+  await ipad.locator('.shot input[type=file]').setInputFiles([new URL('./fixtures/team-ability.png', import.meta.url).pathname, new URL('./fixtures/team-status.png', import.meta.url).pathname]);
+  await ipad.waitForSelector('.shot-mon', {timeout: 120000});
+  console.log(`  (読み取り ${((Date.now() - t0) / 1000).toFixed(1)}秒)`);
+  await shot(ipad, 'ipad-shot-import');
+  const names = await ipad.locator('.shot-mon .sm-head b').allInnerTexts();
+  check(names.join() === 'エンペルト,ボーマンダ,サーフゴー,ガブリアス,ゴリランダー,アーマーガア', `スクショから6体を読み取る (${names})`);
+  await ipad.getByRole('button', {name: 'この内容で構築を作る'}).click();
+  await ipad.waitForSelector('.cards');
+  const t = await ipad.evaluate(() => window.__pokememo.store.teams().find(x => x.name.startsWith('スクショから追加')));
+  const exp = JSON.parse(fs.readFileSync(new URL('./fixtures/team-expected.json', import.meta.url), 'utf8'));
+  const same = t && exp.every((e, i) => ['species', 'item', 'ability', 'nature'].every(k => t.mons[i][k] === e[k]) && t.mons[i].sp.join() === e.sp.join() && e.moves.every(m => t.mons[i].moves.includes(m)));
+  check(same, 'スクショから作った構築が正しい (持ち物・特性・性格・能力ポイント・技)');
+}
 await browser.close();
 server.close();
 console.log(errors.length ? `\n問題 ${errors.length}件:\n${errors.join('\n')}` : '\nすべて通過');

@@ -1,0 +1,122 @@
+[
+ {
+  "species": "empoleon",
+  "item": "leftovers",
+  "ability": "competitive",
+  "nature": "Sassy",
+  "sp": [
+   32,
+   0,
+   5,
+   0,
+   29,
+   0
+  ],
+  "moves": [
+   "flipturn",
+   "icebeam",
+   "stealthrock",
+   "yawn"
+  ]
+ },
+ {
+  "species": "salamence",
+  "item": "salamencite",
+  "ability": "intimidate",
+  "nature": "Adamant",
+  "sp": [
+   25,
+   25,
+   1,
+   0,
+   0,
+   15
+  ],
+  "moves": [
+   "doubleedge",
+   "earthquake",
+   "dragondance",
+   "roost"
+  ]
+ },
+ {
+  "species": "gholdengo",
+  "item": "airballoon",
+  "ability": "goodasgold",
+  "nature": "Modest",
+  "sp": [
+   31,
+   0,
+   0,
+   27,
+   2,
+   6
+  ],
+  "moves": [
+   "makeitrain",
+   "shadowball",
+   "nastyplot",
+   "recover"
+  ]
+ },
+ {
+  "species": "garchomp",
+  "item": "garchompitez",
+  "ability": "roughskin",
+  "nature": "Modest",
+  "sp": [
+   4,
+   0,
+   0,
+   32,
+   0,
+   30
+  ],
+  "moves": [
+   "dracometeor",
+   "earthpower",
+   "fireblast",
+   "powergem"
+  ]
+ },
+ {
+  "species": "rillaboom",
+  "item": "miracleseed",
+  "ability": "grassysurge",
+  "nature": "Adamant",
+  "sp": [
+   32,
+   32,
+   2,
+   0,
+   0,
+   0
+  ],
+  "moves": [
+   "drumbeating",
+   "uturn",
+   "grassyglide",
+   "highhorsepower"
+  ]
+ },
+ {
+  "species": "corviknight",
+  "item": "rockyhelmet",
+  "ability": "pressure",
+  "nature": "Impish",
+  "sp": [
+   32,
+   1,
+   30,
+   0,
+   2,
+   1
+  ],
+  "moves": [
+   "uturn",
+   "irondefense",
+   "bodypress",
+   "roost"
+  ]
+ }
+]
