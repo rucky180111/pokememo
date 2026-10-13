@@ -177,6 +177,7 @@ function decide(b, sid, req, policy) {
         const lvl = id === 'irondefense' ? A.cond.boosts.def : id === 'calmmind' || id === 'nastyplot' ? A.cond.boosts.spa : A.cond.boosts.atk;
         v = safe && lvl < 2 ? 55 * SETUP[id] : lvl < 1 && threat.pct < 55 ? 15 : -30;
       } else if (HEAL.has(id)) v = A.cond.hp < 55 && threat.pct < 45 ? 58 : A.cond.hp < 70 ? 10 : -50;
+      else if (id === 'kingsshield' && A.cond.forme === 'aegislashblade') v = me.active[0].volatiles.stall ? -50 : threat.pct > 30 ? 46 : 12; // ブレードからシールドに戻る
       else if (id === 'protect' || id === 'detect' || id === 'spikyshield' || id === 'kingsshield' || id === 'banefulbunker') v = me.active[0].volatiles.stall ? -50 : 4;
       else if (id === 'willowisp') v = !oStat && dex.species[O.cond.forme || O.build.species].bs[1] > dex.species[O.cond.forme || O.build.species].bs[3] && !dex.species[O.cond.forme || O.build.species].t.includes('Fire') ? 50 : -30;
       else if (id === 'toxic') v = !oStat && !dex.species[O.cond.forme || O.build.species].t.some(t => t === 'Poison' || t === 'Steel') ? 36 : -30;
@@ -240,6 +241,7 @@ function myPreview(mine, theirs) {
     const smart = () => {
       if (has(theirs, /^(mimikyu|kingambit|baxcalibur|golisopod)/) && I.corviknight != null) return I.corviknight;
       if (has(theirs, /^(rillaboom|lucario|glimmora|basculegion)/) && I.rillaboom != null) return I.rillaboom;
+      if (process.env.RILLA_PRIM && has(theirs, /^primarina/) && I.rillaboom != null) return I.rillaboom;
       if (process.env.CORV_SPECIAL && has(theirs, /^(primarina|gholdengo)/) && I.corviknight != null) return I.corviknight;
       return I[process.env.SLOT3 || 'gholdengo'];
     };
