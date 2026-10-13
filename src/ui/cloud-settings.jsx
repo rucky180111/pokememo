@@ -1,6 +1,6 @@
 // 設定画面: アカウント同期 (Firebase)
 import {useEffect, useState} from 'preact/hooks';
-import {useApp, cx} from './common.jsx';
+import {useApp, Seg, cx} from './common.jsx';
 
 export const RULES = `rules_version = '2';
 service cloud.firestore {
@@ -20,7 +20,12 @@ export function CloudSettings() {
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const configured = !!store.state.settings.cloud?.config;
+  const cs = store.state.settings.cloud || {};
+  const isServer = cs.provider === 'server' && !!cs.url;
+  const configured = !!cs.config && !isServer;
+  const [mode, setMode] = useState('server');
+  const [srvUrl, setSrvUrl] = useState('');
+  const [srvKey, setSrvKey] = useState('');
   const run = async (fn, okMsg) => {
     setBusy(true); setErr('');
     try { await fn(); if (okMsg) toast(okMsg); } catch (e) { setErr(e?.message || String(e)); }
@@ -30,7 +35,15 @@ export function CloudSettings() {
   return (
     <section class="box cloud">
       <h4>アカウント同期 (スマホ・iPad で同じデータ)</h4>
-      {!configured && <>
+      {!configured && !isServer && <Seg value={mode} options={[['server', '自分のサーバー (ラズパイ)'], ['firebase', 'Firebase (Google)']]} onChange={setMode} />}
+      {!configured && !isServer && mode === 'server' && <>
+        <p class="hint">自宅のラズパイなどで動かす同期サーバーにつなぎます (サーバーの作り方はリポジトリの server/ にあります)。ラズパイ側で表示された https のアドレスと同期キーを入れてください。</p>
+        <label class="field"><span>サーバーのアドレス</span><input class="input" type="url" autocapitalize="off" autocorrect="off" spellcheck={false} placeholder="https://raspberrypi.xxxx.ts.net" value={srvUrl} onInput={e => setSrvUrl(e.currentTarget.value)} /></label>
+        <label class="field"><span>同期キー (この端末にだけ保存されます)</span><input class="input" type="password" autocomplete="off" value={srvKey} onInput={e => setSrvKey(e.currentTarget.value)} /></label>
+        <button class="btn primary" disabled={busy || !srvUrl.trim() || !srvKey.trim()} onClick={() => run(() => cloud.configureServer(srvUrl, srvKey), 'サーバーにつながりました')}>{busy ? '確認中…' : '接続を確認して保存'}</button>
+        <p class="hint">2台目の端末でも、同じアドレスと同期キーを入れてください。</p>
+      </>}
+      {!configured && !isServer && mode === 'firebase' && <>
         <p class="hint">自分専用の Firebase (Google の無料サービス) にデータを置いて、ログインした端末どうしでリアルタイムに同期します。最初に1回だけ準備が必要です。</p>
         <details class="cloud-steps">
           <summary>準備の手順 (はじめての人はここを開く)</summary>
@@ -51,6 +64,15 @@ export function CloudSettings() {
         </label>
         <button class="btn primary" disabled={busy || !cfgText.trim()} onClick={() => run(() => cloud.configure(cfgText))}>保存して接続</button>
         <p class="hint">2台目の端末でも、同じ firebaseConfig を貼り付けてから同じメールアドレスでログインしてください。</p>
+      </>}
+      {isServer && <>
+        <p>接続先: <code>{cs.url}</code> <span class={cx('tag', st.state === 'ok' ? 'good' : st.state === 'error' ? 'bad' : '')}>{st.state === 'ok' ? '同期済み' : st.state === 'error' ? 'エラー' : st.state === 'syncing' ? '送信中' : '接続中'}</span></p>
+        {st.message && <p class={cx('hint', st.state === 'error' && 'bad')}>{st.message}</p>}
+        <p class="hint">記録を変えると数秒で送信され、同じサーバーにつないだほかの端末にすぐ反映されます。</p>
+        <div class="btnrow">
+          <button class="btn" disabled={busy} onClick={() => run(() => cloud.flush(), '送信しました')}>今すぐ送る</button>
+          <button class="btn ghost" disabled={busy} onClick={() => run(() => cloud.forget(), '同期をやめました (この端末のデータは残ります)')}>接続先を変える・やめる</button>
+        </div>
       </>}
       {configured && (st.state === 'signedout' || (st.state === 'connecting' && !st.user)) && <>
         <p class="hint">メールアドレスとパスワードでログインします。1台目は「新しく登録」、2台目以降は「ログイン」です (パスワードは Firebase が管理し、このアプリには保存しません)。</p>

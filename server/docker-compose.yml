@@ -1,0 +1,15 @@
+services:
+  pokememo-sync:
+    build: .
+    container_name: pokememo-sync
+    restart: unless-stopped
+    environment:
+      - SYNC_KEY=${SYNC_KEY:?SYNC_KEY を .env に設定してください}
+      - ALLOW_ORIGIN=${ALLOW_ORIGIN:-https://rucky180111.github.io}
+    volumes:
+      # データの保存先。USB メモリに置く場合は .env の DATA_PATH を書き換える
+      - ${DATA_PATH:-./data}:/data
+    ports:
+      # 外へは Tailscale Funnel 経由でだけ出すので、ラズパイ自身からだけ受け付ける
+      - "127.0.0.1:${HOST_PORT:-8787}:8787"
+    mem_limit: 128m

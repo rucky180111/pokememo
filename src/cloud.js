@@ -1,5 +1,6 @@
 // アカウント同期の窓口: Firebase の部品の読み込み・ログイン状態・同期の開始と停止
 import {createCloudSync, parseFirebaseConfig} from './cloud-sync.js';
+import {serverAdapter, testServer} from './cloud-server.js';
 
 let libP = null;
 function loadLib() {
@@ -22,7 +23,14 @@ export function createCloud(store) {
 
   async function start() {
     stopAll();
-    const cfg = store.state.settings.cloud?.config;
+    const c = store.state.settings.cloud || {};
+    // 自分のサーバー (ラズパイなど): ログインは無く、同期キーでつなぐ
+    if (c.provider === 'server' && c.url && c.key) {
+      set({state: 'connecting', user: {server: c.url}, message: ''});
+      sync = createCloudSync(store, serverAdapter(c.url, c.key), {onStatus: s => set({state: s.state, message: s.message, last: s.last || st.last})});
+      return;
+    }
+    const cfg = c.config;
     if (!cfg) { set({state: 'off', user: null, message: ''}); return; }
     set({state: 'connecting', message: ''});
     try {
@@ -50,7 +58,15 @@ export function createCloud(store) {
     /** 設定 (firebaseConfig の貼り付け) を保存して接続する */
     async configure(text) {
       const config = parseFirebaseConfig(text);
-      await store.saveSettings({cloud: {...(store.state.settings.cloud || {}), config}});
+      await store.saveSettings({cloud: {provider: 'firebase', config}});
+      await start();
+    },
+    /** 自分のサーバーの設定を確かめてから保存して接続する */
+    async configureServer(url, key) {
+      url = url.trim().replace(/\/+$/, '');
+      if (!/^https:\/\//.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(url)) throw new Error('アドレスは https:// で始まるものを入れてください (Tailscale Funnel の URL)');
+      await testServer(url, key.trim());
+      await store.saveSettings({cloud: {provider: 'server', url, key: key.trim()}});
       await start();
     },
     async forget() {
