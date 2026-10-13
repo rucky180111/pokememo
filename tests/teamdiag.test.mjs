@@ -28,3 +28,13 @@ test('構築の診断', () => {
   assert.equal(t.length, 30);
   assert.ok(t.every(x => x.best.m >= 0));
 });
+
+test('おすすめ: 入れ替える枠を指定すると、穴を埋めるものが上に来る', async () => {
+  const {recommendTypes, recommendMons} = await import('../src/engine/teamdiag.js');
+  const rt = recommendTypes(team, usage, {replace: 5});
+  assert.ok(rt.list.length === 10 && rt.list[0].gain >= rt.list[9].gain);
+  assert.ok(rt.list[0].diff.fixedRes.length > 0);
+  const rm = recommendMons(team, usage, {replace: 5, mega: false});
+  assert.ok(rm.list.length > 0 && rm.list.every(x => !x.id.includes('mega')));
+  assert.ok(!rm.list.some(x => ['empoleon', 'salamence', 'gholdengo', 'garchomp', 'rillaboom'].includes(x.id)));
+});

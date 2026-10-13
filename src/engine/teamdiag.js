@@ -19,6 +19,7 @@ const ATE = {aerilate: 'Flying', pixilate: 'Fairy', refrigerate: 'Ice', galvaniz
 
 /** 実際に戦うときの姿 (メガストーンを持っていればメガシンカ後) */
 export function battleForm(build) {
+  if (build.__types) return {sid: build.species, types: build.__types, ability: '', mega: false};
   const mega = megaFormeFor(build.species, build.item);
   const sid = mega || build.species;
   const s = dex.species[sid];
@@ -131,3 +132,95 @@ export function topReport(team, usage, n = 30) {
     return {rank: i + 1, id, u: d.u, ability, item, types: s.t, best};
   });
 }
+
+// ---- おすすめ (構築に足すと穴が埋まるタイプ・ポケモン) ----
+
+// タイプごとの代表の攻撃技 (タイプ一致技として使う)
+let repMove = null;
+function repMoveOf(type) {
+  if (!repMove) {
+    repMove = {};
+    for (const [id, m] of Object.entries(dex.moves)) {
+      if (m.c === 'Z' || !m.bp || m.bp < 60 || ['freezedry', 'flyingpress', 'thousandarrows'].includes(id)) continue;
+      if (!repMove[m.t] || m.bp > dex.moves[repMove[m.t]].bp) repMove[m.t] = id;
+    }
+  }
+  return repMove[type];
+}
+
+/** 構築の穴の大きさ (小さいほどよい) と、その内訳 */
+export function teamScore(team, usage, n = 100) {
+  const d = defenseReport(team), o = offenseReport(team), t = topReport(team, usage, n);
+  const topMiss = t.filter(x => x.best.m < 2);
+  const stack = d.rows.filter(r => r.weak >= 3).map(r => r.type);
+  const score = 3 * d.notResisted.length + 2 * stack.length + o.notHit.length + 1.5 * topMiss.length;
+  return {score, notResisted: d.notResisted, stack, notHit: o.notHit, topMiss};
+}
+
+function diffText(base, next) {
+  const gain = [], loss = [];
+  const fixedRes = base.notResisted.filter(x => !next.notResisted.includes(x));
+  const newRes = next.notResisted.filter(x => !base.notResisted.includes(x));
+  const key = c => c.types.join('/');
+  const fixedHit = base.notHit.filter(c => !next.notHit.some(x => key(x) === key(c)));
+  const newHit = next.notHit.filter(c => !base.notHit.some(x => key(x) === key(c)));
+  const fixedTop = base.topMiss.filter(c => !next.topMiss.some(x => x.id === c.id));
+  const newTop = next.topMiss.filter(c => !base.topMiss.some(x => x.id === c.id));
+  const fixedStack = base.stack.filter(x => !next.stack.includes(x));
+  const newStack = next.stack.filter(x => !base.stack.includes(x));
+  return {fixedRes, newRes, fixedHit, newHit, fixedTop, newTop, fixedStack, newStack};
+}
+
+/**
+ * おすすめのタイプ (複合を含む、ゲームにいる組み合わせだけ)
+ * replace: 入れ替える枠の番号 (-1 なら足すだけ = 7体目として評価)
+ */
+export function recommendTypes(team, usage, {replace = -1, n = 100, limit = 10} = {}) {
+  const rest = team.filter((_, i) => i !== replace);
+  const base = teamScore(rest, usage, n);
+  const top = topIds(usage, n);
+  const out = existingTypeCombos().map(c => {
+    const moves = c.types.map(repMoveOf).filter(Boolean);
+    const sid = c.examples[0];
+    const fake = {species: sid, ability: '__none', item: '', moves, __types: c.types};
+    const next = teamScore([...rest, fake], usage, n);
+    const ex = top.filter(id => [...dex.species[id].t].sort().join('/') === c.types.join('/'));
+    return {types: c.types, score: next.score, gain: base.score - next.score, examples: ex.length ? ex : c.examples, inTop: ex.length > 0, diff: diffText(base, next)};
+  });
+  out.sort((a, b) => b.gain - a.gain || b.inTop - a.inTop);
+  return {base, list: out.slice(0, limit)};
+}
+
+function topIds(usage, n) {
+  return Object.entries(usage?.pokemon || {}).filter(([id]) => dex.species[id]).sort((a, b) => (b[1].u || 0) - (a[1].u || 0)).slice(0, n).map(([id]) => id);
+}
+
+/** 使用率データからそのポケモンのよくある型 (特性・持ち物・技) */
+export function commonBuild(id, usage) {
+  const d = usage?.pokemon?.[id] || {};
+  const s = dex.species[id];
+  const moves = (d.mv || []).map(([m]) => m).filter(m => dex.moves[m]).slice(0, 4);
+  if (s.mega) return {species: s.mega, item: s.stone, ability: '', moves};
+  return {species: id, item: d.it?.[0]?.[0] || '', ability: d.ab?.[0]?.[0] || s.ab[0], moves};
+}
+
+/** 使用率上位からのおすすめのポケモン (よくある型で入れたときに穴がどれだけ埋まるか) */
+export function recommendMons(team, usage, {replace = -1, n = 100, pool = 100, limit = 12, mega = true} = {}) {
+  const rest = team.filter((_, i) => i !== replace);
+  const base = teamScore(rest, usage, n);
+  const have = new Set(rest.map(b => dex.species[b.species]?.j));
+  const out = [];
+  for (const id of topIds(usage, pool)) {
+    const s = dex.species[id];
+    if (have.has(s.j) || have.has(dex.species[s.mega || '']?.j)) continue;
+    if (!mega && s.mega) continue;
+    const b = commonBuild(id, usage);
+    const next = teamScore([...rest, b], usage, n);
+    out.push({id, build: b, score: next.score, gain: base.score - next.score, diff: diffText(base, next)});
+  }
+  out.sort((a, b) => b.gain - a.gain);
+  return {base, list: out.slice(0, limit)};
+}
+
+/** 構築にメガストーンを持つポケモンが何体いるか (メガシンカは1試合に1体だけ) */
+export const megaCount = team => team.filter(b => megaFormeFor(b.species, b.item)).length;

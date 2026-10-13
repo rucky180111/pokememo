@@ -1,9 +1,10 @@
 // 構築診断: 受け (半減で受けられるか) ・攻め (全部の組み合わせに弱点を突けるか) ・使用率上位への打点
 import {useMemo, useState} from 'preact/hooks';
 import {dex, speciesName, moveName, abilityName, itemName, TYPES} from '../engine/dex.js';
-import {defenseReport, offenseReport, topReport} from '../engine/teamdiag.js';
+import {defenseReport, offenseReport, topReport, recommendTypes, recommendMons, megaCount} from '../engine/teamdiag.js';
 import {useApp, Seg, Sprite, TypeChip, Empty, cx} from './common.jsx';
 
+const TOP = 100;
 const multLabel = m => (m === 0 ? '無効' : m === 0.25 ? '¼' : m === 0.5 ? '½' : m === 1 ? '' : m === 2 ? '2' : m === 4 ? '4' : `${m}`);
 const multClass = m => (m === 0 ? 'm0' : m < 0.5 ? 'm025' : m < 1 ? 'm05' : m === 1 ? 'm1' : m < 4 ? 'm2' : 'm4');
 
@@ -11,10 +12,11 @@ export function TeamDiagnosis({team}) {
   const {store} = useApp();
   const usage = store.state.usage.single;
   const [view, setView] = useState('def');
+  const [onlyMiss, setOnlyMiss] = useState(false);
   const mons = team.mons.filter(m => dex.species[m.species]);
   const def = useMemo(() => defenseReport(mons), [team]);
   const off = useMemo(() => offenseReport(mons), [team]);
-  const top = useMemo(() => topReport(mons, usage, 30), [team, usage]);
+  const top = useMemo(() => topReport(mons, usage, TOP), [team, usage]);
   if (!mons.length) return <Empty>ポケモンを登録すると診断できます。</Empty>;
   const topMiss = top.filter(t => t.best.m < 2);
   return (
@@ -31,12 +33,12 @@ export function TeamDiagnosis({team}) {
           <span class="chips td-col">{off.notHit.slice(0, 4).map(c => <span class="td-combo">{c.types.map(t => <TypeChip type={t} small />)}</span>)}{off.notHit.length > 4 ? '…' : ''}</span>
         </div>
         <div class={cx('td-card', topMiss.length ? 'bad' : 'good')} onClick={() => setView('top')}>
-          <span class="td-k">使用率上位30</span>
+          <span class="td-k">使用率上位{TOP}</span>
           <b>{!usage ? '使用率データがありません' : topMiss.length ? `弱点を突けない: ${topMiss.length}体` : '全員に弱点を突ける'}</b>
           <span class="chips">{topMiss.slice(0, 6).map(t => <Sprite id={t.id} size={28} />)}</span>
         </div>
       </div>
-      <Seg value={view} options={[['def', '受け (タイプ別)'], ['off', '攻め (組み合わせ別)'], ['top', '使用率上位30']]} onChange={setView} />
+      <Seg value={view} options={[['def', '受け (タイプ別)'], ['off', '攻め (組み合わせ別)'], ['top', `使用率上位${TOP}`], ['rec', 'おすすめ']]} onChange={setView} />
 
       {view === 'def' && <>
         <div class="scroll-x">
@@ -84,9 +86,10 @@ export function TeamDiagnosis({team}) {
 
       {view === 'top' && <>
         {!usage && <Empty>使用率データを読み込むと診断できます。</Empty>}
-        <p class="hint">使用率上位30位 ({usage?.month || ''}) のポケモンに、弱点を突ける技があるか。相手はいちばん多い特性と、半分以上が持つ持ち物 (ふうせん等) で判定しています。</p>
+        <p class="hint">使用率上位{TOP}位 ({usage?.month || ''}) のポケモンに、弱点を突ける技があるか。相手はいちばん多い特性と、半分以上が持つ持ち物 (ふうせん等) で判定しています。</p>
+        <label class="td-opt"><input type="checkbox" checked={onlyMiss} onChange={e => setOnlyMiss(e.currentTarget.checked)} /> 弱点を突けないポケモンだけ表示</label>
         <div class="td-top">
-          {top.map(t => (
+          {top.filter(t => !onlyMiss || t.best.m < 2).map(t => (
             <div class={cx('td-tile', t.best.m < 2 && 'miss')}>
               <span class="td-rank num">{t.rank}</span>
               <Sprite id={t.id} size={44} />
@@ -97,6 +100,62 @@ export function TeamDiagnosis({team}) {
           ))}
         </div>
       </>}
+      {view === 'rec' && <Recommend mons={mons} usage={usage} />}
     </div>
   );
+}
+
+const TJ = t => <TypeChip type={t} small />;
+function Fixes({d}) {
+  const items = [];
+  if (d.fixedRes.length) items.push(<li class="good">半減以下で受けられる: {d.fixedRes.map(TJ)}</li>);
+  if (d.fixedHit.length) items.push(<li class="good">弱点を突けるようになる組み合わせ: {d.fixedHit.length}通り <span class="td-mini">{d.fixedHit.slice(0, 4).map(c => <span class="td-combo">{c.types.map(TJ)}</span>)}</span></li>);
+  if (d.fixedTop.length) items.push(<li class="good">上位で弱点を突けるようになる: <span class="td-mini">{d.fixedTop.map(t => <Sprite id={t.id} size={26} />)}</span></li>);
+  if (d.fixedStack.length) items.push(<li class="good">弱点の重なりが減る: {d.fixedStack.map(TJ)}</li>);
+  if (d.newRes.length) items.push(<li class="bad">半減で受けられなくなる: {d.newRes.map(TJ)}</li>);
+  if (d.newHit.length) items.push(<li class="bad">弱点を突けなくなる組み合わせ: {d.newHit.length}通り</li>);
+  if (d.newTop.length) items.push(<li class="bad">上位で弱点を突けなくなる: <span class="td-mini">{d.newTop.map(t => <Sprite id={t.id} size={26} />)}</span></li>);
+  if (d.newStack.length) items.push(<li class="bad">弱点が3体以上重なる: {d.newStack.map(TJ)}</li>);
+  return <ul class="td-fix">{items}</ul>;
+}
+
+function Recommend({mons, usage}) {
+  const [replace, setReplace] = useState(-1);
+  const rest = mons.filter((_, i) => i !== replace);
+  const [mega, setMega] = useState(null);
+  const megaOn = mega ?? megaCount(rest) === 0;
+  const rt = useMemo(() => recommendTypes(mons, usage, {replace, n: TOP, limit: 10}), [mons, usage, replace]);
+  const rm = useMemo(() => recommendMons(mons, usage, {replace, n: TOP, pool: TOP, limit: 12, mega: megaOn}), [mons, usage, replace, megaOn]);
+  if (!usage) return <Empty>使用率データを読み込むと、おすすめを出せます。</Empty>;
+  return <>
+    <div class="td-rec-ctl">
+      <span class="td-k">入れ替える枠</span>
+      <div class="td-slots">
+        <button class={cx('chip', replace === -1 && 'on')} onClick={() => setReplace(-1)}>足すだけ</button>
+        {mons.map((b, i) => <button class={cx('chip', replace === i && 'on')} onClick={() => setReplace(i)}><Sprite id={b.species} size={24} />{speciesName(b.species)}</button>)}
+      </div>
+      <label class="td-opt"><input type="checkbox" checked={megaOn} onChange={e => setMega(e.currentTarget.checked)} /> メガシンカするポケモンも出す{megaCount(rest) ? ` (構築にメガストーン持ちが${megaCount(rest)}体います)` : ''}</label>
+    </div>
+    <p class="hint">「半減で受けられないタイプ」「弱点が3体以上重なるタイプ」「弱点を突けない組み合わせ」「使用率上位{TOP}で弱点を突けないポケモン」がどれだけ減るかで並べています。タイプはそのタイプの技を持つとして、ポケモンは使用率データでいちばん多い特性・持ち物・技4つで判定しています。</p>
+    <h4>おすすめのタイプ</h4>
+    <div class="td-recs">
+      {rt.list.map(x => (
+        <div class="td-rec">
+          <div class="td-rec-h"><span class="td-combo">{x.types.map(TJ)}</span><span class="td-gain">+{x.gain.toFixed(1)}</span></div>
+          <div class="td-ex">{x.examples.slice(0, 4).map(id => <span class="td-exm"><Sprite id={id} size={26} />{speciesName(id)}</span>)}{!x.inTop && <small class="muted">(上位{TOP}にはいない)</small>}</div>
+          <Fixes d={x.diff} />
+        </div>
+      ))}
+    </div>
+    <h4>使用率上位{TOP}からのおすすめ</h4>
+    <div class="td-recs">
+      {rm.list.map(x => (
+        <div class="td-rec">
+          <div class="td-rec-h"><span class="td-exm"><Sprite id={x.id} size={36} /><b>{speciesName(x.id)}</b></span><span class="td-gain">+{x.gain.toFixed(1)}</span></div>
+          <div class="muted td-moves">{[abilityName(x.build.ability), itemName(x.build.item)].filter(Boolean).join('・')}{x.build.moves.length ? ` / ${x.build.moves.map(moveName).join('・')}` : ''}</div>
+          <Fixes d={x.diff} />
+        </div>
+      ))}
+    </div>
+  </>;
 }

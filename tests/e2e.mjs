@@ -406,9 +406,13 @@ await shot(ipad, 'ipad-team-report');
   await ipad.locator('.seg button', {hasText: '攻め'}).click();
   check(await ipad.locator('.td-crow.miss').count() >= 1, '構築診断: 弱点を突けない組み合わせ');
   await shot(ipad, 'ipad-team-diag-off');
-  await ipad.locator('.seg button', {hasText: '使用率上位30'}).click();
-  check(await ipad.locator('.td-tile').count() === 30, '構築診断: 使用率上位30');
+  await ipad.locator('.seg button', {hasText: '使用率上位100'}).click();
+  check(await ipad.locator('.td-tile').count() === 100, '構築診断: 使用率上位100');
   await shot(ipad, 'ipad-team-diag-top');
+  await ipad.locator('.seg button', {hasText: 'おすすめ'}).click();
+  await ipad.locator('.td-slots .chip', {hasText: 'アーマーガア'}).click();
+  check(await ipad.locator('.td-rec').count() >= 10, '構築診断: おすすめのタイプとポケモン');
+  await shot(ipad, 'ipad-team-diag-rec');
 }
 await browser.close();
 server.close();
