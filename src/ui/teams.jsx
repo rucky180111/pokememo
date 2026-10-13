@@ -6,7 +6,7 @@ import {usageEntries, parseSpread} from '../engine/assume.js';
 import {teamRecord, realBattles} from '../engine/predict.js';
 import {TeamReport} from './stats.jsx';
 import {ShotImport} from './shot-import.jsx';
-import {useApp, Sheet, Picker, Seg, MonName, TypeChip, Empty, Confirm, cx} from './common.jsx';
+import {useApp, Sheet, Picker, Seg, MonName, TypeChip, Sprite, Empty, Confirm, cx} from './common.jsx';
 
 export const FORMAT_OPTS = [['single', 'シングル'], ['double', 'ダブル']];
 const natureLabel = n => {
@@ -94,7 +94,7 @@ export function TeamList() {
               <div class="card-top">
                 <strong>{t.name || '(名前なし)'}</strong>
               </div>
-              <div class="chips">{t.mons.map(m => <span class="chip">{speciesName(m.species)}</span>)}{!t.mons.length && <span class="muted">ポケモン未登録</span>}</div>
+              <div class="team-icons">{t.mons.map(m => <span class="ti-mon" title={speciesName(m.species)}><Sprite id={m.species} size={52} /><small>{speciesName(m.species)}</small></span>)}{!t.mons.length && <span class="muted">ポケモン未登録</span>}</div>
               <div class="card-foot muted">{rec.n ? `${rec.win}勝 ${rec.lose}敗${rec.draw ? ` ${rec.draw}分` : ''} (勝率 ${rec.win + rec.lose ? Math.round((rec.win / (rec.win + rec.lose)) * 100) : '-'}%)` : '対戦記録なし'}</div>
               {rec.n > 0 && <span class="card-link" role="link" onClick={e => { e.stopPropagation(); nav(`#/stats/${t.id}`); }}>戦績と分析を見る ›</span>}
             </button>
@@ -151,7 +151,7 @@ export function TeamEditor({id}) {
         {team.mons.map((m, i) => (
           <div class="card" key={i}>
             <button class="card-main" onClick={() => setEdit(i)}>
-              <div class="card-top"><MonName id={m.species} /><span class="muted">{itemName(m.item) || '持ち物なし'}</span></div>
+              <div class="card-top"><MonName id={m.species} icon={48} /><span class="muted">{itemName(m.item) || '持ち物なし'}</span></div>
               <div class="muted">{abilityName(m.ability)} / {buildSummary(m)}</div>
               <div class="num dim">{statsOf(m.species, m.sp, m.nature).join('-')}</div>
               <div class="chips">{(m.moves || []).map(mv => <span class="chip"><TypeChip type={dex.moves[mv]?.t} small />{moveName(mv)}</span>)}{!(m.moves || []).length && <span class="muted">技が未設定</span>}</div>
@@ -233,7 +233,7 @@ export function MonEditor({build, usage, onSave, onClose, isNew, title, lockSpec
       <div class="editor">
         <div class="form">
           <div class="field grow"><span>ポケモン</span>
-            <button class="input as-btn" disabled={lockSpecies} onClick={() => setPick({kind: 'species'})}>{s ? <MonName id={b.species} /> : <span class="muted">えらぶ</span>}</button>
+            <button class="input as-btn" disabled={lockSpecies} onClick={() => setPick({kind: 'species'})}>{s ? <MonName id={b.species} icon={36} /> : <span class="muted">えらぶ</span>}</button>
           </div>
           <div class="field grow"><span>持ち物</span>
             <button class="input as-btn" onClick={() => setPick({kind: 'items'})}>{b.item ? itemName(b.item) : <span class="muted">なし</span>}</button>

@@ -43,7 +43,7 @@ export function DamageTab({battle, ctx, mut, toast}) {
         {list.map((m, i) => {
           const c = condOf(battle, dir, i);
           if (!dex.species[m.species]) return null;
-          return <button class={cx('chip', atk === i && 'on', c?.fainted && 'strike', actives.includes(i) && 'active')} disabled={c?.fainted} onClick={() => setSel({...sel, [dir]: i})}>{speciesName(m.species)}{actives.includes(i) ? ' ●' : ''}</button>;
+          return <button class={cx('chip', atk === i && 'on', c?.fainted && 'strike', actives.includes(i) && 'active')} disabled={c?.fainted} onClick={() => setSel({...sel, [dir]: i})}><Sprite id={m.species} size={28} />{speciesName(m.species)}{actives.includes(i) ? ' ●' : ''}</button>;
         })}
       </div>
       <div class="chips">
@@ -232,7 +232,7 @@ export function PredictTab({battle, ctx}) {
   return (
     <div class="page-in">
       <div class="chips">
-        {battle.opp.map((x, i) => <button class={cx('chip', idx === i && 'on')} onClick={() => setSel(i)}>{speciesName(x.species)}{oppActive.includes(i) ? ' ●' : ''}</button>)}
+        {battle.opp.map((x, i) => <button class={cx('chip', idx === i && 'on')} onClick={() => setSel(i)}><Sprite id={x.species} size={28} />{speciesName(x.species)}{oppActive.includes(i) ? ' ●' : ''}</button>)}
       </div>
 
       <div class="box">

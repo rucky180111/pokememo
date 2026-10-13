@@ -21,10 +21,11 @@ export function TypeChip({type, small}) {
   return <span class={cx('type', `t-${type}`, small && 'sm')}>{TYPE_JA[type] || type}</span>;
 }
 
-export function MonName({id, sub}) {
+export function MonName({id, sub, icon}) {
   const s = dex.species[id];
   return (
     <span class="monname">
+      {icon ? <Sprite id={id} size={icon === true ? 40 : icon} /> : null}
       <span class="nm">{speciesName(id)}</span>
       {s && sub !== false && <span class="types">{s.t.map(t => <TypeChip type={t} small />)}</span>}
     </span>

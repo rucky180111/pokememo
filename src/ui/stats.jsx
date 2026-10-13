@@ -41,7 +41,7 @@ export function StatsScreen({initialTeam}) {
             <tbody>
               {usageList.map(([id, d], i) => (
                 <tr class="clickable" onClick={() => setDetail(dex.species[id].mega || id)}>
-                  <td class="num">{i + 1}</td><th>{speciesName(id)}</th><td class="num">{rate(d.u, 1)}</td><td class="num">{rate(leadRate(d, fmt))}</td>
+                  <td class="num">{i + 1}</td><th><span class="row-mon"><Sprite id={id} size={32} />{speciesName(id)}</span></th><td class="num">{rate(d.u, 1)}</td><td class="num">{rate(leadRate(d, fmt))}</td>
                   <td>{d.it.slice(0, 2).map(([k]) => itemName(k) || 'なし').join('・')}</td>
                 </tr>
               ))}
@@ -91,7 +91,7 @@ function SpeciesDetail({species, fmt, teamId, onClose}) {
   return (
     <Sheet title={speciesName(species)} onClose={onClose} wide>
       <div class="pad">
-        <p><MonName id={species} /> <span class="num dim">種族値 {dex.species[species].bs.join('-')}</span></p>
+        <p><MonName id={species} icon={56} /> <span class="num dim">種族値 {dex.species[species].bs.join('-')}</span></p>
         <h4>自分の対戦記録</h4>
         {!st.seen && <p class="muted">記録なし</p>}
         {st.seen > 0 && <>
@@ -106,7 +106,7 @@ function SpeciesDetail({species, fmt, teamId, onClose}) {
         {!entries.length && <p class="muted">データなし</p>}
         {entries.map(e => (
           <div class="box" key={e.id}>
-            <h5>{speciesName(e.id)} <span class="muted">採用率 {rate(e.d.u, 1)} / 初手率 {rate(leadRate(e.d, fmt))}</span></h5>
+            <h5><Sprite id={e.id} size={32} />{speciesName(e.id)} <span class="muted">採用率 {rate(e.d.u, 1)} / 初手率 {rate(leadRate(e.d, fmt))}</span></h5>
             {line('技', e.d.mv.slice(0, 10), moveName)}
             {line('持ち物', e.d.it.slice(0, 6), k => itemName(k) || 'なし')}
             {line('特性', e.d.ab, abilityName)}

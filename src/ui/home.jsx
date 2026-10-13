@@ -67,7 +67,7 @@ export function BattleList() {
           <div class="picker-list">
             {teams.map(t => (
               <button class="row" onClick={() => { setChoose(null); create(t, choose); }}>
-                <span class="nm">{t.name}</span><span class="row-sub">{t.mons.map(m => speciesName(m.species)).join(' ')}</span>
+                <span class="nm">{t.name}</span><span class="row-icons">{t.mons.map(m => <Sprite id={m.species} size={36} />)}</span>
               </button>
             ))}
             {choose === 'sim' && <button class="row" onClick={() => { setChoose(null); create(null, 'sim'); }}><span class="muted">構築を使わず空の盤面で始める</span></button>}

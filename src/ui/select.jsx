@@ -88,7 +88,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
           <h4>相手の初手予想 <span class="muted">使用率ベース{sim.n ? `・似た並びとの対戦 ${sim.n}戦` : ''}</span></h4>
           <div class="chips">
             {leads.slice(0, 6).map(x => (
-              <span class={cx('chip', x.p >= 0.25 && 'on')}>{speciesName(x.o.species)} <b class="num">{rate(Math.min(1, x.p))}</b>
+              <span class={cx('chip', x.p >= 0.25 && 'on')}><Sprite id={x.o.species} size={28} />{speciesName(x.o.species)} <b class="num">{rate(Math.min(1, x.p))}</b>
                 {x.st.seen > 0 && <span class="rate">自分の記録 {x.st.lead}/{x.st.seen}</span>}
                 {sim.lead[x.o.species] ? <span class="rate">似た並び {sim.lead[x.o.species]}/{sim.n}</span> : null}
               </span>
@@ -149,7 +149,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
         </table>
       </div>
       <div class="btnrow pad-s">
-        {battle.my.map((m, i) => <button class="btn ghost sm" onClick={() => setMyEdit(i)}>{speciesName(m.species)}の型</button>)}
+        {battle.my.map((m, i) => <button class="btn ghost sm" onClick={() => setMyEdit(i)}><Sprite id={m.species} size={28} />{speciesName(m.species)}の型</button>)}
         {battle.my.length < 6 && <button class="btn ghost sm" onClick={() => setMyEdit({add: true})}>＋ 自分のポケモン</button>}
       </div>
 
