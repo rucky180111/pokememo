@@ -833,3 +833,4 @@ tr.td-miss th { background: #ffe9d6; }
 }
 .td-card .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .td-card .td-combo { padding: 2px; border: 1px dashed var(--border); border-radius: 6px; }
+.td-card .chips.td-col { flex-direction: column; align-items: flex-start; gap: 4px; }

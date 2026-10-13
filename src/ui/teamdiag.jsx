@@ -23,12 +23,12 @@ export function TeamDiagnosis({team}) {
         <div class={cx('td-card', def.notResisted.length ? 'bad' : 'good')} onClick={() => setView('def')}>
           <span class="td-k">受け</span>
           <b>{def.notResisted.length ? `半減で受けられない: ${def.notResisted.length}タイプ` : '全タイプを半減以下で受けられる'}</b>
-          <span class="chips">{def.notResisted.map(t => <TypeChip type={t} small />)}</span>
+          <span class="chips td-col">{def.notResisted.map(t => <TypeChip type={t} small />)}</span>
         </div>
         <div class={cx('td-card', off.notHit.length ? 'bad' : 'good')} onClick={() => setView('off')}>
           <span class="td-k">攻め</span>
           <b>{off.notHit.length ? `弱点を突けない組み合わせ: ${off.notHit.length} / ${off.combos.length}` : `全 ${off.combos.length} 通りの組み合わせに弱点を突ける`}</b>
-          <span class="chips">{off.notHit.slice(0, 4).map(c => <span class="td-combo">{c.types.map(t => <TypeChip type={t} small />)}</span>)}{off.notHit.length > 4 ? '…' : ''}</span>
+          <span class="chips td-col">{off.notHit.slice(0, 4).map(c => <span class="td-combo">{c.types.map(t => <TypeChip type={t} small />)}</span>)}{off.notHit.length > 4 ? '…' : ''}</span>
         </div>
         <div class={cx('td-card', topMiss.length ? 'bad' : 'good')} onClick={() => setView('top')}>
           <span class="td-k">使用率上位30</span>
