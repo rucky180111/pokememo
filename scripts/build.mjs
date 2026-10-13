@@ -17,11 +17,19 @@ const result = await esbuild.build({
   define: {'process.env.NODE_ENV': '"production"'},
   logLevel: 'warning',
 });
+// アカウント同期 (Firebase) の部品は別ファイル。使うときだけ読み込む
+if (fs.existsSync(path.join(root, 'node_modules', 'firebase'))) {
+  await esbuild.build({
+    entryPoints: [path.join(root, 'src', 'cloud', 'firebase-entry.js')],
+    bundle: true, minify: true, format: 'iife', globalName: 'PokememoCloud', target: ['es2020', 'safari15'],
+    outfile: path.join(out, 'cloud.js'), legalComments: 'none', logLevel: 'warning',
+  });
+}
 const css = await esbuild.build({entryPoints: [path.join(root, 'src', 'styles.css')], bundle: true, minify: true, outfile: path.join(out, 'app.css'), logLevel: 'warning'});
 void css;
 
 const hash = crypto.createHash('sha1');
-for (const f of ['app.js', 'app.css', 'usage-single.json', 'usage-double.json']) hash.update(fs.readFileSync(path.join(out, f)));
+for (const f of ['app.js', 'app.css', 'cloud.js', 'usage-single.json', 'usage-double.json'].filter(f => fs.existsSync(path.join(out, f)))) hash.update(fs.readFileSync(path.join(out, f)));
 const version = hash.digest('hex').slice(0, 10);
 for (const f of ['index.html', 'sw.js', 'manifest.webmanifest', 'icon.svg']) {
   const text = fs.readFileSync(path.join(root, 'static', f), 'utf8').replaceAll('__VERSION__', version);

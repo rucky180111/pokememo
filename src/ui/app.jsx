@@ -38,11 +38,13 @@ class Guard extends Component {
   }
 }
 
-export function App({store, syncer}) {
+export function App({store, syncer, cloud}) {
   useStoreVersion(store);
   const [route, setRoute] = useState(parseHash);
   const [toastMsg, setToastMsg] = useState('');
   const [syncStatus, setSyncStatus] = useState({...syncer.status});
+  const [cloudSt, setCloudSt] = useState(() => cloud?.status || {state: 'off'});
+  useEffect(() => cloud?.subscribe(setCloudSt), [cloud]);
   const timer = useRef(null);
   useEffect(() => {
     const f = () => { setRoute(parseHash()); window.scrollTo(0, 0); };
@@ -56,7 +58,7 @@ export function App({store, syncer}) {
     timer.current = setTimeout(() => setToastMsg(''), 3500);
   }, []);
   const nav = useCallback(h => { location.hash = h; }, []);
-  const app = useMemo(() => ({store, syncer, nav, toast}), [store, syncer]);
+  const app = useMemo(() => ({store, syncer, cloud, nav, toast}), [store, syncer, cloud]);
   if (!store.state.ready) return <div class="loading">読み込み中…</div>;
   let screen;
   switch (route.page) {
@@ -76,6 +78,11 @@ export function App({store, syncer}) {
         <a class="brand" href="#/battles">対戦メモ</a>
         <span class="grow" />
         {store.state.saveError && <span class="tag bad">{store.state.saveError}</span>}
+        {cloudSt.state !== 'off' && (
+          <a class={cx('syncbtn', cloudSt.state === 'ok' ? 'ok' : cloudSt.state === 'error' ? 'error' : cloudSt.state === 'signedout' ? 'off' : 'syncing')} href="#/settings" title={cloudSt.message || ''}>
+            <span class="dot" />{cloudSt.state === 'ok' ? '同期済み' : cloudSt.state === 'error' ? '同期エラー' : cloudSt.state === 'signedout' ? '未ログイン' : '接続中'}
+          </a>
+        )}
         {hasToken
           ? <button class={cx('syncbtn', syncStatus.state)} onClick={() => syncer.run()} title={syncStatus.message || '今すぐ同期'}><span class="dot" />{syncLabel}</button>
           : null}

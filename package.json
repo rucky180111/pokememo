@@ -20,6 +20,7 @@
   "dependencies": {
     "@smogon/calc": "^0.12.0",
     "esbuild": "^0.28.2",
+    "firebase": "^13.0.0",
     "preact": "^11.0.1"
   },
   "type": "module",

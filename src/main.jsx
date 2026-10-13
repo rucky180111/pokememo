@@ -1,6 +1,7 @@
 import {render} from 'preact';
 import {createStore, idbBackend, localStorageBackend, memoryBackend} from './store.js';
 import {createSyncer} from './sync.js';
+import {createCloud} from './cloud.js';
 import {loadBundledUsage} from './usage.js';
 import {App} from './ui/app.jsx';
 
@@ -18,18 +19,22 @@ async function pickBackend() {
 async function boot() {
   const store = createStore(await pickBackend());
   const syncer = createSyncer(store);
-  store.onLocalChange = () => syncer.schedule();
-  render(<App store={store} syncer={syncer} />, document.getElementById('app'));
+  const cloud = createCloud(store);
+  store.onLocalChange = (kind, rec) => { syncer.schedule(); cloud.changed(kind, rec); };
+  render(<App store={store} syncer={syncer} cloud={cloud} />, document.getElementById('app'));
   await store.load();
+  if (store.state.settings.cloud?.config) cloud.start();
   loadBundledUsage(store);
   if (store.state.settings.sync.token && store.state.settings.sync.auto) syncer.run();
   // 別の端末での変更を拾うため、画面に戻ってきたときにも同期する
   document.addEventListener('visibilitychange', () => {
     const s = store.state.settings.sync;
     if (document.visibilityState === 'visible' && s.token && s.auto && Date.now() - (s.lastSync || 0) > 60000) syncer.run();
+    // 画面を離れるときは、まだ送っていない変更をすぐ送る
+    if (document.visibilityState === 'hidden') cloud.flush();
   });
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
-  window.__pokememo = {store, syncer};
+  window.__pokememo = {store, syncer, cloud};
 }
 boot();

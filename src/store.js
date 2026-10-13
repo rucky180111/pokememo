@@ -110,14 +110,14 @@ export function createStore(backend) {
       upsert(state.teams, team);
       if (!silent) emit();
       await write(`team:${team.id}`, team);
-      if (touch) api.onLocalChange?.();
+      if (touch) api.onLocalChange?.('team', team);
     },
     async saveBattle(battle, {touch = true, silent = false} = {}) {
       if (touch) battle.updatedAt = Date.now();
       upsert(state.battles, battle);
       if (!silent) emit();
       await write(`battle:${battle.id}`, battle);
-      if (touch) api.onLocalChange?.();
+      if (touch) api.onLocalChange?.('battle', battle);
     },
     async deleteTeam(id) { await api.saveTeam({id, deleted: true, updatedAt: Date.now(), createdAt: 0}); },
     async deleteBattle(id) { await api.saveBattle({id, deleted: true, updatedAt: Date.now(), createdAt: 0}); },

@@ -3,6 +3,7 @@ import {useRef, useState} from 'preact/hooks';
 import {dex} from '../engine/dex.js';
 import {refreshUsage, DEFAULT_SOURCES} from '../usage.js';
 import {useApp, Confirm, cx} from './common.jsx';
+import {CloudSettings} from './cloud-settings.jsx';
 
 export function SettingsScreen() {
   const {store, syncer, toast} = useApp();
@@ -78,6 +79,8 @@ export function SettingsScreen() {
         <label class="check"><input type="checkbox" checked={st.sprites !== false} onChange={e => store.saveSettings({sprites: e.currentTarget.checked})} />ポケモンの画像を表示する</label>
         <p class="hint">画像は Pokémon Showdown の公開スプライト (play.pokemonshowdown.com) から読み込みます。通信量を抑えたいときや表示されないときはオフにしてください。</p>
       </section>
+
+      <CloudSettings />
 
       <section class="box">
         <h4>データの受け渡し・バックアップ (アカウント不要)</h4>
