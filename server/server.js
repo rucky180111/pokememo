@@ -56,6 +56,7 @@ const send = (res, code, obj) => { res.writeHead(code, {'Content-Type': 'applica
 const rows = since => qSince.all(Number(since) || 0).map(r => ({...r, d: !!r.d}));
 
 const streams = new Set();
+let pingTimer = null;
 function broadcast(rec) {
   const msg = `data: ${JSON.stringify({seq, records: [rec]})}\n\n`;
   for (const s of streams) s.write(msg);
@@ -81,6 +82,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/stream') {
+    pingTimer ||= setInterval(() => { for (const s of streams) s.write(': ping\n\n'); }, 25000).unref();
     res.writeHead(200, {'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', Connection: 'keep-alive'});
     res.write(`retry: 3000\n\n`);
     const missed = rows(url.searchParams.get('since'));

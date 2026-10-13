@@ -111,3 +111,27 @@ const firebaseConfig = {
   assert.equal(c.appId, '1:123:web:abc');
   assert.throws(() => parseFirebaseConfig('apiKey: "x"'), /見つかりません/);
 });
+
+test('受信が止まったら張り直して続きから受け取る', async () => {
+  const {serverAdapter} = await import('../src/cloud-server.js');
+  let streams = 0;
+  const enc = new TextEncoder();
+  const fetchFn = async (url, opt) => {
+    if (url.includes('/api/records')) return new Response(JSON.stringify({seq: 1, records: [{kind: 'team', id: 't1', u: 1, d: false, j: '{"id":"t1"}'}]}), {status: 200});
+    streams++;
+    const n = streams;
+    const body = new ReadableStream({start(c) {
+      if (n >= 2) c.enqueue(enc.encode(`data: ${JSON.stringify({seq: 2, records: [{kind: 'battle', id: 'b1', u: 2, d: false, j: '{"id":"b1"}'}]})}\n\n`));
+      opt.signal.addEventListener('abort', () => c.error(Object.assign(new Error('aborted'), {name: 'AbortError'})));
+    }});
+    return new Response(body, {status: 200});
+  };
+  const a = serverAdapter('https://x', 'k', {fetchFn, idleMs: 50});
+  const got = [];
+  const off1 = a.listen('team', l => got.push(...l.map(x => x.id)), () => {});
+  const off2 = a.listen('battle', l => got.push(...l.map(x => x.id)), () => {});
+  await new Promise(r => setTimeout(r, 1300));
+  off1(); off2();
+  assert.ok(streams >= 2, `張り直した (${streams})`);
+  assert.ok(got.includes('b1'));
+});

@@ -1,12 +1,17 @@
 // 自分のサーバー (ラズパイなど) との同期の adapter。server/server.js と組み合わせて使う
 const RETRY = [1000, 3000, 8000, 20000, 60000];
+// これだけ何も届かなければ、つながりが切れたとみなして張り直す (サーバーは 25 秒ごとに合図を送る)
+const IDLE_MS = 70000;
 
-export function serverAdapter(baseUrl, key, {fetchFn = (...a) => fetch(...a), onState} = {}) {
+export function serverAdapter(baseUrl, key, {fetchFn = (...a) => fetch(...a), onState, idleMs = IDLE_MS} = {}) {
   const base = baseUrl.replace(/\/+$/, '');
   const headers = {Authorization: `Bearer ${key}`};
   const handlers = {team: null, battle: null};
   const errs = new Set();
-  let seq = 0, stopped = false, ctrl = null, started = false, tries = 0;
+  let seq = 0, stopped = false, ctrl = null, started = false, tries = 0, kicked = false;
+  // 画面に戻ってきたとき・ネットが戻ったときは、すぐに張り直して取りこぼしを受け取る
+  const kick = () => { if (stopped || !started) return; kicked = true; ctrl?.abort(); };
+  const onVis = () => { if (typeof document === 'undefined' || document.visibilityState === 'visible') kick(); };
   const fail = e => { for (const f of errs) f(e); };
   const dispatch = (records, first) => {
     for (const kind of ['team', 'battle']) {
@@ -40,9 +45,15 @@ export function serverAdapter(baseUrl, key, {fetchFn = (...a) => fetch(...a), on
         const reader = r.body.getReader();
         const dec = new TextDecoder();
         let buf = '';
+        // iPhone をスリープ・アプリ切り替えすると、エラーにならないまま受信が止まることがあるので見張る
+        let idle = null;
+        const arm = () => { clearTimeout(idle); idle = setTimeout(() => ctrl?.abort(), idleMs); };
+        arm();
         for (;;) {
-          const {value, done} = await reader.read();
-          if (done) break;
+          let res;
+          try { res = await reader.read(); } finally { arm(); }
+          const {value, done} = res;
+          if (done) { clearTimeout(idle); break; }
           buf += dec.decode(value, {stream: true});
           let i;
           while ((i = buf.indexOf('\n\n')) >= 0) {
@@ -54,6 +65,7 @@ export function serverAdapter(baseUrl, key, {fetchFn = (...a) => fetch(...a), on
         }
       } catch (e) {
         if (stopped) break;
+        if (kicked) { kicked = false; tries = 0; continue; }
         if (e?.name !== 'AbortError') fail(new Error(/fetch|network|load failed/i.test(e?.message || '') ? 'サーバーにつながりません (ラズパイの電源・ネット・アドレスを確認してください)' : e?.message || String(e)));
       }
       if (stopped) break;
@@ -64,8 +76,15 @@ export function serverAdapter(baseUrl, key, {fetchFn = (...a) => fetch(...a), on
     listen(kind, onChanges, onError) {
       handlers[kind] = onChanges;
       if (onError) errs.add(onError);
-      if (!started && handlers.team && handlers.battle) { started = true; loop(); }
-      return () => { handlers[kind] = null; stopped = true; ctrl?.abort(); };
+      if (!started && handlers.team && handlers.battle) {
+        started = true;
+        if (typeof window !== 'undefined') { document.addEventListener('visibilitychange', onVis); window.addEventListener('online', kick); window.addEventListener('pageshow', kick); }
+        loop();
+      }
+      return () => {
+        handlers[kind] = null; stopped = true; ctrl?.abort();
+        if (typeof window !== 'undefined') { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('online', kick); window.removeEventListener('pageshow', kick); }
+      };
     },
     async put(kind, id, data) {
       let r;
