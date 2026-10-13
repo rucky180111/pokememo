@@ -245,6 +245,22 @@ function myPreview(mine, theirs) {
       if (process.env.CORV_SPECIAL && has(theirs, /^(primarina|gholdengo)/) && I.corviknight != null) return I.corviknight;
       return I[process.env.SLOT3 || 'gholdengo'];
     };
+    // 自由選出: エンペルト確定 + 残り2体を相性表から (メガストーン持ちは1体まで)
+    if (process.env.RULE === 'free') {
+      const others = [0, 1, 2, 3, 4, 5].filter(i => i !== I.empoleon);
+      let best = null;
+      for (let x = 0; x < others.length; x++) for (let y = x + 1; y < others.length; y++) {
+        const pk = [I.empoleon, others[x], others[y]];
+        if (pk.filter(i => mine[i].megaForme).length > 1) continue;
+        const sc = theirs.reduce((acc, _, j) => acc + Math.max(...pk.map(i => M[i][j])), 0);
+        if (!best || sc > best.sc) best = {pk, sc};
+      }
+      const p = best.pk;
+      let lead = I.empoleon;
+      if (has(theirs, /^(charizard|glimmora)/) && p.includes(I.garchomp)) lead = I.garchomp;
+      else if (has(theirs, /^(gengar|hippowdon|skarmory|ferrothorn|ting|forretress|garganacl)/) && p.includes(I.rillaboom)) lead = I.rillaboom;
+      return [lead, ...p.filter(x => x !== lead)];
+    }
     const third = process.env.RULE === 'smart' ? smart() : process.env.THIRD ? I[process.env.THIRD] : [0, 1, 2, 3, 4, 5].filter(i => i !== I.garchomp && i !== I.empoleon).sort((x, y) => theirs.reduce((a, _, j) => a + M[y][j], 0) - theirs.reduce((a, _, j) => a + M[x][j], 0))[0];
     const p = [I.empoleon, I.garchomp, third];
     // 初手の方針
