@@ -59,6 +59,8 @@ export function App({store, syncer, cloud}) {
   }, []);
   const nav = useCallback(h => { location.hash = h; }, []);
   const app = useMemo(() => ({store, syncer, cloud, nav, toast}), [store, syncer, cloud]);
+  // 画面が描けたら起動完了 (起動の見張りを止める)
+  useEffect(() => { if (store.state.ready) window.__pmBooted = true; });
   if (!store.state.ready) return <div class="loading">読み込み中…</div>;
   let screen;
   switch (route.page) {

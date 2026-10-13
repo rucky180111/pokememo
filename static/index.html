@@ -26,8 +26,9 @@ window.__pmVersion = '__VERSION__';
 (function () {
   var errs = [];
   function note(m) { errs.push(String(m || '').slice(0, 300)); }
-  window.addEventListener('error', function (e) { if (!window.__pmBooted) note(e.message + (e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : '')); });
-  window.addEventListener('unhandledrejection', function (e) { if (!window.__pmBooted) note(e.reason && (e.reason.message || e.reason)); });
+  function soon() { setTimeout(function () { window.__pmBootFail && window.__pmBootFail('起動中にエラーが起きました'); }, 4000); }
+  window.addEventListener('error', function (e) { if (!window.__pmBooted) { note(e.message + (e.filename ? ' @' + e.filename.split('/').pop().split('?')[0] + ':' + e.lineno + ':' + e.colno : '')); soon(); } });
+  window.addEventListener('unhandledrejection', function (e) { if (!window.__pmBooted) { note(e.reason && (e.reason.stack || e.reason.message || e.reason)); soon(); } });
   window.__pmBootFail = function (why) {
     if (window.__pmBooted) return;
     var el = document.getElementById('app');

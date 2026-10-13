@@ -23,9 +23,9 @@ async function boot() {
   const syncer = createSyncer(store);
   const cloud = createCloud(store);
   store.onLocalChange = (kind, rec) => { syncer.schedule(); cloud.changed(kind, rec); };
-  render(<App store={store} syncer={syncer} cloud={cloud} />, document.getElementById('app'));
+  try { render(<App store={store} syncer={syncer} cloud={cloud} />, document.getElementById('app')); }
+  catch (e) { window.__pmBootFail?.(`画面の表示でエラー: ${e?.message || e}`); throw e; }
   await store.load();
-  window.__pmBooted = true;
   if (store.state.settings.cloud?.config) cloud.start();
   loadBundledUsage(store);
   if (store.state.settings.sync.token && store.state.settings.sync.auto) syncer.run();
