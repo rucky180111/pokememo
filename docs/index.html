@@ -15,12 +15,42 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="./icon-180.png">
-<link rel="stylesheet" href="./app.css?v=5d384746a1">
+<link rel="stylesheet" href="./app.css?v=dd19e7bbe8">
 </head>
 <body>
 <div id="app"><div class="loading">読み込み中…</div></div>
 <noscript>このアプリは JavaScript を有効にして使ってください。</noscript>
-<script>window.__pmVersion = '5d384746a1';</script>
-<script src="./app.js?v=5d384746a1" defer></script>
+<script>
+window.__pmVersion = 'dd19e7bbe8';
+// 起動の見張り: 起動中のエラーや、一定時間たっても始まらないときに、原因と立て直しのボタンを出す
+(function () {
+  var errs = [];
+  function note(m) { errs.push(String(m || '').slice(0, 300)); }
+  window.addEventListener('error', function (e) { if (!window.__pmBooted) note(e.message + (e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : '')); });
+  window.addEventListener('unhandledrejection', function (e) { if (!window.__pmBooted) note(e.reason && (e.reason.message || e.reason)); });
+  window.__pmBootFail = function (why) {
+    if (window.__pmBooted) return;
+    var el = document.getElementById('app');
+    if (!el) return;
+    el.innerHTML = '<div style="max-width:560px;margin:40px auto;padding:16px;font:15px/1.6 system-ui,sans-serif">' +
+      '<h3 style="margin:0 0 8px">起動できませんでした</h3>' +
+      '<p>記録したデータは端末に残っています。下のボタンを順に試してください。</p>' +
+      '<p style="color:#a33;font-size:13px;white-space:pre-wrap"></p>' +
+      '<p><button id="pm-r1" style="font-size:15px;padding:8px 14px;margin:4px 4px 4px 0">再読み込み</button>' +
+      '<button id="pm-r2" style="font-size:15px;padding:8px 14px;margin:4px 0">アプリを最新にして再読み込み</button></p>' +
+      '<p style="font-size:13px;color:#666">それでも直らないときは、アプリ (Safari) を完全に終了するか、端末を再起動してから開いてください。「アプリを最新にして再読み込み」はアプリ本体の一時ファイルだけを消し、記録は消しません。</p></div>';
+    el.querySelector('p[style*="a33"]').textContent = [why].concat(errs).filter(Boolean).join('\n');
+    document.getElementById('pm-r1').onclick = function () { location.reload(); };
+    document.getElementById('pm-r2').onclick = function () {
+      var tasks = [];
+      if (navigator.serviceWorker) tasks.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+      if (window.caches) tasks.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+      Promise.all(tasks).catch(function () {}).then(function () { location.reload(); });
+    };
+  };
+  setTimeout(function () { window.__pmBootFail('起動に時間がかかりすぎています (15秒)'); }, 15000);
+})();
+</script>
+<script src="./app.js?v=dd19e7bbe8" defer></script>
 </body>
 </html>

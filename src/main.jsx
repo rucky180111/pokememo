@@ -10,7 +10,9 @@ async function pickBackend() {
     const b = idbBackend();
     await b.getAll();
     return b;
-  } catch {
+  } catch (e) {
+    // IndexedDB が開けないときは、空のデータで始めない (記録が消えたように見えるため)。起動の見張りに原因を出す
+    if (typeof indexedDB !== 'undefined') { window.__pmBootFail?.(`${e?.message || e}`); throw e; }
     try { localStorage.setItem('pokememo:probe', '1'); localStorage.removeItem('pokememo:probe'); return localStorageBackend(); }
     catch { return memoryBackend(); }
   }
@@ -23,6 +25,7 @@ async function boot() {
   store.onLocalChange = (kind, rec) => { syncer.schedule(); cloud.changed(kind, rec); };
   render(<App store={store} syncer={syncer} cloud={cloud} />, document.getElementById('app'));
   await store.load();
+  window.__pmBooted = true;
   if (store.state.settings.cloud?.config) cloud.start();
   loadBundledUsage(store);
   if (store.state.settings.sync.token && store.state.settings.sync.auto) syncer.run();
@@ -37,4 +40,4 @@ async function boot() {
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
   window.__pokememo = {store, syncer, cloud};
 }
-boot();
+boot().catch(e => window.__pmBootFail?.(e?.message || String(e)));

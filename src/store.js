@@ -14,12 +14,26 @@ export function memoryBackend(init = {}) {
 
 export function idbBackend(name = 'pokememo') {
   let dbp = null;
-  const open = () => (dbp ||= new Promise((resolve, reject) => {
-    const req = indexedDB.open(name, 1);
+  // iPhone / iPad の Safari では、開く処理が戻ってこないことがあるので、時間で区切ってやり直す
+  const openOnce = ms => new Promise((resolve, reject) => {
+    let done = false;
+    const t = setTimeout(() => { if (!done) { done = true; reject(new Error('保存領域 (IndexedDB) を開けませんでした')); } }, ms);
+    let req;
+    try { req = indexedDB.open(name, 1); } catch (e) { clearTimeout(t); reject(e); return; }
     req.onupgradeneeded = () => req.result.createObjectStore('kv');
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  }));
+    req.onsuccess = () => { if (done) { req.result.close(); return; } done = true; clearTimeout(t); req.result.onversionchange = () => { req.result.close(); dbp = null; }; resolve(req.result); };
+    req.onerror = () => { if (done) return; done = true; clearTimeout(t); reject(req.error); };
+    req.onblocked = () => { /* 別のタブが古い版で開いている。待つ */ };
+  });
+  const open = () => (dbp ||= (async () => {
+    for (let i = 0; i < 3; i++) {
+      try { return await openOnce(2500 + i * 2500); } catch (e) {
+        if (i === 2) { dbp = null; throw e; }
+        // Safari の不具合よけ: 一度一覧を取ってから開き直すと戻ってくることがある
+        try { await indexedDB.databases?.(); } catch { /* 無視 */ }
+      }
+    }
+  })());
   const tx = async (mode, fn) => {
     const db = await open();
     return new Promise((resolve, reject) => {
