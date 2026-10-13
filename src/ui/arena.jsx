@@ -236,7 +236,7 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet, toast}) {
           {!raw.status && !isMega && !FLAGS.some(([k]) => sd[k]) && !sd.spikes && <span class="muted">なし</span>}
         </div>
       </div>
-      {askZoro && <Confirm title="イリュージョンの正体" message={`いま場にいる${speciesName(battle.opp[idx].species)}は、${speciesName(zoro.o.species)}のイリュージョンでしたか？ 化けていた間の記録 (技・ダメージ・HP) を${speciesName(zoro.o.species)}に付け替えて入れ直します。`} okLabel="付け替える" onOk={reveal} onClose={() => setAskZoro(false)} />}
+      {askZoro && <Confirm title="イリュージョンの正体" message={`いま場にいる${speciesName(battle.opp[idx].species)}は、${speciesName(zoro.o.species)}のイリュージョンでしたか？ 化けていた間の記録 (技・ダメージ・HP) を${speciesName(zoro.o.species)}に付け替えて入れ直します。${speciesName(battle.opp[idx].species)}は選出の最後のポケモンとして記録します。`} okLabel="付け替える" onOk={reveal} onClose={() => setAskZoro(false)} />}
     </section>
   );
 }

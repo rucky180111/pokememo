@@ -75,8 +75,8 @@ test('イリュージョン: 化けていた間の記録をゾロアークに付
   assert.deepEqual(b.state.sides.opp.active, [1], '場にいるのはゾロアーク');
   assert.ok(b.opp[1].moves.includes('shadowball'), '技はゾロアークの記録に');
   assert.ok(!b.opp[0].moves.includes('shadowball'), 'ガブリアスからは消える');
-  assert.ok(!b.pick.opp.includes(0), 'ガブリアスは選出されたことにならない');
-  assert.ok(b.pick.opp.includes(1));
+  assert.ok(b.pick.opp.includes(1), 'ゾロアークは選出');
+  assert.equal(b.pick.opp[b.pick.opp.length - 1], 0, '化けられていたガブリアスは選出の最後 (確定)');
   assert.ok(condOf(b, 'opp', 1).hp < 1, 'HP の記録もゾロアークに');
   assert.equal(condOf(b, 'opp', 0).hp, 100);
 });

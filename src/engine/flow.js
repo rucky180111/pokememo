@@ -413,6 +413,10 @@ export function replay(b, usage, opts = {}) {
     if (t.noOrder) nt.noOrder = true;
     if (!t.open) endTurn(b, usage, t.end || {});
   }
+  // イリュージョンで分かった「選出の最後」を、選出の並びの最後に入れる
+  if (b.illusionLast != null && b.opp[b.illusionLast]) {
+    b.pick.opp = [...b.pick.opp.filter(i => i !== b.illusionLast), b.illusionLast];
+  }
   b.opp.forEach((o, i) => {
     const p = prev[i];
     if (!p || p.species !== o.species) return;
@@ -477,10 +481,12 @@ export function revealIllusion(b, usage, zIdx) {
       rewrite(a, ti === from.ti && ai === from.ai);
     }));
   }
-  // 化けていたポケモンは「選出された」と決めつけない (実際に出てくるまで)
+  // 化けていた姿のポケモンの技・推定は、ゾロアークの行動から来たものなので消す
   b.opp[x].moves = [];
   b.opp[x].statOk = null; b.opp[x].speOk = null;
   if (b.start?.opp?.[x]) { b.start.opp[x].moves = []; b.start.opp[x].statOk = null; b.start.opp[x].speOk = null; }
+  // イリュージョンは「選出の最後のポケモン」に化けるので、化けられていたポケモンは選出の最後 (確定)
+  b.illusionLast = x;
   replay(b, usage, {fromActs: []});
   b.opp[zIdx].illusionSeen = true;
   return n;
