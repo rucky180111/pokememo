@@ -27,6 +27,8 @@ const MY = JSON.parse(fs.readFileSync(new URL('./fixtures/team-expected.json', i
 }));
 // 入れ替えの検証: SWAP='{"species":...}' で ボーマンダ の枠を差し替える
 if (process.env.SWAP) { const i = MY.findIndex(m => m.species === 'salamence'); MY[i] = {megaForme: null, note: '', ...JSON.parse(process.env.SWAP)}; }
+if (process.env.SWAPC) { const i = MY.findIndex(m => m.species === 'corviknight'); MY[i] = {...MY[i], ...JSON.parse(process.env.SWAPC)}; }
+if (process.env.SWAP3) { const i = MY.findIndex(m => m.species === 'gholdengo'); MY[i] = {megaForme: null, note: '', ...JSON.parse(process.env.SWAP3)}; }
 
 // ---- 相手の構築: 使用率と「一緒に使われやすさ」から組む ----
 const EXCLUDE = /^(ditto)$/;
@@ -61,7 +63,8 @@ function makeOppTeam() {
   for (const s of sets) { if (s.item && used.has(s.item)) s.item = ['sitrusberry', 'leftovers', 'focussash', 'lumberry', 'choicescarf', 'expertbelt'].find(x => !used.has(x)) || ''; if (s.item) used.add(s.item); }
   return sets;
 }
-const toPS = sets => sets.map((s, i) => ({name: `M${i}`, species: dex.species[s.species].n, item: s.item ? dex.items[s.item].n : '', ability: dex.abilities[s.ability].n,
+const psName = id => (id.startsWith('aegislash') ? 'Aegislash' : dex.species[id].n);
+const toPS = sets => sets.map((s, i) => ({name: `M${i}`, species: psName(s.species), item: s.item ? dex.items[s.item].n : '', ability: dex.abilities[s.ability].n,
   moves: s.moves.map(m => dex.moves[m].n), nature: s.nature, evs: Object.fromEntries(STAT_KEYS.map((k, i) => [k, s.sp[i]])), ivs: {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31}, level: 50, gender: ''}));
 
 // ---- 盤面の読み取り (シミュレーターの状態 → ダメージ計算の形) ----
@@ -80,6 +83,8 @@ const memo = new Map();
 function dmg(A, D, moveId, b, aSide, dSide, {hazards = false} = {}) {
   const key = [A.p.fullname, A.cond.hp.toFixed(0), JSON.stringify(A.cond.boosts), A.cond.forme, A.cond.status, D.p.fullname, D.cond.hp.toFixed(0), JSON.stringify(D.cond.boosts), D.cond.forme, moveId, JSON.stringify(fieldOf(b)), hazards].join('|');
   if (memo.has(key)) return memo.get(key);
+  // ギルガルドは攻撃するときブレードフォルムになる
+  if (A.build.species.startsWith('aegislash') && dex.moves[moveId]?.c !== 'Z') A = {...A, cond: {...A.cond, forme: 'aegislashblade'}};
   const r = calcDamage({build: A.build, cond: A.cond}, {build: D.build, cond: D.cond}, moveId, {field: fieldOf(b), atkSide: sideOf(aSide), defSide: sideOf(dSide), hazards});
   memo.set(key, r);
   if (memo.size > 200000) memo.clear();
@@ -232,7 +237,13 @@ const has = (team, re) => team.some(s => re.test(s.megaForme || s.species));
 function myPreview(mine, theirs) {
   const I = Object.fromEntries(mine.map((s, i) => [s.species, i]));
   return choosePreview(mine, theirs, (pick, M) => {
-    const third = process.env.THIRD ? I[process.env.THIRD] : [0, 1, 2, 3, 4, 5].filter(i => i !== I.garchomp && i !== I.empoleon).sort((x, y) => theirs.reduce((a, _, j) => a + M[y][j], 0) - theirs.reduce((a, _, j) => a + M[x][j], 0))[0];
+    const smart = () => {
+      if (has(theirs, /^(mimikyu|kingambit|baxcalibur|golisopod)/) && I.corviknight != null) return I.corviknight;
+      if (has(theirs, /^(rillaboom|lucario|glimmora|basculegion)/) && I.rillaboom != null) return I.rillaboom;
+      if (process.env.CORV_SPECIAL && has(theirs, /^(primarina|gholdengo)/) && I.corviknight != null) return I.corviknight;
+      return I[process.env.SLOT3 || 'gholdengo'];
+    };
+    const third = process.env.RULE === 'smart' ? smart() : process.env.THIRD ? I[process.env.THIRD] : [0, 1, 2, 3, 4, 5].filter(i => i !== I.garchomp && i !== I.empoleon).sort((x, y) => theirs.reduce((a, _, j) => a + M[y][j], 0) - theirs.reduce((a, _, j) => a + M[x][j], 0))[0];
     const p = [I.empoleon, I.garchomp, third];
     // 初手の方針
     let lead = I.empoleon;
