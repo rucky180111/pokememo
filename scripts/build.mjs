@@ -31,7 +31,7 @@ void css;
 const hash = crypto.createHash('sha1');
 for (const f of ['app.js', 'app.css', 'cloud.js', 'usage-single.json', 'usage-double.json'].filter(f => fs.existsSync(path.join(out, f)))) hash.update(fs.readFileSync(path.join(out, f)));
 const version = hash.digest('hex').slice(0, 10);
-for (const f of ['index.html', 'sw.js', 'manifest.webmanifest', 'icon.svg']) {
+for (const f of ['index.html', 'sw.js', 'manifest.webmanifest', 'icon.svg', 'diag.html']) {
   const text = fs.readFileSync(path.join(root, 'static', f), 'utf8').replaceAll('__VERSION__', version);
   fs.writeFileSync(path.join(out, f), text);
 }
