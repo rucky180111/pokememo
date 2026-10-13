@@ -37,22 +37,36 @@ export function SettingsScreen() {
     } catch (e) { toast(`更新に失敗: ${e.message}`); }
     setBusy('');
   };
+  const backupFile = () => {
+    const name = `pokememo-${new Date().toISOString().slice(0, 10)}.json`;
+    return new File([JSON.stringify(store.exportAll())], name, {type: 'application/json'});
+  };
   const doExport = () => {
-    const blob = new Blob([JSON.stringify(store.exportAll())], {type: 'application/json'});
+    const f = backupFile();
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `pokememo-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = URL.createObjectURL(f);
+    a.download = f.name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    store.saveSettings({lastBackup: Date.now()});
+  };
+  // iPhone / iPad の共有シート (AirDrop・ファイルに保存・メッセージなど) で送る
+  const canShare = typeof navigator !== 'undefined' && !!navigator.canShare && (() => { try { return navigator.canShare({files: [new File(['{}'], 'x.json', {type: 'application/json'})]}); } catch { return false; } })();
+  const doShare = async () => {
+    try {
+      await navigator.share({files: [backupFile()], title: '対戦メモのデータ'});
+      store.saveSettings({lastBackup: Date.now()});
+    } catch (e) { if (e?.name !== 'AbortError') toast(`共有できませんでした: ${e?.message || e}`); }
   };
   const doImport = async e => {
-    const f = e.currentTarget.files?.[0];
+    const input = e.currentTarget; // await のあとは e.currentTarget が消えるので控えておく
+    const f = input.files?.[0];
     if (!f) return;
     try {
       const n = await store.importAll(JSON.parse(await f.text()));
-      toast(`${n}件を読み込みました`);
+      toast(n ? `${n}件を読み込みました` : '新しい記録はありませんでした (すべて取り込み済み)');
     } catch (err) { toast(`読み込めませんでした: ${err.message}`); }
-    e.currentTarget.value = '';
+    input.value = '';
   };
   const usage = store.state.usage;
   return (
@@ -66,7 +80,19 @@ export function SettingsScreen() {
       </section>
 
       <section class="box">
-        <h4>端末間の同期 (GitHub)</h4>
+        <h4>データの受け渡し・バックアップ (アカウント不要)</h4>
+        <p class="hint">構築と対戦記録を1つのファイルにして送ります。iPhone と iPad の間なら AirDrop で送り、受け取った端末で「ファイルから読み込む」を押すだけです。読み込みは足し合わせで、同じ記録は新しいほうが残ります (消えることはありません)。</p>
+        <div class="btnrow">
+          {canShare && <button class="btn primary" onClick={doShare}>AirDrop などで送る</button>}
+          <button class={cx('btn', !canShare && 'primary')} onClick={doExport}>ファイルに保存</button>
+          <button class="btn" onClick={() => fileRef.current?.click()}>ファイルから読み込む</button>
+          <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={doImport} />
+        </div>
+        <p class="hint">{st.lastBackup ? `最後に書き出した日時: ${new Date(st.lastBackup).toLocaleString('ja-JP')}` : 'まだ書き出していません'}。ブラウザのデータは消えることがあるので、ホーム画面に追加して使い、ときどき書き出しておくと安心です。</p>
+      </section>
+
+      <details class="box" open={!!sync.token}>
+        <summary><h4 class="inline">GitHub で自動同期 (任意・上級者向け)</h4></summary>
         <p class="hint">自分の GitHub アカウントの非公開 Gist に、構築と対戦記録を保存します。スマホ・iPad・PC で同じトークンを入れると、同じデータが使えます。</p>
         <ol class="steps">
           <li>GitHub の Settings → Developer settings → Personal access tokens → <b>Tokens (classic)</b> で新しいトークンを作る</li>
@@ -89,7 +115,7 @@ export function SettingsScreen() {
           </p>
         </>}
         <p class="hint">同じ対戦を2台で同時に編集した場合は、あとから保存したほうが残ります。</p>
-      </section>
+      </details>
 
       <section class="box">
         <h4>使用率データ</h4>
@@ -98,16 +124,6 @@ export function SettingsScreen() {
           <label class="field grow"><span>シングルの集計名</span><input class="input" value={sources.single} onChange={e => store.saveSettings({usageSources: {...sources, single: e.currentTarget.value.trim()}})} /></label>
         </div>
         <button class="btn" disabled={busy === 'usage'} onClick={doRefresh}>{busy === 'usage' ? '取得中…' : '最新の使用率に更新'}</button>
-      </section>
-
-      <section class="box">
-        <h4>バックアップ</h4>
-        <p class="hint">構築と対戦記録を1つのファイルに書き出します。読み込みは、同じ記録なら新しいほうを残します。</p>
-        <div class="btnrow">
-          <button class="btn" onClick={doExport}>ファイルに書き出す</button>
-          <button class="btn" onClick={() => fileRef.current?.click()}>ファイルから読み込む</button>
-          <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={doImport} />
-        </div>
       </section>
 
       <section class="box">

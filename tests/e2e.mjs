@@ -279,6 +279,16 @@ for (const t of ['① 選出', '② 対戦', '③ ダメージ計算']) {
   check(over <= 0, `対戦/${t} が横にはみ出さない (${over}px)`);
 }
 
+// データの受け渡し: 書き出したファイルを別の端末で読み込む
+await page.goto(`${url}#/settings`);
+const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', {name: 'ファイルに保存'}).click()]);
+const dlPath = path.join(outDir, 'transfer.json');
+await dl.saveAs(dlPath);
+check(JSON.parse(fs.readFileSync(dlPath, 'utf8')).battles.length >= 1, '書き出したファイルに対戦記録が入る');
+check(await page.getByText('最後に書き出した日時').isVisible(), '最後に書き出した日時が出る');
+check(!(await page.locator('details.box').getAttribute('open') !== null), 'GitHub 同期は畳まれている');
+await shot(page, 'settings-transfer');
+
 // ---------- iPad 横 ----------
 console.log('iPad 横 (1180x820)');
 const dump = await page.evaluate(() => window.__pokememo.store.exportAll());
@@ -339,6 +349,15 @@ await ipad.evaluate(async () => {
   const P = [[0, 1, 2], [0, 2, 1], [1, 2, 0], [0, 1, 2]], O = [[1, 0, 2], [3, 4, 5], [2, 1, 0], [1, 5, 4]];
   for (let k = 0; k < 11; k++) { const b = JSON.parse(JSON.stringify(base)); b.id = 'x' + k; b.createdAt = base.createdAt - 1000 * (k + 1); b.pick.me = P[k % 4]; b.pick.opp = O[k % 4]; b.result = k % 3 ? 'win' : 'lose'; await s.saveBattle(b); }
 });
+// 受け取った端末でファイルを読み込む (アカウント不要の受け渡し)
+{
+  const {page: other} = await open({width: 820, height: 1180}, 'other');
+  await other.goto(`${url}#/settings`);
+  await other.locator('input[type=file]').setInputFiles(dlPath);
+  await other.waitForTimeout(300);
+  check((await other.evaluate(() => window.__pokememo.store.battles().length)) >= 1, '別の端末でファイルから読み込める');
+  await other.close();
+}
 await ipad.goto(`${url}#/stats`);
 await ipad.waitForSelector('.ta-row');
 check(await ipad.locator('.ta-row:not(.head)').count() === 3, '戦績分析: 構築のポケモンごとの行');

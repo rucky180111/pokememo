@@ -78,7 +78,7 @@ export function App({store, syncer}) {
         {store.state.saveError && <span class="tag bad">{store.state.saveError}</span>}
         {hasToken
           ? <button class={cx('syncbtn', syncStatus.state)} onClick={() => syncer.run()} title={syncStatus.message || '今すぐ同期'}><span class="dot" />{syncLabel}</button>
-          : <a class="syncbtn off" href="#/settings"><span class="dot" />同期オフ</a>}
+          : null}
       </header>
       <main><Guard key={route.hash}>{screen}</Guard></main>
       <nav class="bottomnav" aria-label="メニュー">

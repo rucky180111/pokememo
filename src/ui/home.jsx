@@ -33,6 +33,9 @@ export function BattleList() {
         </div>
       </div>
       {!teams.length && <div class="box"><p>はじめに「構築」で自分の6体を登録してください。登録した構築を選ぶと、対戦のメモとダメージ計算がすぐ始められます。</p><button class="btn primary" onClick={() => nav('#/teams')}>構築を作る</button></div>}
+      {list.length >= 5 && !store.state.settings.sync.token && Date.now() - (store.state.settings.lastBackup || 0) > 14 * 864e5 && (
+        <div class="box note-backup"><span>しばらくデータを書き出していません。ブラウザのデータは消えることがあるので、「設定」から書き出しておくと安心です。</span><button class="btn sm" onClick={() => nav('#/settings')}>設定へ</button></div>
+      )}
       {teams.length > 0 && !list.length && <Empty>まだ対戦の記録がありません。「対戦を記録」で見せ合いから入力できます。「仮想盤面」は統計に含めない計算用の盤面です。</Empty>}
       {list.length > 0 && (
         <div class="brows" role="list">

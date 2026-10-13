@@ -743,3 +743,11 @@ button.mu-row.on { border-color: var(--accent); background: var(--accent-soft); 
 .ta-ow { position: absolute; top: 2px; right: 6px; font-size: 11px; font-weight: 700; }
 .ta-opr { font-size: 10px; background: var(--accent); color: var(--accent-text); border-radius: 999px; padding: 0 6px; margin-top: 2px; }
 @media (max-width: 520px) { .ta-pat { grid-template-columns: minmax(0, 1fr) 76px 76px; } .ta-row { grid-template-columns: 54px repeat(4, minmax(0, 1fr)); } }
+
+details.box > summary { cursor: pointer; list-style: none; }
+details.box > summary::-webkit-details-marker { display: none; }
+details.box > summary::before { content: '▸ '; color: var(--muted); }
+details.box[open] > summary::before { content: '▾ '; }
+details.box > summary h4.inline { display: inline; margin: 0; }
+details.box[open] > summary { margin-bottom: 8px; }
+.note-backup { display: flex; gap: 10px; align-items: center; justify-content: space-between; font-size: 13px; }
