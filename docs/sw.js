@@ -9,6 +9,9 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('pokememo-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
+// 通信が止まったまま返ってこないと起動が進まないので、待つ時間に上限を付ける
+const within = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
+
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
@@ -16,9 +19,15 @@ self.addEventListener('fetch', e => {
   if (url.origin !== self.location.origin) return; // GitHub API などは素通し
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
-    const cached = await cache.match(req, {ignoreSearch: req.mode === 'navigate'});
-    const fresh = fetch(req).then(res => { if (res.ok) cache.put(req, res.clone()); return res; }).catch(() => null);
-    if (req.mode === 'navigate') return (await fresh) || cached || (await cache.match('./index.html')) || Response.error();
-    return cached || (await fresh) || Response.error();
+    const nav = req.mode === 'navigate';
+    // いまの版のキャッシュ → 古い版のキャッシュ の順に探す
+    const cached = (await cache.match(req, {ignoreSearch: nav})) || (await caches.match(req, {ignoreSearch: nav}));
+    const fresh = fetch(req).then(res => { if (res.ok) cache.put(req, res.clone()).catch(() => {}); return res; }).catch(() => null);
+    if (nav) {
+      // 画面: 最新を 3 秒だけ待ち、だめならキャッシュで開く (最新は裏で取り込まれ、次に開いたときに使われる)
+      const fallback = cached || (await caches.match('./index.html'));
+      return (await within(fresh, fallback ? 3000 : 20000)) || fallback || (await fresh) || Response.error();
+    }
+    return cached || (await within(fresh, 20000)) || Response.error();
   })());
 });

@@ -49,7 +49,7 @@ window.__pmVersion = '__VERSION__';
       Promise.all(tasks).catch(function () {}).then(function () { location.reload(); });
     };
   };
-  setTimeout(function () { window.__pmBootFail('起動に時間がかかりすぎています (15秒)'); }, 15000);
+  setTimeout(function () { window.__pmBootFail('起動に時間がかかりすぎています (10秒)'); }, 10000);
 })();
 </script>
 <script src="./app.js?v=__VERSION__" defer></script>
