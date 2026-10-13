@@ -370,7 +370,7 @@ check(await ipad.locator('.ta-opp').count() >= 5, '相手が選出したとき�
 await shot(ipad, 'ipad-stats-opp');
 // 対戦の外 (構築画面) からも見られる
 await ipad.goto(`${url}#/teams`);
-await ipad.locator('.card-link').first().click();
+await ipad.locator('.card-link', {hasText: '戦績と分析'}).first().click();
 await ipad.waitForSelector('.ta-row');
 check(ipad.url().includes('#/stats/'), '構築一覧から戦績と分析へ');
 const tid = await ipad.evaluate(() => window.__pokememo.store.teams()[0].id);
@@ -396,6 +396,19 @@ await shot(ipad, 'ipad-team-report');
   const exp = JSON.parse(fs.readFileSync(new URL('./fixtures/team-expected.json', import.meta.url), 'utf8'));
   const same = t && exp.every((e, i) => ['species', 'item', 'ability', 'nature'].every(k => t.mons[i][k] === e[k]) && t.mons[i].sp.join() === e.sp.join() && e.moves.every(m => t.mons[i].moves.includes(m)));
   check(same, 'スクショから作った構築が正しい (持ち物・特性・性格・能力ポイント・技)');
+  // 構築診断 (構築一覧から)
+  await ipad.goto(`${url}#/teams`);
+  await ipad.locator('.card', {hasText: 'スクショから追加'}).locator('.card-link', {hasText: '構築診断'}).click();
+  await ipad.waitForSelector('.td-table');
+  const missRows = await ipad.locator('tr.td-miss th .type').allInnerTexts();
+  check(missRows.join() === 'ゴースト,あく', `構築診断: 半減で受けられないタイプ (${missRows})`);
+  await shot(ipad, 'ipad-team-diag');
+  await ipad.locator('.seg button', {hasText: '攻め'}).click();
+  check(await ipad.locator('.td-crow.miss').count() >= 1, '構築診断: 弱点を突けない組み合わせ');
+  await shot(ipad, 'ipad-team-diag-off');
+  await ipad.locator('.seg button', {hasText: '使用率上位30'}).click();
+  check(await ipad.locator('.td-tile').count() === 30, '構築診断: 使用率上位30');
+  await shot(ipad, 'ipad-team-diag-top');
 }
 await browser.close();
 server.close();

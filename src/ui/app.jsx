@@ -12,7 +12,7 @@ const NAV = [['#/battles', '対戦'], ['#/teams', '構築'], ['#/stats', '統計
 
 function parseHash() {
   const h = location.hash || '#/battles';
-  const [, page, id] = h.split('/');
+  const [, page, id] = h.split('?')[0].split('/');
   return {page: page || 'battles', id: id ? decodeURIComponent(id) : null, hash: h};
 }
 

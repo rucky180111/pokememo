@@ -6,6 +6,7 @@ import {usageEntries, parseSpread} from '../engine/assume.js';
 import {teamRecord, realBattles} from '../engine/predict.js';
 import {TeamReport} from './stats.jsx';
 import {ShotImport} from './shot-import.jsx';
+import {TeamDiagnosis} from './teamdiag.jsx';
 import {useApp, Sheet, Picker, Seg, MonName, TypeChip, Sprite, Empty, Confirm, cx} from './common.jsx';
 
 export const FORMAT_OPTS = [['single', 'シングル'], ['double', 'ダブル']];
@@ -96,7 +97,10 @@ export function TeamList() {
               </div>
               <div class="team-icons">{t.mons.map(m => <span class="ti-mon" title={speciesName(m.species)}><Sprite id={m.species} size={52} /><small>{speciesName(m.species)}</small></span>)}{!t.mons.length && <span class="muted">ポケモン未登録</span>}</div>
               <div class="card-foot muted">{rec.n ? `${rec.win}勝 ${rec.lose}敗${rec.draw ? ` ${rec.draw}分` : ''} (勝率 ${rec.win + rec.lose ? Math.round((rec.win / (rec.win + rec.lose)) * 100) : '-'}%)` : '対戦記録なし'}</div>
-              {rec.n > 0 && <span class="card-link" role="link" onClick={e => { e.stopPropagation(); nav(`#/stats/${t.id}`); }}>戦績と分析を見る ›</span>}
+              <span class="card-links">
+                {t.mons.length > 0 && <span class="card-link" role="link" onClick={e => { e.stopPropagation(); nav(`#/team/${t.id}?diag`); }}>構築診断 ›</span>}
+                {rec.n > 0 && <span class="card-link" role="link" onClick={e => { e.stopPropagation(); nav(`#/stats/${t.id}`); }}>戦績と分析を見る ›</span>}
+              </span>
             </button>
           );
         })}
@@ -110,7 +114,7 @@ export function TeamEditor({id}) {
   const team = store.team(id);
   const [edit, setEdit] = useState(null); // 編集中のスロット番号
   const [confirm, setConfirm] = useState(false);
-  const [view, setView] = useState('mons');
+  const [view, setView] = useState(() => (location.hash.endsWith('?diag') ? 'diag' : 'mons'));
   if (!team) return <div class="page"><Empty>この構築は見つかりません。</Empty><button class="btn" onClick={() => nav('#/teams')}>構築一覧へ</button></div>;
   const save = fn => { const t = clone(team); fn(t); store.saveTeam(t); };
   const usage = store.state.usage[team.format];
@@ -142,8 +146,9 @@ export function TeamEditor({id}) {
           <input class="input" value={team.name} onChange={e => save(t => { t.name = e.currentTarget.value; })} />
         </label>
       </div>
-      <Seg value={view} options={[['mons', 'ポケモン'], ['report', `戦績と分析${nReal ? ` (${nReal}戦)` : ''}`]]} onChange={setView} />
+      <Seg value={view} options={[['mons', 'ポケモン'], ['diag', '構築診断'], ['report', `戦績と分析${nReal ? ` (${nReal}戦)` : ''}`]]} onChange={setView} />
       {view === 'report' && <div class="team-report"><TeamReport teamId={team.id} /></div>}
+      {view === 'diag' && <div class="team-report"><TeamDiagnosis team={team} /></div>}
       {view === 'mons' && <>
       {warnings.length > 0 && <ul class="warn">{warnings.map(w => <li>{w}</li>)}</ul>}
 
