@@ -11,7 +11,7 @@ fs.mkdirSync(out, {recursive: true});
 
 const result = await esbuild.build({
   entryPoints: [path.join(root, 'src', 'main.jsx')],
-  bundle: true, minify: true, format: 'iife', target: ['es2020', 'safari15'],
+  bundle: true, minify: !process.env.DEBUG, format: 'iife', target: ['es2020', 'safari15'],
   jsx: 'automatic', jsxImportSource: 'preact',
   outfile: path.join(out, 'app.js'), legalComments: 'none', metafile: true,
   define: {'process.env.NODE_ENV': '"production"'},

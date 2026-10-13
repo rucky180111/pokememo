@@ -1,7 +1,7 @@
 // 統計: 自分の戦績と、相手ポケモンごとの傾向
 import {useMemo, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, moveName, abilityName} from '../engine/dex.js';
-import {realBattles, teamRecord, oppRanking, oppSpeciesStats, matchupActions, sortCounts, pct, teamAnalysis} from '../engine/predict.js';
+import {realBattles, oppSpeciesStats, matchupActions, sortCounts, pct, teamAnalysis} from '../engine/predict.js';
 import {usageEntries, parseSpread, spreadLabel, leadRate} from '../engine/assume.js';
 import {useApp, Sheet, Seg, Empty, MonName, Sprite, cx, rate} from './common.jsx';
 
@@ -14,19 +14,9 @@ export function StatsScreen({initialTeam}) {
     const last = store.battles().filter(b => b.teamId && !b.deleted && b.kind !== 'sim').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
     return last?.teamId || '';
   });
-  const [sort, setSort] = useState('seen');
   const [detail, setDetail] = useState(null);
   const [tab, setTab] = useState('mine');
-  const battles = store.battles();
   const teams = store.teams();
-  const filter = {format: fmt, teamId: teamId || undefined};
-  const ranking = useMemo(() => {
-    const r = oppRanking(battles, filter);
-    const wr = e => (e.win + e.lose ? e.win / (e.win + e.lose) : 2);
-    if (sort === 'picked') r.sort((a, b) => b.picked - a.picked);
-    if (sort === 'weak') r.sort((a, b) => wr(a) - wr(b) || b.picked - a.picked);
-    return r;
-  }, [battles, fmt, teamId, sort]);
   const usage = store.state.usage[fmt];
   const usageList = useMemo(() => (usage?.pokemon ? Object.entries(usage.pokemon).sort((a, b) => b[1].u - a[1].u).slice(0, 100) : []), [usage]);
   return (
@@ -156,6 +146,7 @@ function TeamAnalysis({battles, filter, team, sub, setSub, psort, setPsort, onOp
   return (
     <div class="ta">
       <Seg value={sub} options={[['mons', '自分のポケモン'], ['pattern', '選出パターン'], ['opp', '相手 (敵分析)']]} onChange={setSub} />
+      {A.n < battles.filter(b => !b.deleted && b.kind !== 'sim' && (!filter.teamId || b.teamId === filter.teamId)).length && <p class="hint">自分の選出を記録した {A.n}戦で集計しています (選出が未入力の対戦は含みません)。</p>}
       {sub === 'mons' && (
         <div class="ta-table">
           <div class="ta-row head"><span></span><span>選出率</span><span>勝率</span><span>初手率</span><span>初手勝率</span></div>

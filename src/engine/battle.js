@@ -1,7 +1,7 @@
 // 対戦データの生成と、盤面 (仮想のゲーム状況) の状態遷移。
 // UI から独立した純粋なロジックで、tests/ から直接検証する。
 import {dex, megaFormeFor, speciesName, moveName, abilityName} from './dex.js';
-import {newCond, emptyBoosts, currentSpecies, currentAbility, BOOST_KEYS} from './calc.js';
+import {newCond, emptyBoosts, currentSpecies, BOOST_KEYS} from './calc.js';
 
 export const UNDO_DEPTH = 6;
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);

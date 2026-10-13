@@ -201,7 +201,7 @@ function runOne(n) {
       case '-copyboost': case '-swapboost': case '-transform': case '-item': case '-formechange': T.taint = true; break;
       case '-weather': if (!line.includes('[upkeep]')) T.field.weather = WEATHER[p[2]] ?? T.field.weather; break;
       case '-fieldstart': { const id = toID(p[2].replace('move: ', '')); if (id.endsWith('terrain')) T.field.terrain = {electricterrain: 'Electric', grassyterrain: 'Grassy', mistyterrain: 'Misty', psychicterrain: 'Psychic'}[id] || ''; else if (id === 'trickroom') T.field.trickRoom = true; else if (id === 'gravity') T.field.gravity = true; else T.taint = true; break; }
-      case '-fieldend': { const id = toID(p[2].replace('move: ', '')); if (id.endsWith('terrain')) T.field.terrain = ''; else if (id === 'trickroom') T.field.trickRoom = false; else if (id === 'gravity') T.field.gravity = false; break; }
+      case '-fieldend': { const id = toID(p[2].replace('move: ', '')); if (id.endsWith('terrain')) { if (resSeen.some(r => r.key === 'grassy')) T.terrainRes = T.field.terrain; T.field.terrain = ''; } else if (id === 'trickroom') T.field.trickRoom = false; else if (id === 'gravity') T.field.gravity = false; break; }
       case '-sidestart': case '-sideend': {
         const side = sideOf(p[2].slice(0, 2)); const id = toID(p[3].replace('move: ', ''));
         if (id === 'spikes') T[side].flags.spikes = kind === '-sidestart' ? Math.min(3, (T[side].flags.spikes || 0) + 1) : 0;
@@ -316,6 +316,8 @@ function runOne(n) {
         const firstOf = new Map();
         for (const r of resSeen) { const k = `${r.side}${r.mon}`; if (!firstOf.has(k)) firstOf.set(k, r); }
         for (const r of firstOf.values()) { const c = b.state.mons[r.side][r.mon]; c.hp = seen(r.side, r.prev); c.fainted = c.hp <= 0; }
+        // グラスフィールドは回復のあとに終わる (アプリでは回復を選んでから「終わった」を答える)
+        if (T.terrainRes) { b.state.field.terrain = T.terrainRes; T.terrainRes = null; }
         let cands = [];
         try { cands = residualCandidates(b, usage); } catch (e) { stats.crashes.push(`residual 対戦${n}: ${e.message}`); }
         const pick = [];
@@ -328,7 +330,9 @@ function runOne(n) {
         for (const c of cands) if (!firstTurn && c.checked && !T.lateIn?.has(`${c.side}${c.mon}`) && !resSeen.some(r => r.side === c.side && r.mon === c.mon && r.key === c.key)) { bump(stats.resFalse, `${c.key} (${nm(c.side, c.mon)})`); if (process.env.RF) console.log('RF', c.key, nm(c.side, c.mon), `対戦${n} T${battle.turn}`, b.state.mons[c.side][c.mon].hp, T[c.side].mons[c.mon].hp); }
         const finalHp = {};
         for (const r of firstOf.values()) if (r.side === 'opp') { const last = resSeen.filter(x => x.side === r.side && x.mon === r.mon).pop(); finalHp[`opp${r.mon}`] = seen('opp', last.hp); }
+        if (process.env.RH && DEBUG && DEBUG[0] === n && battle.turn === DEBUG[1] + 1) console.log("RH before", JSON.stringify(b.state.mons.me.map(c => c?.hp)), JSON.stringify(resSeen), JSON.stringify(b.state.sides.me), JSON.stringify(b.state.field), JSON.stringify(b.state.mons.me[3]), JSON.stringify(b.my[3]));
         try { finishTurn(b, usage, {residual: pick, noOrder, finalHp}); } catch (e) { stats.crashes.push(`finishTurn 対戦${n}: ${e.stack.split('\n').slice(0, 3).join(' | ')}`); }
+        if (process.env.RH && DEBUG && DEBUG[0] === n && battle.turn === DEBUG[1] + 1) console.log("RH cands", JSON.stringify(cands), "pick", JSON.stringify(pick), "hp", JSON.stringify(b.state.mons.me.map(c => c?.hp)), "auto", JSON.stringify(b.turns.at(-1)?.auto));
         for (const r of resSeen) {
           const last = resSeen.filter(x => x.side === r.side && x.mon === r.mon).pop();
           if (last !== r) continue;

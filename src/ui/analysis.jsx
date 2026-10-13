@@ -1,8 +1,8 @@
 // 盤面からの分析: ダメージ表・素早さ・行動予測
 import {useMemo, useState} from 'preact/hooks';
-import {dex, speciesName, itemName, abilityName, moveName, STAT_JA} from '../engine/dex.js';
-import {calcDamage, currentSpecies, hitRange} from '../engine/calc.js';
-import {attackTable, speedTable, speedLine} from '../engine/board.js';
+import {dex, speciesName, itemName, abilityName, moveName} from '../engine/dex.js';
+import {hitRange} from '../engine/calc.js';
+import {attackTable} from '../engine/board.js';
 import {PRESETS, spreadLabel, leadRate} from '../engine/assume.js';
 import {matchupActions, oppSpeciesStats, sortCounts, pct} from '../engine/predict.js';
 import {condOf, other, setHP} from '../engine/battle.js';
@@ -12,7 +12,6 @@ import {dmgClass} from './battle.jsx';
 import {DmgBar} from './board.jsx';
 
 const CAT_JA = {P: '物理', S: '特殊', Z: '変化'};
-const SIDE_JA = {me: '自分', opp: '相手'};
 
 function defaultAttacker(battle, side) {
   const act = battle.state.sides[side].active.find(i => i != null && !condOf(battle, side, i)?.fainted);
@@ -198,67 +197,6 @@ function DamageDetail({battle, ctx, d, opts, onClose, mut, toast}) {
 }
 
 // ---- 素早さ ----
-export function SpeedTab({battle, ctx}) {
-  const mine = battle.state.sides.me.active.filter(i => i != null && !condOf(battle, 'me', i)?.fainted);
-  const line = useMemo(() => speedLine(ctx), [ctx]);
-  const tr = battle.state.field.trickRoom;
-  const sorted = line.slice().sort((a, b) => ((b.speed ?? b.assumed) - (a.speed ?? a.assumed)) * (tr ? -1 : 1));
-  return (
-    <div class="page-in">
-      {tr && <p class="hint warn-box">トリックルーム中: 素早さが低いほうが先に動きます。</p>}
-      {!mine.length && <Empty>自分のポケモンを場に出すと、対面ごとの比較が出ます。</Empty>}
-      {mine.map(mi => {
-        const t = speedTable(ctx, mi);
-        if (!t) return null;
-        return (
-          <div class="box" key={mi}>
-            <h4>{speciesName(currentSpecies(battle.my[mi], battle.state.mons.me[mi]))} <span class="num big-num">{t.my}</span> <span class="muted">(補正込みの素早さ)</span></h4>
-            {!t.rows.length && <p class="muted">相手のポケモンが場にいません。</p>}
-            {t.rows.map(row => {
-              const o = row.outlook;
-              const first = v => (v === t.my ? 'tie' : (v > t.my) !== tr ? 'opp' : 'me');
-              return (
-                <div class="spd" key={row.idx}>
-                  <div class="spd-head">vs <strong>{speciesName(o.speciesId)}</strong> <span class="muted">素早さ種族値 {o.base}</span></div>
-                  {o.pFaster != null && (
-                    <div class="prob">
-                      <div class="probbar"><span class="p-me" style={{width: `${o.pSlower * 100}%`}} /><span class="p-tie" style={{width: `${o.pTie * 100}%`}} /><span class="p-opp" style={{width: `${o.pFaster * 100}%`}} /></div>
-                      <div class="prob-txt">自分が先 <b>{rate(o.pSlower)}</b>・同速 {rate(o.pTie)}・相手が先 <b>{rate(o.pFaster)}</b> <span class="muted">(使用率の配分{o.canScarf && o.pScarf > 0 ? `・スカーフ率 ${rate(o.pScarf)}` : ''}から算出)</span></div>
-                    </div>
-                  )}
-                  <table class="mini">
-                    <thead><tr><th></th>{o.bench.map(b => <th>{b.label}</th>)}</tr></thead>
-                    <tbody>
-                      <tr><th>そのまま</th>{o.bench.map(b => <td class={cx('num', `who-${first(b.eff)}`, !b.ok && 'ruled')}>{b.eff}</td>)}</tr>
-                      {o.canScarf && <tr><th>スカーフ</th>{o.bench.map(b => <td class={cx('num', `who-${first(b.scarfEff)}`, !b.okScarf && 'ruled')}>{b.scarfEff}</td>)}</tr>}
-                    </tbody>
-                  </table>
-                  {o.range && <p class="hint">行動順からの絞り込み: {o.range.plain ? `実数値 ${o.range.plain[0]}〜${o.range.plain[1]}` : 'スカーフなしでは説明がつかない'}{o.range.scarf && o.canScarf ? ` / スカーフなら ${o.range.scarf[0]}〜${o.range.scarf[1]}` : ''}</p>}
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
-      <p class="legend"><span class="lg who-me">自分が先</span><span class="lg who-opp">相手が先</span><span class="lg who-tie">同速</span><span class="muted">打ち消し線は、記録した行動順と合わない配分です。</span></p>
-      <div class="box">
-        <h4>全体の素早さ順 <span class="muted">(相手は推定型。場の補正込み)</span></h4>
-        <ol class="spdline">
-          {sorted.map(e => (
-            <li class={e.side}>
-              <span class={cx('side-tag', e.side)}>{SIDE_JA[e.side]}</span>
-              <span class="nm">{speciesName(e.species)}</span>
-              <span class="num">{e.side === 'me' ? e.speed : e.assumed}</span>
-              {e.side === 'opp' && <span class="muted num">最遅 {e.bench[3].eff}〜最速 {e.bench[0].eff}{e.canScarf ? ` (スカーフ ${e.bench[0].scarfEff})` : ''}</span>}
-            </li>
-          ))}
-        </ol>
-      </div>
-    </div>
-  );
-}
-
-// ---- 行動予測 ----
 function Bars({title, entries, total, name, note}) {
   if (!entries.length) return null;
   return (

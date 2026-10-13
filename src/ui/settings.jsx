@@ -2,7 +2,7 @@
 import {useRef, useState} from 'preact/hooks';
 import {dex} from '../engine/dex.js';
 import {refreshUsage, DEFAULT_SOURCES} from '../usage.js';
-import {useApp, Seg, Confirm, cx} from './common.jsx';
+import {useApp, Confirm, cx} from './common.jsx';
 
 export function SettingsScreen() {
   const {store, syncer, toast} = useApp();

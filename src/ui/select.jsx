@@ -4,8 +4,8 @@ import {dex, speciesName, itemName, moveName, typeEffect} from '../engine/dex.js
 import {newOpp, sendOut, activeCount, pickCount} from '../engine/battle.js';
 import {leadRate} from '../engine/assume.js';
 import {oppSpeciesStats, similarTeams, leadsOf, matchupMatrix} from '../engine/predict.js';
-import {useApp, Picker, Seg, TypeChip, Sprite, cx, rate, fmtPct} from './common.jsx';
-import {MonEditor, FORMAT_OPTS} from './teams.jsx';
+import {useApp, Picker, TypeChip, Sprite, cx, rate} from './common.jsx';
+import {MonEditor} from './teams.jsx';
 import {OppSheet} from './battle.jsx';
 
 export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {

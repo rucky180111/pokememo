@@ -1,17 +1,15 @@
 // 対戦画面: 見せ合い・盤面・ダメージ・素早さ・予測・ログ
 import {useEffect, useMemo, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName} from '../engine/dex.js';
-import {clone, normalizeBattle, newOpp, sendOut, activeCount, pickCount, undoTurn, describeAct, turnNumber} from '../engine/battle.js';
-import {boardContext, attackTable} from '../engine/board.js';
-import {oppSpeciesStats, similarTeams, leadsOf, pct} from '../engine/predict.js';
-import {spreadLabel, PRESETS, SPE_COMBOS, speFromCombo, leadRate} from '../engine/assume.js';
-import {useApp, Sheet, Picker, Seg, MonName, TypeChip, Empty, Confirm, cx, rate, fmtPct} from './common.jsx';
-import {MonEditor, FORMAT_OPTS, buildSummary} from './teams.jsx';
-import {BoardTab} from './board.jsx';
+import {clone, normalizeBattle, newOpp, describeAct} from '../engine/battle.js';
+import {boardContext} from '../engine/board.js';
+import {spreadLabel, PRESETS, SPE_COMBOS, speFromCombo} from '../engine/assume.js';
+import {useApp, Sheet, Picker, Seg, TypeChip, Empty, Confirm, cx, rate} from './common.jsx';
+import {MonEditor} from './teams.jsx';
 import {SelectTab} from './select.jsx';
 import {Arena} from './arena.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
-import {DamageTab, SpeedTab, PredictTab} from './analysis.jsx';
+import {DamageTab} from './analysis.jsx';
 
 const TABS = [['setup', '① 選出'], ['board', '② 対戦'], ['dmg', '③ ダメージ計算']];
 const RESULT_OPTS = [['', '未決'], ['win', '勝ち'], ['lose', '負け'], ['draw', '引分']];
@@ -39,8 +37,9 @@ export function BattleScreen({id}) {
   if (!battle) return <div class="page"><Empty>この対戦は見つかりません。</Empty><button class="btn" onClick={() => nav('#/battles')}>対戦一覧へ</button></div>;
 
   // 対戦データを書き換えて保存する。fn には編集用のコピーが渡る。
+  // 同じ操作の中で続けて書き換えても前の変更を失わないよう、保存済みの最新から複製する
   const mut = fn => {
-    const b = clone(battle);
+    const b = clone(store.battle(id) || battle);
     const out = fn(b);
     normalizeBattle(b);
     store.saveBattle(b);
@@ -78,151 +77,6 @@ export function BattleScreen({id}) {
   );
 }
 
-// ---- 見せ合い ----
-function SetupTab({battle, ctx, mut, usage, setTab, toast}) {
-  const {store} = useApp();
-  const [pick, setPick] = useState(null);
-  const [oppEdit, setOppEdit] = useState(null);
-  const [myEdit, setMyEdit] = useState(null);
-  const [matrix, setMatrix] = useState(false);
-  const battles = store.battles();
-  const nLead = activeCount(battle.format), nPick = pickCount(battle.format);
-  const sim = useMemo(() => similarTeams(battles.filter(b => b.id !== battle.id), battle.opp.map(o => o.species), {format: battle.format}), [battles, battle.opp, battle.format]);
-  const usageRank = useMemo(() => (usage?.pokemon ? Object.fromEntries(Object.entries(usage.pokemon).map(([k, v]) => [k, v.u])) : null), [usage]);
-
-  const togglePick = (side, i) => mut(b => {
-    const list = b.pick[side];
-    const at = list.indexOf(i);
-    if (at >= 0) {
-      list.splice(at, 1);
-      const s = b.state.sides[side];
-      s.active = s.active.map(x => (x === i ? null : x));
-    } else if (side === 'opp' || list.length < nPick) list.push(i);
-  });
-  const start = () => {
-    if (!battle.pick.me.length) { toast('自分の選出をタップで選んでください'); return; }
-    mut(b => {
-      for (const side of ['me', 'opp']) {
-        leadsOf(b, side).forEach((mi, slot) => { if (b.state.sides[side].active[slot] == null) sendOut(b, side, slot, mi, {resolveAbility: ctx.strictAbility}); });
-      }
-    });
-    setTab('board');
-  };
-  const leadShown = battle.state.sides.me.active.some(x => x != null);
-  return (
-    <div class="page-in">
-      <div class="form">
-        <label class="field grow"><span>相手の名前 (任意)</span><input class="input" value={battle.oppName} onChange={e => mut(b => { b.oppName = e.currentTarget.value; })} /></label>
-        <label class="field"><span>日付</span><input class="input" type="date" value={battle.date} onChange={e => mut(b => { b.date = e.currentTarget.value; })} /></label>
-      </div>
-
-      <h3>相手のパーティ <span class="muted">タップで情報を入力 / 番号は選出された順</span></h3>
-      <div class="party">
-        {battle.opp.map((o, i) => {
-          const v = ctx.views[i];
-          const st = oppSpeciesStats(battles.filter(b => b.id !== battle.id), o.species, {format: battle.format});
-          const order = battle.pick.opp.indexOf(i);
-          return (
-            <div class={cx('party-row', order >= 0 && 'picked')} key={i}>
-              <button class={cx('pick-no', order >= 0 && 'on', order >= 0 && order < nLead && 'lead')} onClick={() => togglePick('opp', i)} aria-label="選出された">{order >= 0 ? order + 1 : '・'}</button>
-              <button class="party-main" onClick={() => setOppEdit(i)}>
-                <MonName id={o.species} />
-                <span class="party-sub">
-                  {v && <span>{v.megaP > 0 ? `メガ率${rate(v.megaP)} ` : ''}{itemName(v.build.item) || '持ち物?'}{v.itemGuess ? '?' : ''} / {abilityName(v.build.ability)}{v.abilityGuess ? '?' : ''} / {spreadLabel(v.build.nature, v.build.sp)}</span>}
-                </span>
-                <span class="party-sub">
-                  {v?.hasData && <span class="stat-pill">採用率 {rate(v.usageAll || 0, 1)}・初手率 {rate(leadRate(v, battle.format))}</span>}
-                  {st.seen > 0 && <span class="stat-pill mine">自分の記録 {st.seen}戦: 選出 {st.picked}・初手 {st.lead}</span>}
-                </span>
-              </button>
-            </div>
-          );
-        })}
-        {battle.opp.length < 6 && <button class="card add" onClick={() => setPick({side: 'opp'})}>＋ 相手のポケモンを追加 ({battle.opp.length}/6)</button>}
-      </div>
-      {sim.n > 0 && (
-        <div class="box">
-          <h4>似た並びとの過去の対戦 {sim.n}戦 ({sim.win}勝 {sim.lose}敗)</h4>
-          <div class="chips">
-            {battle.opp.filter(o => sim.picked[o.species]).sort((a, b) => sim.picked[b.species] - sim.picked[a.species]).map(o => (
-              <span class="chip">{speciesName(o.species)} 選出 {sim.picked[o.species]}/{sim.n}{sim.lead[o.species] ? ` (初手 ${sim.lead[o.species]})` : ''}</span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <h3>自分の選出 <span class="muted">タップした順に選出。先頭{nLead}体が初手 ({battle.pick.me.length}/{nPick})</span></h3>
-      <div class="party">
-        {battle.my.map((m, i) => {
-          const order = battle.pick.me.indexOf(i);
-          return (
-            <div class={cx('party-row', order >= 0 && 'picked')} key={i}>
-              <button class={cx('pick-no', order >= 0 && 'on', order >= 0 && order < nLead && 'lead')} onClick={() => togglePick('me', i)} aria-label="選出する">{order >= 0 ? order + 1 : '・'}</button>
-              <button class="party-main" onClick={() => setMyEdit(i)}>
-                <MonName id={m.species} />
-                <span class="party-sub">{itemName(m.item) || '持ち物なし'} / {abilityName(m.ability)} / {buildSummary(m)}</span>
-                <span class="party-sub">{(m.moves || []).map(moveName).join('・')}</span>
-              </button>
-            </div>
-          );
-        })}
-        {battle.my.length < 6 && <button class="card add" onClick={() => setPick({side: 'me'})}>＋ 自分のポケモンを追加 ({battle.my.length}/6)</button>}
-      </div>
-      <div class="btnrow pad-s">
-        <button class="btn" onClick={() => setMatrix(m => !m)}>{matrix ? '相性表を閉じる' : '6×6 相性表を見る'}</button>
-        <button class="btn primary" onClick={start}>{leadShown ? '盤面へ' : '初手を場に出して開始'}</button>
-      </div>
-      {matrix && <Matrix battle={battle} ctx={ctx} />}
-
-      {pick && <Picker kind="species" title={pick.side === 'opp' ? '相手のポケモン' : '自分のポケモン'} rank={usageRank} onClose={() => setPick(null)}
-        filter={id => !dex.species[id].mega && !dex.species[id].bo}
-        onPick={sid => {
-          if (pick.side === 'opp') { mut(b => { b.opp.push(newOpp(sid)); }); if (battle.opp.length >= 5) setPick(null); }
-          else { setPick(null); setMyEdit({add: sid}); }
-        }} />}
-      {oppEdit != null && battle.opp[oppEdit] && <OppSheet battle={battle} idx={oppEdit} ctx={ctx} mut={mut} usage={usage} onClose={() => setOppEdit(null)} />}
-      {myEdit != null && (
-        <MonEditor title="この対戦での自分の型" usage={usage} isNew={myEdit.add != null}
-          build={myEdit.add != null ? {species: myEdit.add, item: '', ability: dex.species[myEdit.add].ab[0], nature: 'Serious', sp: [0, 0, 0, 0, 0, 0], moves: [], note: ''} : battle.my[myEdit]}
-          onSave={bd => { mut(b => { if (myEdit.add != null) b.my.push(bd); else b.my[myEdit] = bd; }); setMyEdit(null); }} onClose={() => setMyEdit(null)} />
-      )}
-    </div>
-  );
-}
-
-// 6×6 の相性表: 自分の最大打点 (与) と相手の最大打点 (被)
-function Matrix({battle, ctx}) {
-  const data = useMemo(() => {
-    const give = battle.my.map((_, i) => attackTable(ctx, 'me', i));
-    const take = battle.opp.map((_, i) => attackTable(ctx, 'opp', i));
-    return {give, take};
-  }, [ctx]);
-  if (!battle.opp.length || !battle.my.length) return <Empty>自分と相手のポケモンを登録すると表示されます。</Empty>;
-  const cell = r => (r ? <span class={cx('mx', dmgClass(r))}>{r.immune ? '無効' : `${fmtPct(r.maxPct)}%`}</span> : <span class="mx none">—</span>);
-  return (
-    <div class="box">
-      <h4>相性表 <span class="muted">上段: 自分→相手の最大打点 / 下段: 相手→自分の最大打点 (相手は推定型・候補技)</span></h4>
-      <div class="scroll-x">
-        <table class="matrix">
-          <thead><tr><th></th>{battle.opp.map(o => <th>{speciesName(o.species)}</th>)}</tr></thead>
-          <tbody>
-            {battle.my.map((m, i) => (
-              <tr>
-                <th>{speciesName(m.species)}</th>
-                {battle.opp.map((_, j) => {
-                  const g = data.give[i]?.targets.find(t => t.idx === j)?.best;
-                  const t = data.take[j]?.targets.find(t2 => t2.idx === i)?.best;
-                  return <td><div class="mx-pair">{cell(g)}{cell(t)}</div></td>;
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 export function dmgClass(r) {
   if (!r || !r.ok || r.status) return 'none';
   if (r.immune) return 'immune';
@@ -246,9 +100,9 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
   const moveRank = v ? Object.fromEntries(v.moves.filter(m => !m.known).map(m => [m.id, m.rate])) : null;
   const itemRank = v?.items?.length ? Object.fromEntries(v.items) : null;
   const megas = s.megas || [];
-  const megaItems = megas.map(m => dex.species[m].stone);
   // 持ち物の率は、通常の姿とメガの使用率で重みづけ済み (メガストーンが 100% にならない)
   const allItemRank = itemRank;
+  const usedInLog = battle.pick.opp.includes(idx) || battle.state.sides.opp.active.includes(idx) || battle.turns.some(t => t.acts.some(a => (a.side === 'opp' && (a.mon === idx || a.to === idx)) || (a.target?.side === 'opp' && a.target.mon === idx)));
   return (
     <Sheet title={`相手の${speciesName(o.species)}`} onClose={onClose} wide>
       <div class="editor">
@@ -311,13 +165,15 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
         <label class="field"><span>メモ</span><textarea class="input" rows={2} value={o.note || ''} onChange={e => set(x => { x.note = e.currentTarget.value; })} /></label>
         <div class="btnrow">
           <button class="btn" onClick={() => setPick('species')}>ポケモンを変更</button>
-          <button class="btn danger" onClick={() => { mut(b => {
+          {/* 対戦の記録に出てきたポケモンを外すと、記録の番号がずれて壊れるので外せない */}
+          {!usedInLog && <button class="btn danger" onClick={() => { mut(b => {
             b.opp.splice(idx, 1); b.state.mons.opp.splice(idx, 1);
             const fix = i => (i === idx ? null : i > idx ? i - 1 : i);
             b.pick.opp = b.pick.opp.map(fix).filter(i => i != null);
             b.state.sides.opp.active = b.state.sides.opp.active.map(i => (i == null ? null : fix(i)));
-          }); onClose(); }}>パーティから外す</button>
+          }); onClose(); }}>パーティから外す</button>}
         </div>
+        {usedInLog && <p class="hint">対戦の記録に出てきたポケモンなのでパーティから外せません。見間違いなら「ポケモンを変更」で直せます。</p>}
       </div>
       {pick === 'item' && <Picker kind="items" title="相手の持ち物" allowClear clearLabel="不明に戻す" rank={allItemRank} onClose={() => setPick(null)}
         filter={id => !dex.items[id].ms || !!dex.items[id].ms[o.species]}

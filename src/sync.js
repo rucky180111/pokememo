@@ -1,5 +1,7 @@
 // GitHub の非公開 Gist を使った端末間同期。
 // 構築は 1 ファイル、対戦記録は月ごとのファイルに分けて保存し、レコード単位で updatedAt の新しい方を採用する。
+import {TOMBSTONE_TTL} from './store.js';
+
 const API = 'https://api.github.com';
 export const TEAMS_FILE = 'pokememo-teams.json';
 export const battleFile = b => {
@@ -86,20 +88,30 @@ export async function syncOnce(store, {fetchFn = fetch, now = Date.now} = {}) {
   if (!gistId) gistId = await findOrCreateGist(fetchFn, cfg.token);
   const gist = await gh(fetchFn, cfg.token, `/gists/${gistId}`);
 
-  const remoteTeams = [];
-  const remoteBattles = [];
+  // 同じ id が複数のファイルにある場合 (削除の印は別ファイルに入る) は、新しいほうを使う
+  const newest = new Map();
+  const keep = (kind, r) => {
+    if (!r || typeof r.id !== 'string') return;
+    const k = `${kind}:${r.id}`, cur = newest.get(k);
+    if (!cur || (r.updatedAt || 0) > (cur.updatedAt || 0)) newest.set(k, r);
+  };
   const remoteText = {};
   for (const [name, file] of Object.entries(gist.files || {})) {
     if (name !== TEAMS_FILE && !isBattleFile(name)) continue;
     const data = await readFile(fetchFn, file);
     remoteText[name] = JSON.stringify(data);
-    if (name === TEAMS_FILE) remoteTeams.push(...(data.teams || []));
-    else remoteBattles.push(...(data.battles || []));
+    if (name === TEAMS_FILE) for (const r of data.teams || []) keep('team', r);
+    else for (const r of data.battles || []) keep('battle', r);
   }
+  // 期限切れの削除の印は取り込まず、送り直しもしない
+  const cutoff = now() - TOMBSTONE_TTL;
+  const live = r => !(r.deleted && (r.updatedAt || 0) < cutoff);
+  const remoteTeams = [], remoteBattles = [];
+  for (const [k, r] of newest) if (live(r)) (k.startsWith('team:') ? remoteTeams : remoteBattles).push(r);
 
   const lt = store.state.teams, lb = store.state.battles;
-  const mt = mergeRecords(lt, remoteTeams);
-  const mb = mergeRecords(lb.map(slimBattle), remoteBattles);
+  const mt = mergeRecords(lt.filter(live), remoteTeams);
+  const mb = mergeRecords(lb.filter(live).map(slimBattle), remoteBattles);
 
   // ローカルへ取り込み (リモートの方が新しいもの)
   // 通信中に端末側で編集されていた場合は、その編集を上書きしない
@@ -116,6 +128,12 @@ export async function syncOnce(store, {fetchFn = fetch, now = Date.now} = {}) {
   for (const r of mb.merged) (groups[battleFile(r)] ||= []).push(r);
   for (const [name, list] of Object.entries(groups)) {
     const text = JSON.stringify({v: 1, battles: list.sort((a, b) => (a.id < b.id ? -1 : 1))});
+    if (text !== remoteText[name]) files[name] = {content: text};
+  }
+  // 中身がすべて別のファイルへ移った (削除の印になった) 月のファイルは空にする
+  for (const name of Object.keys(remoteText)) {
+    if (name === TEAMS_FILE || groups[name]) continue;
+    const text = JSON.stringify({v: 1, battles: []});
     if (text !== remoteText[name]) files[name] = {content: text};
   }
   const pushed = Object.keys(files).length;

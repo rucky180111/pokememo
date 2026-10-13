@@ -1,4 +1,5 @@
 // アプリの外枠: 画面切り替え・下部ナビ・同期表示・通知
+import {Component} from 'preact';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {AppCtx, useStoreVersion, cx} from './common.jsx';
 import {BattleList} from './home.jsx';
@@ -13,6 +14,28 @@ function parseHash() {
   const h = location.hash || '#/battles';
   const [, page, id] = h.split('/');
   return {page: page || 'battles', id: id ? decodeURIComponent(id) : null, hash: h};
+}
+
+// 画面の表示中に例外が起きても、真っ白にせず案内と戻る手段を出す (データは保存済みのまま)
+class Guard extends Component {
+  state = {err: null};
+  componentDidCatch(err) { console.error(err); this.setState({err}); }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div class="page">
+        <div class="box">
+          <h4>この画面の表示中に問題が起きました</h4>
+          <p class="hint">記録したデータは保存されたままです。別の画面に移るか、再読み込みしてください。</p>
+          <p class="hint"><code>{String(this.state.err?.message || this.state.err)}</code></p>
+          <div class="btnrow">
+            <button class="btn" onClick={() => { location.hash = '#/battles'; }}>対戦一覧へ</button>
+            <button class="btn primary" onClick={() => location.reload()}>再読み込み</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 }
 
 export function App({store, syncer}) {
@@ -57,7 +80,7 @@ export function App({store, syncer}) {
           ? <button class={cx('syncbtn', syncStatus.state)} onClick={() => syncer.run()} title={syncStatus.message || '今すぐ同期'}><span class="dot" />{syncLabel}</button>
           : <a class="syncbtn off" href="#/settings"><span class="dot" />同期オフ</a>}
       </header>
-      <main>{screen}</main>
+      <main><Guard key={route.hash}>{screen}</Guard></main>
       <nav class="bottomnav" aria-label="メニュー">
         {NAV.map(([h, label]) => <a href={h} class={cx(h === `#/${section}` && 'on')} aria-current={h === `#/${section}` ? 'page' : undefined}>{label}</a>)}
       </nav>

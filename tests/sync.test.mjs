@@ -44,7 +44,7 @@ async function device(token = 'tok') {
   await store.saveSettings({sync: {...store.state.settings.sync, token}});
   return store;
 }
-let clock = 1000;
+let clock = Date.now() - 1e8; // 実時刻より少し前から進める (アプリの削除は実時刻で記録される)
 const tick = () => { clock += 1000; return clock; };
 // テストでは時刻を明示的に進める
 async function saveTeamAt(store, team) { team.updatedAt = tick(); await store.saveTeam(team, {touch: false}); }
@@ -131,6 +131,29 @@ test('2台の端末で構築と対戦記録が行き来する', async () => {
   // トークンは同期データに含まれない
   const all = JSON.stringify([...gh.gists.values()]);
   assert.ok(!all.includes('"token"'));
+});
+
+test('アプリの削除 (別ファイルに入る削除の印) も別の端末に伝わり、古い月のファイルは空になる', async () => {
+  const gh = fakeGitHub();
+  const A = await device(), B = await device();
+  const team = newTeam(); await saveTeamAt(A, team);
+  const b = newBattle({team}); b.createdAt = Date.UTC(2026, 3, 5); await saveBattleAt(A, b);
+  await syncOnce(A, {fetchFn: gh.fetchFn});
+  await syncOnce(B, {fetchFn: gh.fetchFn});
+  assert.equal(B.battles().length, 1);
+  await A.deleteBattle(b.id);
+  await syncOnce(A, {fetchFn: gh.fetchFn});
+  const g = [...gh.gists.values()][0];
+  assert.deepEqual(JSON.parse(g.files['pokememo-battles-2026-04.json']).battles, [], '元の月のファイルから消える');
+  // B の端末から見て、どの順でファイルを読んでも削除が勝つ
+  await syncOnce(B, {fetchFn: gh.fetchFn});
+  assert.equal(B.battles().length, 0);
+  assert.equal(B.battle(b.id), null);
+  // 期限切れの削除の印は取り込まない
+  g.files['pokememo-battles-misc.json'] = JSON.stringify({v: 1, battles: [{id: 'ancient', deleted: true, updatedAt: 5, createdAt: 0}]});
+  const C = await device();
+  await syncOnce(C, {fetchFn: gh.fetchFn});
+  assert.ok(!C.state.battles.some(x => x.id === 'ancient'));
 });
 
 test('大きいファイル (truncated) は raw_url から読む', async () => {

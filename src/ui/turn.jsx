@@ -7,7 +7,7 @@ import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engin
 import {megaTarget, buildOf, condOf, other, PIVOT_MOVES} from '../engine/battle.js';
 import {RECOIL, HALF_RECOIL, DRAIN, SELF_FX_JA} from '../engine/flow.js';
 import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn, replay, expiryCandidates, hazardDamage, dispOf} from '../engine/flow.js';
-import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, cx} from './common.jsx';
+import {Picker, Sheet, Seg, Toggle, Sprite, cx} from './common.jsx';
 
 const SIDE_JA = {me: '自分', opp: '相手'};
 const FLAGS = [['reflect', 'リフレクター'], ['lightScreen', 'ひかりのかべ'], ['auroraVeil', 'オーロラベール'], ['tailwind', 'おいかぜ'], ['sr', 'ステルスロック']];

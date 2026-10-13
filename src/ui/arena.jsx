@@ -1,16 +1,15 @@
 // 対戦フェーズ: 左 = 時系列とターン入力 / 中央 = 相手と自分の盤面 / 右 = ダメージ表・統計
-import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
+import {useMemo, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf, STAT_JA, STAT_KEYS} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility, finalSpeed} from '../engine/calc.js';
-import {sendOut, megaEvolve, megaTarget, setHP, setWeather, setTerrain, setSideFlag, setFieldFlag, undoTurn, buildOf, condOf, other, turnNumber} from '../engine/battle.js';
+import {condOf, turnNumber} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {speedOutlook} from '../engine/assume.js';
-import {addAct, addEvent, endTurn, openTurn, actLine} from '../engine/flow.js';
 import {estimateStats, scenarioBuild} from '../engine/estimate.js';
-import {Picker, Seg, Toggle, TypeChip, Sprite, Empty, cx, fmtPct, rate} from './common.jsx';
+import {Seg, Toggle, TypeChip, Sprite, Empty, cx, fmtPct, rate} from './common.jsx';
 import {OppSheet, dmgClass, LogTab} from './battle.jsx';
 import {MonEditor} from './teams.jsx';
-import {HPControl, DmgBar} from './board.jsx';
+import {DmgBar} from './board.jsx';
 import {PredictTab} from './analysis.jsx';
 import {Timeline, MegaButtons} from './turn.jsx';
 import {dispOf} from '../engine/flow.js';

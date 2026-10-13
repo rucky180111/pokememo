@@ -2,7 +2,7 @@
 import {useState} from 'preact/hooks';
 import {speciesName} from '../engine/dex.js';
 import {newBattle, activeCount} from '../engine/battle.js';
-import {useApp, Sheet, Seg, Empty, Sprite, cx} from './common.jsx';
+import {useApp, Sheet, Empty, Sprite, cx} from './common.jsx';
 
 const RESULT_JA = {win: '勝ち', lose: '負け', draw: '引分'};
 

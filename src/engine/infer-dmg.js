@@ -165,7 +165,6 @@ export function spreadFits(opp, nature, sp) {
  */
 export function applyInference(opp, view, res) {
   if (!res) return '';
-  const names = {atk: 'こうげき', spa: 'とくこう', def: 'ぼうぎょ', spd: 'とくぼう'};
   if (!res.count) return `この条件では説明がつきません (急所・持ち物・ランク・天候などの設定を確認してください)。絞り込みは保存していません。`;
   opp.statOk ||= {};
   const prev = opp.statOk[res.stat];

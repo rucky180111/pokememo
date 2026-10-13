@@ -2,14 +2,12 @@
 import {useMemo, useState} from 'preact/hooks';
 import {dex, statsOf, STAT_JA, STAT_KEYS, SP_MAX, SP_TOTAL, spTotal, clampSP, speciesName, itemName, abilityName, moveName, natureName, megaFormeFor} from '../engine/dex.js';
 import {newTeam, newBuild, newBattle, clone, uid} from '../engine/battle.js';
-import {usageEntries, parseSpread, spreadLabel} from '../engine/assume.js';
+import {usageEntries, parseSpread} from '../engine/assume.js';
 import {teamRecord, realBattles} from '../engine/predict.js';
 import {TeamReport} from './stats.jsx';
 import {useApp, Sheet, Picker, Seg, MonName, TypeChip, Empty, Confirm, cx} from './common.jsx';
 
 export const FORMAT_OPTS = [['single', 'シングル'], ['double', 'ダブル']];
-const NATURE_ORDER = ['Adamant', 'Jolly', 'Modest', 'Timid', 'Bold', 'Impish', 'Calm', 'Careful', 'Brave', 'Quiet', 'Relaxed', 'Sassy',
-  'Naive', 'Hasty', 'Naughty', 'Lonely', 'Mild', 'Rash', 'Lax', 'Gentle', 'Serious', 'Hardy', 'Docile', 'Bashful', 'Quirky'];
 const natureLabel = n => {
   const d = dex.natures[n];
   if (!d?.p) return `${d?.j || n} (補正なし)`;
@@ -111,7 +109,6 @@ export function TeamEditor({id}) {
   const save = fn => { const t = clone(team); fn(t); store.saveTeam(t); };
   const usage = store.state.usage[team.format];
   const warnings = teamWarnings(team);
-  const rec = teamRecord(store.battles(), team.id);
   const nReal = realBattles(store.battles(), {format: 'single', teamId: team.id}).length;
   const startBattle = async kind => {
     if (!team.mons.length) { toast('先にポケモンを登録してください'); return; }

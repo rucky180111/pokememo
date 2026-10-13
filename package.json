@@ -10,7 +10,9 @@
   "scripts": {
     "data": "node scripts/build-data.mjs",
     "build": "node scripts/build.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "monkey": "node tests/monkey.mjs",
+    "e2e": "node tests/e2e.mjs"
   },
   "keywords": [],
   "author": "",

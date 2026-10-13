@@ -2,7 +2,7 @@
 import {dex} from './dex.js';
 import {calcDamage, finalSpeed, currentSpecies, currentAbility, defaultHits, newCond, movePriority} from './calc.js';
 import {oppView, oppCond, speedOutlook} from './assume.js';
-import {buildOf, condOf, other, faintedCount, defaultAbilityResolver} from './battle.js';
+import {condOf, other, faintedCount, defaultAbilityResolver} from './battle.js';
 import {fitBuild} from './estimate.js';
 
 const WEATHER_ABILITY = {drizzle: 'Rain', drought: 'Sun', sandstream: 'Sand', snowwarning: 'Snow'};
