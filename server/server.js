@@ -66,6 +66,8 @@ const server = http.createServer((req, res) => {
   cors(req, res);
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const url = new URL(req.url, 'http://x');
+  // 443 番の /pokememo の下に公開したとき (学校などで 10000 番が通らない場合) も同じように動かす
+  url.pathname = url.pathname.replace(/^\/pokememo(?=\/)/, '');
   if (url.pathname === '/api/health') return send(res, 200, {ok: true});
   if (!url.pathname.startsWith('/api/')) return send(res, 404, {error: 'not found'});
   if (!authed(req)) return send(res, 401, {error: '同期キーが違います'});
