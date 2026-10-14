@@ -408,7 +408,14 @@ function MoveAction({side, mon, battle, usage, act, setAct, commit, r}) {
     if (FORCE_MOVES.has(act.move)) extra.forceTo = act.forceTo;
     record(extra);
   };
-  saveRef.current = act.stage === 'hp' ? save : null;
+  const fbench = FORCE_MOVES.has(act.move) && tgt ? benchOf(battle, tgt.side).filter(i => !condOf(battle, tgt.side, i)?.fainted) : [];
+  // とんぼがえり等で交代先、ドラゴンテール等で出てきたポケモンが必要なら、選ぶまで記録しない
+  const pivotBench = PIVOT_MOVES.has(act.move) ? benchOf(battle, side).filter(i => !condOf(battle, side, i)?.fainted) : [];
+  const willFaint = (act.hp ?? mid) <= 0;
+  const needTo = pivotBench.length > 0 && act.to == null;
+  const needForce = FORCE_MOVES.has(act.move) && !willFaint && fbench.length > 0 && act.forceTo == null;
+  const blocked = act.stage === 'hp' && (needTo || needForce);
+  saveRef.current = act.stage === 'hp' && !blocked ? save : null;
   const sec = (mv?.sec || []).flatMap(e => {
     const out = [];
     if (e.st) for (const st of [].concat(e.st)) out.push({e: {st}, label: STATUS_OPTS.find(x => x[0] === st)?.[1] || st});
@@ -419,7 +426,6 @@ function MoveAction({side, mon, battle, usage, act, setAct, commit, r}) {
   });
   const secOn = x => act.secFx.some(y => JSON.stringify(y) === JSON.stringify(x.e));
   const scenLabels = side === 'me' ? [['base', '想定'], ['min', '耐久無振り'], ['max', '耐久全振り']] : [['base', '想定'], ['min', '火力無振り'], ['max', '火力全振り']];
-  const fbench = FORCE_MOVES.has(act.move) && tgt ? benchOf(battle, tgt.side).filter(i => !condOf(battle, tgt.side, i)?.fainted) : [];
   return (
     <div class="pl-act move">
       <div class="pa-h"><span class={cx('mv-bar inline', `t-${mv?.t}`)} /><b>{moveName(act.move)}</b>
@@ -440,7 +446,7 @@ function MoveAction({side, mon, battle, usage, act, setAct, commit, r}) {
           <button class="chip sm" onClick={() => fail('cant')}>行動できず</button>
         </div>
         {!damaging && PIVOT_MOVES.has(act.move) && <p class="hint">交代先は上のアイコンで選べます{act.to != null ? ` (${nameOf(battle, side, act.to)})` : ''}</p>}
-        <div class="btnrow"><button class="btn ghost" onClick={() => setAct(null)}>やめる</button><button class="btn primary grow" onClick={confirm}>確定</button></div>
+        <div class="btnrow"><button class="btn ghost" onClick={() => setAct(null)}>やめる</button><button class="btn primary grow" disabled={!damaging && needTo} onClick={confirm}>確定</button></div>
       </>}
       {act.stage === 'hp' && <>
         <p class="hint">{tgt.side === 'me' ? '自分' : '相手'}のHPバーを、実際の値に合わせてください。</p>
@@ -449,7 +455,8 @@ function MoveAction({side, mon, battle, usage, act, setAct, commit, r}) {
         {tgt.side === 'opp' && !tb.item && <div class="chips"><span class="muted">発動:</span>{['focussash', 'sitrusberry'].map(it => <button class={cx('chip sm', act.defItem === it && 'on')} onClick={() => set({defItem: act.defItem === it ? '' : it})}>{itemName(it)}</button>)}</div>}
         {PIVOT_MOVES.has(act.move) && <p class="hint">交代先は上のアイコンで選べます{act.to != null ? ` (${nameOf(battle, side, act.to)})` : ''}</p>}
         {fbench.length > 0 && <div class="chips"><span class="muted">引きずり出された:</span>{fbench.map(i => <button class={cx('chip sm', act.forceTo === i && 'on')} onClick={() => set({forceTo: act.forceTo === i ? null : i})}>{nameOf(battle, tgt.side, i)}</button>)}</div>}
-        <div class="btnrow"><button class="btn ghost" onClick={() => set({stage: 'pick'})}>戻る</button><button class="btn primary grow" onClick={save}>記録</button></div>
+        {blocked && <p class="hint warn">{needTo ? '交代先を上のアイコンから選んでください' : '引きずり出されたポケモンを選んでください'}</p>}
+        <div class="btnrow"><button class="btn ghost" onClick={() => set({stage: 'pick'})}>戻る</button><button class="btn primary grow" disabled={blocked} onClick={save}>記録</button></div>
       </>}
     </div>
   );
