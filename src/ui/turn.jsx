@@ -504,7 +504,9 @@ export function EventForm({battle, mut, usage, toast}) {
 }
 
 // 盤面の名前の横に置くメガシンカのボタン
-export function MegaButtons({battle, side, mon, mut, usage}) {
+// メガシンカ: 押すと「確認中」(数値だけメガの姿で見る)。もう一度押すと戻る。
+// 確認中にそのポケモンの行動を記録すると、メガシンカも一緒に記録される (preview/setPreview がないときはすぐ記録)
+export function MegaButtons({battle, side, mon, mut, usage, preview, setPreview}) {
   const cond = condOf(battle, side, mon);
   const build = buildOf(battle, side, mon);
   const s = dex.species[build?.species];
@@ -515,9 +517,17 @@ export function MegaButtons({battle, side, mon, mut, usage}) {
   // 相手で持ち物が分からないときは、メガの姿をすべて出す (リザードンX/Y など)
   const formes = side === 'opp' && !build.item ? s.megas : target ? [target] : [];
   if (!formes.length) return null;
-  return <>{formes.map(fm => (
-    <button class="btn mega-btn sm" title={`${speciesName(fm)}にメガシンカした`} onClick={() => mut(b => addEvent(b, {kind: 'mega', side, mon, forme: fm}, usage))}>
-      メガ{formes.length > 1 ? (/[XYZＸＹＺ]$/.exec(speciesName(fm))?.[0] || '') : ''}
-    </button>
-  ))}</>;
+  const record = fm => mut(b => addEvent(b, {kind: 'mega', side, mon, forme: fm}, usage));
+  return <>{formes.map(fm => {
+    const on = preview === fm;
+    const suffix = formes.length > 1 ? (/[XYZＸＹＺ]$/.exec(speciesName(fm))?.[0] || '') : '';
+    return (
+      <button class={cx('btn mega-btn sm', on && 'on')} title={setPreview ? `${speciesName(fm)}の数値を確認 (もう一度押すと戻る)` : `${speciesName(fm)}にメガシンカした`}
+        onClick={() => (setPreview ? setPreview(on ? null : fm) : record(fm))}>
+        メガ{suffix}{on ? ' 確認中' : ''}
+      </button>
+    );
+  })}
+  {setPreview && preview && <button class="chip sm" title="技を記録するときにも自動で記録されます" onClick={() => { record(preview); setPreview(null); }}>メガシンカを記録</button>}
+  </>;
 }

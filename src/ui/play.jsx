@@ -9,7 +9,7 @@ import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility
 import {condOf, buildOf, other, turnNumber, PIVOT_MOVES, faintedCount, pickCount} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {scenarioBuild} from '../engine/estimate.js';
-import {revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, editAct, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
+import {revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, editAct, reopenLastTurn, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
 import {speedOutlook} from '../engine/assume.js';
 import {finalSpeed} from '../engine/calc.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, Confirm, cx, fmtPct, rate} from './common.jsx';
@@ -21,6 +21,7 @@ const SIDE_JA = {me: '自分', opp: '相手'};
 const saveRef = {current: null};
 const FLAGS = [['reflect', 'リフレクター'], ['lightScreen', 'ひかりのかべ'], ['auroraVeil', 'オーロラベール'], ['tailwind', 'おいかぜ'], ['sr', 'ステルスロック'], ['stickyWeb', 'ねばねばネット']];
 const ST_JA = Object.fromEntries(STATUSES);
+const MOODY_KEYS = ['atk', 'def', 'spa', 'spd', 'spe'];
 const living = (b, side) => b.state.sides[side].active.filter(i => i != null && !condOf(b, side, i)?.fainted);
 const maxHPOf = (b, mon) => { const bd = b.my[mon]; return statsOf(currentSpecies(bd, condOf(b, 'me', mon)), bd.sp, bd.nature)[0]; };
 const nameOf = (b, side, i) => speciesName(currentSpecies(buildOf(b, side, i), condOf(b, side, i)));
@@ -76,9 +77,27 @@ function autoHazards(b, usage) {
 export function PlayBoard({battle, ctx, mut, usage, toast, setSheet}) {
   // いま入力中の行動 (1つだけ)
   const [act, setAct] = useState(null);
+  // メガシンカの確認中 ({'me0': 'garchompmega'})。数値だけメガの姿で見せ、行動を記録するときに一緒に記録する
+  const [megaPrev, setMegaPrev] = useState({});
+  const prevKeys = Object.keys(megaPrev).filter(k => megaPrev[k]);
+  const vctx = useMemo(() => {
+    if (!prevKeys.length) return ctx;
+    const cond = (s, i) => { const c = ctx.cond(s, i); const fm = megaPrev[`${s}${i}`]; return fm && c && !c.fainted ? {...c, forme: fm} : c; };
+    const v = {...ctx, cond};
+    v.ability = (s, i) => { const bd = v.build(s, i); return bd ? currentAbility(bd, cond(s, i)) : ''; };
+    return v;
+  }, [ctx, JSON.stringify(megaPrev)]);
+  // 盤面が変わって (メガシンカ済み・交代・ひんし) 確認の意味がなくなったら消す
+  useEffect(() => {
+    const stale = prevKeys.filter(k => { const side = k.startsWith('opp') ? 'opp' : 'me'; const i = Number(k.slice(side.length)); const c = condOf(battle, side, i); return !c || c.fainted || dex.species[c.forme]?.mega || battle.state.sides[side].megaUsed || !battle.state.sides[side].active.includes(i); });
+    if (stale.length) setMegaPrev(m => { const n = {...m}; for (const k of stale) delete n[k]; return n; });
+  }, [battle]);
   const commit = (fn, okMsg) => {
     let log = [];
-    mut(b => { log = fn(b) || []; autoHazards(b, usage); });
+    const mk = act && act.kind === 'move' ? `${act.side}${act.mon}` : null;
+    const fm = mk ? megaPrev[mk] : null;
+    mut(b => { if (fm) addEvent(b, {kind: 'mega', side: act.side, mon: act.mon, forme: fm}, usage); log = fn(b) || []; autoHazards(b, usage); });
+    if (mk && fm) setMegaPrev(m => ({...m, [mk]: null}));
     setAct(null);
     const last = log.filter(Boolean).slice(-1)[0];
     toast(last || okMsg || '記録しました');
@@ -87,10 +106,10 @@ export function PlayBoard({battle, ctx, mut, usage, toast, setSheet}) {
   // 3通り (想定・無振り・全振り) をまとめて計算し、選んでいるものをHPバーに出す
   const preds = useMemo(() => {
     if (act?.kind !== 'move' || !act.tgt || dex.moves[act.move]?.c === 'Z') return null;
-    return Object.fromEntries(['base', 'min', 'max'].map(k => [k, predict(battle, ctx, act.side, act.mon, act.tgt, act.move, k, act.crit)]));
-  }, [ctx, act?.kind, act?.side, act?.mon, act?.move, act?.crit, act?.tgt?.mon]);
+    return Object.fromEntries(['base', 'min', 'max'].map(k => [k, predict(battle, vctx, act.side, act.mon, act.tgt, act.move, k, act.crit)]));
+  }, [vctx, act?.kind, act?.side, act?.mon, act?.move, act?.crit, act?.tgt?.mon]);
   const pred = preds ? preds[act.scen] : null;
-  const p = {battle, ctx, mut, usage, toast, act, setAct, commit, setSheet, pred, preds};
+  const p = {battle, ctx: vctx, mut, usage, toast, act, setAct, commit, setSheet, pred, preds, megaPrev, setMegaPrev};
   const sideMons = side => {
     const a = battle.state.sides[side].active;
     return a.length ? a.map((i, slot) => ({i, slot})) : [{i: null, slot: 0}];
@@ -121,13 +140,17 @@ function FieldBar({battle}) {
 }
 
 // ---- 1体ぶんの枠 ----
-function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, commit, setSheet, pred, preds}) {
+function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, commit, setSheet, pred, preds, megaPrev, setMegaPrev}) {
   const sd = battle.state.sides[side];
   const bench = benchOf(battle, side);
   const live = bench.filter(i => !condOf(battle, side, i)?.fainted);
   const empty = mon == null;
   const fainted = !empty && condOf(battle, side, mon)?.fainted;
-  const needSend = (empty || fainted) && live.length > 0;
+  // 倒れたあとの交代は「次のターンのはじめ」に出す (ターン終了時のすなあらし・たべのこし等は出てきたポケモンには入らない)
+  const t = openTurn(battle);
+  const midTurn = !!t && t.acts.some(a => a.type !== 'event');
+  const waitEnd = fainted && midTurn && live.length > 0;
+  const needSend = (empty || (fainted && !midTurn)) && live.length > 0;
   const done = sideDone(battle, side);
   const mine = act && act.side === side && (act.mon === mon || act.kind === 'send');
   const swapMode = (mine && (act.kind === 'switch' || act.kind === 'send')) || needSend;
@@ -142,7 +165,8 @@ function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, co
     <section class={cx('pl', side, fainted && 'fainted', mine && 'acting')}>
       <div class="pl-main">
         {empty ? <div class="pl-empty">{needSend ? (side === 'me' ? '先発を右上から選んでください' : '相手の先発を右上から選んでください') : '場にいません'}</div>
-          : <MonView side={side} mon={mon} battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} act={act} setAct={setAct} targeted={targeted} done={done} setSheet={setSheet} />}
+          : <MonView side={side} mon={mon} battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} act={act} setAct={setAct} targeted={targeted} done={done} setSheet={setSheet}
+            megaPrev={megaPrev[`${side}${mon}`] || null} setMegaPrev={fm => setMegaPrev(m => ({...m, [`${side}${mon}`]: fm}))} />}
       </div>
       <div class="pl-side">
         <div class="pl-bench">
@@ -160,15 +184,16 @@ function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, co
             );
           })}
         </div>
-        <ActionArea side={side} mon={mon} slot={slot} battle={battle} ctx={ctx} usage={usage} act={mine ? act : null} setAct={setAct} commit={commit} needSend={needSend} done={done} pred={pred} preds={preds} />
+        <ActionArea side={side} mon={mon} slot={slot} battle={battle} ctx={ctx} usage={usage} act={mine ? act : null} setAct={setAct} commit={commit} needSend={needSend} waitEnd={waitEnd} done={done} pred={pred} preds={preds} />
       </div>
     </section>
   );
 }
 
-function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, targeted, done, setSheet}) {
+function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, targeted, done, setSheet, megaPrev, setMegaPrev}) {
   const build = ctx.build(side, mon);
-  const raw = condOf(battle, side, mon);
+  const raw0 = condOf(battle, side, mon);
+  const raw = megaPrev && !raw0.fainted ? {...raw0, forme: megaPrev} : raw0;
   const sid = currentSpecies(build, raw);
   const s = dex.species[sid];
   const opp = side === 'opp' ? battle.opp[mon] : null;
@@ -176,7 +201,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
   const [pick, setPick] = useState(null);
   const myMax = side === 'me' ? maxHPOf(battle, mon) : null;
   const moves = side === 'me' ? (build.moves || []) : (opp.moves || []);
-  const isMega = !!dex.species[raw.forme]?.mega;
+  const isMega = !!dex.species[raw0.forme]?.mega;
   const selMove = m => {
     if (raw.fainted || done) return;
     const foes = living(battle, other(side));
@@ -198,7 +223,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
         <button class="pl-name" onClick={() => setSheet({side, idx: mon})}>{s.j}</button>
         <span class="types">{typesOf(build, raw).map(t => <TypeChip type={t} small />)}</span>
         {raw.status && <span class="tag bad">{ST_JA[raw.status]}</span>}
-        <MegaButtons battle={battle} side={side} mon={mon} mut={mut} usage={usage} />
+        <MegaButtons battle={battle} side={side} mon={mon} mut={mut} usage={usage} preview={megaPrev} setPreview={setMegaPrev} />
         {raw.transformed && <span class="tag accent">へんしん中</span>}
         {zoro && !raw.transformed && <button class="btn ghost sm" onClick={() => setAskZoro(true)} title="イリュージョンの正体がゾロアークだったとき">正体は{speciesName(zoro.o.species)}</button>}
       </div>
@@ -220,7 +245,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
       </div>
       <HpBar side={side} mon={mon} battle={battle} raw={raw} max={myMax} targeted={targeted} setAct={setAct} mut={mut} usage={usage} />
       <div class="pl-body">
-        <div class="scroll-x">{side === 'opp' ? <OppStatTable battle={battle} idx={mon} /> : <MyStatTable build={build} raw={raw} sid={sid} />}</div>
+        <div class="scroll-x">{side === 'opp' ? <OppStatTable battle={battle} idx={mon} forme={megaPrev} /> : <MyStatTable build={build} raw={raw} sid={sid} />}</div>
         {side === 'opp' && <SpeedBox battle={battle} ctx={ctx} usage={usage} mon={mon} raw={raw} />}
       </div>
       <div class="pl-lower">
@@ -276,7 +301,7 @@ function SpeedBox({battle, ctx, usage, mon, raw}) {
   const o = useMemo(() => {
     const me = living(battle, 'me')[0];
     const spd = {format: battle.format, field: battle.state.field};
-    const mine = me != null ? finalSpeed({build: battle.my[me], cond: condOf(battle, 'me', me)}, {...spd, side: battle.state.sides.me}) : null;
+    const mine = me != null ? finalSpeed({build: battle.my[me], cond: ctx.cond('me', me)}, {...spd, side: battle.state.sides.me}) : null;
     const out = speedOutlook(battle.opp[mon], ctx.views[mon], raw, usage, mine, {...spd, side: battle.state.sides.opp});
     const rows = [];
     for (const b of out.bench) { rows.push({label: b.label, v: b.eff, ok: b.ok}); if (out.canScarf) rows.push({label: `${b.label}+スカーフ`, v: b.scarfEff, ok: b.okScarf, scarf: true}); }
@@ -299,6 +324,8 @@ function SideState({battle, side, raw, isMega}) {
   for (const [k, l] of FLAGS) if (sd[k]) tags.push(<span class="tag accent">{l}</span>);
   if (sd.spikes > 0) tags.push(<span class="tag accent">まきびし×{sd.spikes}</span>);
   if (raw.seeded) tags.push(<span class="tag">やどりぎ</span>);
+  if (raw.drowsy) tags.push(<span class="tag bad" title="次のターンの終わりに眠る (交代で消える)">ねむけ</span>);
+  if (raw.status === 'tox') tags.push(<span class="tag muted">もうどく {raw.toxicCounter || 1}/16</span>);
   if (raw.healBlock) tags.push(<span class="tag">かいふくふうじ</span>);
   if (isMega) tags.push(<span class="tag accent">メガシンカ済み</span>);
   if (sd.megaUsed && !isMega) tags.push(<span class="tag">メガシンカ使用済み</span>);
@@ -358,7 +385,8 @@ function HpBar({side, mon, battle, raw, max, targeted, setAct, mut, usage}) {
 }
 
 // ---- 右側: 行動の入力 (予想 → 確定 → HP) ----
-function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, needSend, done, pred, preds}) {
+function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, needSend, waitEnd, done, pred, preds}) {
+  if (waitEnd) return <div class="pl-act hint-box">倒れました。次のポケモンはターン終了のあとに選びます</div>;
   if (needSend && (!act || act.kind !== 'send')) return <div class="pl-act hint-box">{side === 'me' ? '次に出すポケモンを上から選んでください' : '相手が出したポケモンを上から選んでください'}</div>;
   if (act?.kind === 'send') {
     return (
@@ -477,7 +505,7 @@ function MoveAction({side, mon, battle, usage, act, setAct, commit, r, preds}) {
 }
 
 /** 予想の結果: 今のHP → 残りの範囲、ひんしにできるか */
-function outcome(r, hp, max) {
+export function outcome(r, hp, max) {
   if (!r?.ok || r.status || r.immune) return null;
   const lo = Math.max(0, hp - r.maxPct), hi = Math.max(0, hp - r.minPct);
   const show = v => (max ? `${Math.round((max * v) / 100)}` : `${dispOf(v)}%`);
@@ -502,20 +530,28 @@ export function TurnBar({battle, ctx, mut, usage, toast}) {
   const [exp, setExp] = useState({});
   const [ev, setEv] = useState(false);
   const [keep, setKeep] = useState(false);
+  const [moody, setMoody] = useState({});
+  // ムラッケ: ターンの終わりに どれかが↑2・別のどれかが↓1 (どれかを選ぶ)
+  const moodyMons = t ? ['me', 'opp'].flatMap(side => battle.state.sides[side].active.filter(i => i != null && !condOf(battle, side, i)?.fainted && ctx.strictAbility(battle, side, i) === 'moody').map(mon => ({side, mon}))) : [];
   const lostSide = ['opp', 'me'].find(side => faintedCount(battle, side) >= pickCount(battle.format));
   const sure = cands.filter(c => c.checked);
   const unsure = cands.filter(c => !c.checked);
   const keyOf = c => `${c.side}${c.mon}${c.key}`;
   const end = () => {
     let log = [];
-    mut(b => { log = finishTurn(b, usage, {residual: [...sure, ...unsure.filter(c => maybe[keyOf(c)])], expiry: expiries.filter(x => exp[x.key] != null).map(x => ({key: x.key, ended: exp[x.key], n: x.n}))}) || []; });
-    setMaybe({}); setExp({});
+    mut(b => { log = finishTurn(b, usage, {residual: [...sure, ...unsure.filter(c => maybe[keyOf(c)])], expiry: expiries.filter(x => exp[x.key] != null).map(x => ({key: x.key, ended: exp[x.key], n: x.n})),
+      moody: moodyMons.map(m => ({...m, ...moody[`${m.side}${m.mon}`]})).filter(m => m.up || m.down)}) || []; });
+    setMaybe({}); setExp({}); setMoody({});
     toast(log.length ? log[log.length - 1] : 'ターンを終えました');
   };
+  // 1つ戻す: ターンを終えた直後なら「ターン終了」を取り消して、そのターンの入力に戻る。
+  // そうでなければ最後の記録を消す (次の記録は戻ったターンに入る)
   const undo = () => {
     const ti = battle.turns.length - 1;
     const tt = battle.turns[ti];
-    if (!tt?.acts.length) return;
+    if (!tt) return;
+    if (!tt.open) { mut(b => { reopenLastTurn(b, usage); }); toast(`ターン${tt.n}の終了を取り消しました`); return; }
+    if (!tt.acts.length) return;
     mut(b => { editAct(b, ti, tt.acts.length - 1, null, usage); });
     toast('最後の記録を取り消しました');
   };
@@ -544,6 +580,16 @@ export function TurnBar({battle, ctx, mut, usage, toast}) {
       {expiries.map(x => (
         <div class="tb-exp"><span>{x.label} 終わった?</span><Seg small value={exp[x.key] == null ? '' : exp[x.key] ? 'y' : 'n'} options={[['', '—'], ['y', '終わった'], ['n', '続く']]} onChange={v => setExp({...exp, [x.key]: v === '' ? null : v === 'y'})} /></div>
       ))}
+      {moodyMons.map(m => {
+        const k = `${m.side}${m.mon}`, v = moody[k] || {};
+        const opts = [['', '—'], ...MOODY_KEYS.map(x => [x, STAT_JA[STAT_KEYS.indexOf(x)]])];
+        return (
+          <div class="tb-exp tb-moody"><span>{SIDE_JA[m.side]}{nameOf(battle, m.side, m.mon)} ムラッケ</span>
+            <span class="tb-mrow">↑2<Seg small value={v.up || ''} options={opts} onChange={x => setMoody({...moody, [k]: {...v, up: x || undefined}})} /></span>
+            <span class="tb-mrow">↓1<Seg small value={v.down || ''} options={opts} onChange={x => setMoody({...moody, [k]: {...v, down: x || undefined}})} /></span>
+          </div>
+        );
+      })}
       <button class="btn primary tb-end" disabled={!t || !doneMe || !doneOpp} onClick={end}>ターン終了</button>
       {ev && <Sheet title="その他の変化" onClose={() => setEv(false)} wide><EventForm battle={battle} mut={mut} usage={usage} toast={m => { toast(m); setEv(false); }} /></Sheet>}
     </div>

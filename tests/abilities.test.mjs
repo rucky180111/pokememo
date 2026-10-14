@@ -141,3 +141,19 @@ test('あくび・ムラッケ・交代: 眠気とランクとタイプは交代
   assert.equal(c.types, null); assert.equal(c.drowsy, 0);
   assert.equal(c.status, 'tox'); assert.equal(c.toxicCounter, 1);
 });
+
+test('1つ戻す: ターン終了を取り消すと、次の記録は戻ったターンに入る', async () => {
+  const {finishTurn, reopenLastTurn, editAct, openTurn} = await import('../src/engine/flow.js');
+  const b = battle([B('garchomp', {moves: ['earthquake']})], ['corviknight']);
+  addAct(b, {side: 'me', type: 'move', move: 'earthquake', hpAfter: 100, sameTurn: true}, usage);
+  addAct(b, {side: 'opp', type: 'move', move: 'bravebird', hpAfter: 60, sameTurn: true}, usage);
+  finishTurn(b, usage, {});
+  assert.equal(openTurn(b), null);
+  reopenLastTurn(b, usage);
+  assert.equal(openTurn(b).n, 1);
+  editAct(b, 0, 1, null, usage);
+  addAct(b, {side: 'opp', type: 'move', move: 'bodypress', hpAfter: 70, sameTurn: true}, usage);
+  assert.equal(b.turns.length, 1);
+  assert.equal(b.turns[0].acts.length, 2);
+  assert.equal(condOf(b, 'me', 0).hp, 70);
+});

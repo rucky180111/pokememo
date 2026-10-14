@@ -814,7 +814,16 @@ function onHitEffects(b, {side, mon, move, crit, tgt, before, defItem}, res, log
   if (tc.fainted) {
     // 倒したとき: じしんかじょう等
     const ab = res(b, side, mon);
-    const ko = {moxie: {atk: 1}, chillingneigh: {atk: 1}, grimneigh: {spa: 1}}[ab];
+    let ko = {moxie: {atk: 1}, chillingneigh: {atk: 1}, grimneigh: {spa: 1}}[ab];
+    // ビーストブースト・エレベーション(メガシビルドン): いちばん高い能力が上がる (相手は種族値で判断)
+    if (ab === 'beastboost' || ab === 'eelevate') {
+      const ab2 = buildOf(b, side, mon), ac = condOf(b, side, mon);
+      const sid = currentSpecies(ab2, ac);
+      const st = side === 'me' ? statsOf(sid, ab2.sp, ab2.nature) : dex.species[sid].bs;
+      const keys = ['atk', 'def', 'spa', 'spd', 'spe'];
+      let best = 0; for (let k = 1; k < 5; k++) if (st[k + 1] > st[best + 1]) best = k;
+      ko = {[keys[best]]: 1};
+    }
     if (ko) { const l = []; applyBoosts(b, side, mon, ko, {log: l, resolveAbility: () => ''}); if (l.length) log.push(`${abilityName(ab)}: ${l.join('、')}`); }
     return;
   }
@@ -836,6 +845,11 @@ function onHitEffects(b, {side, mon, move, crit, tgt, before, defItem}, res, log
   else if ((ab === 'gooey' || ab === 'tanglinghair') && mv.fl?.includes('contact')) { const l = []; applyBoosts(b, side, mon, {spe: -1}, {log: l, fromOpp: true, resolveAbility: res}); if (l.length) log.push(`${name}: ${l.join('、')}`); }
   else if (ab === 'flashfire' && t === 'Fire') { tc.abilityOn = true; log.push(`${name}: ほのお技の威力が上がる`); }
   else if (ab === 'toxicdebris' && mv.c === 'P') log.push(`${name}: どくびしが撒かれた (どくびしのダメージ・状態異常は手入力)`);
+  else if (ab === 'spicyspray') {
+    // スパイシースプレー (メガスコヴィラン): 攻撃してきた相手をやけどにする
+    const ac = condOf(b, side, mon), aT = typesOf(buildOf(b, side, mon), ac);
+    if (ac && !ac.fainted && !ac.status && !aT.includes('Fire')) { ac.status = 'brn'; log.push(`${name}: やけどにした`); }
+  }
   else if (ab === 'cottondown') { const l = []; applyBoosts(b, side, mon, {spe: -1}, {log: l, fromOpp: true, resolveAbility: res}); if (l.length) log.push(`${name}: ${l.join('、')}`); }
 }
 

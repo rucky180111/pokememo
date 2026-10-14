@@ -225,9 +225,26 @@ b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.sides.me.active[0] === 2 && b.state.mons.opp[1].boosts.atk === -1, '交代でガオガエンが出て、いかくが入る');
 check(b.state.mons.me[2].hp < 100, `ステルスロックのダメージを自動で反映 (${b.state.mons.me[2].hp})`);
 await pane('ダメージ・ログ');
-await page.waitForSelector('.dp-move');
+await page.waitForSelector('.dl');
 await shot(page, 'arena-damage');
-check(await page.locator('.dp-move .dp-bar').count() >= 8, '無振り/全振りの2本ずつ帯が出る');
+check(await page.locator('.dl-ic.opp').count() >= 3 && await page.locator('.dl-ic.me').count() >= 3, 'ダメージ計算に相手と自分のアイコン');
+check(await page.locator('.dl-ic.on').count() === 2, '選んでいる2体が光る');
+check(await page.locator('.dl-st input[type=range]').count() === 6, '相手の能力Ptスライダーが6本');
+const dmgText = () => page.locator('.dl h4.me ~ .dl-row .dl-v').first().innerText();
+const before = await dmgText();
+await page.locator('.dl-st').nth(0).locator('input[type=range]').fill('32'); // HPに全振り
+const afterSp = await dmgText();
+const natBtn = page.locator('.dl-st').nth(4).locator('.dl-nat');
+await natBtn.click();
+check((await natBtn.innerText()).trim() === '▲', '性格補正を▲にできる');
+await natBtn.click();
+check((await natBtn.innerText()).trim() === '▼', '押すと▼');
+await natBtn.click();
+check((await natBtn.innerText()).trim() === '－', 'もう一度で補正なし');
+check(before !== afterSp, `スライダーで計算が変わる (${before} → ${afterSp})`);
+check(await page.locator('.dl h4.opp ~ .dl-row').count() >= 4, '相手の技 (使用率上位) のダメージが並ぶ');
+await page.locator('.dl-ic.opp').nth(1).click();
+check(await page.locator('.dl-ic.opp.on').count() === 1, '相手を切り替えられる');
 await pane('盤面');
 // 検索パネルのタイプ絞り込み
 await oppP.locator('.pl-mv.empty').first().click();
