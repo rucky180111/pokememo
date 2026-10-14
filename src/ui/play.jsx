@@ -132,7 +132,7 @@ function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, co
   const pickBench = i => {
     if (needSend) { setAct({side, kind: 'send', slot, to: i}); return; }
     if (mine && act.kind === 'switch') { setAct({...act, to: i}); return; }
-    if (mine && act.kind === 'move' && act.stage === 'hp' && PIVOT_MOVES.has(act.move)) { setAct({...act, to: act.to === i ? null : i}); return; }
+    if (mine && act.kind === 'move' && PIVOT_MOVES.has(act.move)) { setAct({...act, to: act.to === i ? null : i}); return; }
     setSheet({side, idx: i});
   };
   const targeted = act && act.kind === 'move' && act.tgt && act.tgt.side === side && act.tgt.mon === mon ? {...act, r: pred} : null;
@@ -149,7 +149,7 @@ function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, co
           {bench.map(i => {
             const c = condOf(battle, side, i);
             const sel = mine && act.to === i;
-            const can = !c?.fainted && (swapMode || (mine && act.kind === 'move' && act.stage === 'hp' && PIVOT_MOVES.has(act.move)));
+            const can = !c?.fainted && (swapMode || (mine && act.kind === 'move' && PIVOT_MOVES.has(act.move)));
             return (
               <button class={cx('pl-bmon', c?.fainted && 'out', sel && 'on', can && 'can', side === 'opp' && !battle.pick.opp.includes(i) && 'unseen')} onClick={() => !c?.fainted && pickBench(i)} title={nameOf(battle, side, i)}>
                 <Sprite id={c?.forme || buildOf(battle, side, i).species} size={40} />
