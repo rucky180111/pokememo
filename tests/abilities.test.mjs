@@ -104,3 +104,40 @@ test('ターンの区切り: 両方が1回ずつ動いたら終われる。PPは
   assert.ok(condOf(b, 'me', 0).hp > 60);
   assert.ok(!sideDone(b, 'me'));
 });
+
+test('だいばくはつ: 使ったポケモンも倒れる (外れても)', () => {
+  const b = battle([B('garchomp')], ['electrode', 'hippowdon']);
+  addAct(b, {side: 'opp', type: 'move', move: 'explosion', hpAfter: 30}, usage);
+  assert.ok(condOf(b, 'opp', 0).fainted);
+  const b2 = battle([B('garchomp')], ['electrode']);
+  addAct(b2, {side: 'opp', type: 'move', move: 'explosion', miss: true}, usage);
+  assert.ok(condOf(b2, 'opp', 0).fainted, '外れても倒れる');
+});
+
+test('あくび・ムラッケ・交代: 眠気とランクとタイプは交代で消え、どく/もうどく/やけどは残る (もうどくのカウントは戻る)', async () => {
+  const {finishTurn} = await import('../src/engine/flow.js');
+  const b = battle([B('garchomp', {moves: ['earthquake']}), B('hippowdon')], ['slowking', 'glimmora']);
+  addAct(b, {side: 'opp', type: 'move', move: 'yawn'}, usage);
+  addAct(b, {side: 'me', type: 'move', move: 'earthquake', hpAfter: 60}, usage);
+  assert.ok(condOf(b, 'me', 0).drowsy);
+  finishTurn(b, usage, {});
+  assert.equal(condOf(b, 'me', 0).status, '', '1ターン目は眠らない');
+  addAct(b, {side: 'opp', type: 'move', move: 'yawn'}, usage);
+  addAct(b, {side: 'me', type: 'move', move: 'earthquake', hpAfter: 30}, usage);
+  finishTurn(b, usage, {});
+  assert.equal(condOf(b, 'me', 0).status, 'slp', '次のターンの終わりに眠る');
+  // ムラッケ
+  const b2 = battle([B('garchomp')], ['glalie']);
+  finishTurn(b2, usage, {moody: [{side: 'opp', mon: 0, up: 'spe', down: 'atk'}]});
+  assert.equal(condOf(b2, 'opp', 0).boosts.spe, 2);
+  assert.equal(condOf(b2, 'opp', 0).boosts.atk, -1);
+  // 交代
+  const c = condOf(b2, 'opp', 0);
+  c.status = 'tox'; c.toxicCounter = 4; c.types = ['Water']; c.drowsy = 3;
+  sendOut(b2, 'opp', 0, 0); // 同じ → 何もしない
+  b2.opp.push(newOpp('hippowdon'));
+  sendOut(b2, 'opp', 0, 1);
+  assert.deepEqual(c.boosts.spe, 0);
+  assert.equal(c.types, null); assert.equal(c.drowsy, 0);
+  assert.equal(c.status, 'tox'); assert.equal(c.toxicCounter, 1);
+});

@@ -208,6 +208,7 @@ function leaveField(b, side, i, {log = [], resolveAbility} = {}) {
   cond.seeded = false;
   cond.types = null; // みずびたし・へんげんじざい等のタイプ変化は交代で戻る
   cond.proteanUsed = false;
+  cond.drowsy = 0; // あくびの眠気は交代で消える
   if (cond.status === 'tox') cond.toxicCounter = 1;
   if (cond.forme && !dex.species[cond.forme]?.mega && cond.forme !== 'palafinhero') cond.forme = null; // メガシンカは交代しても戻らない
   if (cond.fainted) return;

@@ -3,6 +3,20 @@ import {dex, speciesName, moveName, statsOf, itemName, abilityName, TYPE_JA} fro
 import {currentSpecies, typesOf, currentAbility, finalSpeed, disguiseIntact} from './calc.js';
 
 export const FORCE_MOVES = new Set(['dragontail', 'circlethrow', 'roar', 'whirlwind']);
+export const SELF_KO = new Set(['explosion', 'selfdestruct', 'mistyexplosion', 'memento', 'finalgambit', 'healingwish', 'lunardance']);
+// 眠らない (ふみん・やるき・スイートベール・きよめのしお・ぜったいねむり、エレキ/ミストフィールドで接地)
+const NO_SLEEP = new Set(['insomnia', 'vitalspirit', 'sweetveil', 'purifyingsalt', 'comatose']);
+function sleepBlocked(b, side, i, res) {
+  const ab = res(b, side, i);
+  if (NO_SLEEP.has(ab)) return true;
+  const t = b.state.field.terrain;
+  if (t === 'Electric' || t === 'Misty') {
+    const bd = buildOf(b, side, i), c = condOf(b, side, i);
+    const grounded = !typesOf(bd, c).includes('Flying') && ab !== 'levitate' && !(bd.item === 'airballoon' && !c.itemGone);
+    if (grounded) return true;
+  }
+  return false;
+}
 // マジックミラーではね返る変化技
 const BOUNCE = new Set(['stealthrock', 'spikes', 'toxicspikes', 'stickyweb', 'yawn', 'taunt', 'encore', 'thunderwave', 'willowisp', 'toxic', 'glare', 'spore', 'sleeppowder', 'stunspore', 'hypnosis', 'leechseed', 'partingshot', 'charm', 'faketears', 'scaryface', 'screech', 'roar', 'whirlwind', 'trick', 'switcheroo', 'soak', 'magicpowder', 'trickortreat', 'forestscurse', 'nobleroar', 'tickle', 'stringshot', 'cottonspore', 'disable', 'torment', 'embargo', 'healblock', 'confuseray', 'swagger', 'sweetkiss', 'teeterdance', 'gastroacid', 'worryseed', 'simplebeam', 'entrainment', 'skillswap', 'poisonpowder', 'lovelykiss', 'sing', 'grasswhistle', 'darkvoid', 'yawn', 'defog', 'memento', 'babydolleyes', 'playnice', 'venomdrench', 'tearfullook', 'captivate', 'meanlook', 'block', 'spiderweb']);
 import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA, WEATHER_ABILITY, TERRAIN_ABILITY} from './battle.js';
@@ -45,6 +59,24 @@ export function endTurn(b, usage, opts = {}) {
     if (i == null || condOf(b, side, i).fainted || entered.has(`${side}${i}`)) continue;
     if (res(b, side, i) === 'speedboost') applyBoosts(b, side, i, {spe: 1}, {log, resolveAbility: () => ''});
   }
+  // ムラッケ: どれかが2段階上がり、別のどれかが1段階下がる (どれかは入力)
+  for (const m of opts.moody || []) {
+    const c = condOf(b, m.side, m.mon);
+    if (!c || c.fainted) continue;
+    const d = {};
+    if (m.up) d[m.up] = 2;
+    if (m.down) d[m.down] = (d[m.down] || 0) - 1;
+    if (Object.keys(d).length) applyBoosts(b, m.side, m.mon, d, {log, resolveAbility: () => ''});
+  }
+  // あくび: 次のターンの終わりに眠る (交代すれば消える。状態異常なら眠らない)
+  for (const side of ['me', 'opp']) for (const i of b.state.sides[side].active) {
+    const c = i != null ? condOf(b, side, i) : null;
+    if (!c || c.fainted || !c.drowsy) continue;
+    if (c.drowsy < t.n) {
+      c.drowsy = 0;
+      if (!c.status && !sleepBlocked(b, side, i, res)) { c.status = 'slp'; log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, side, i).species)}はあくびで眠った`); }
+    }
+  }
   // おいかぜ (4ターン) とトリックルーム (5ターン) は延長できないので自動で終了させる
   for (const side of ['me', 'opp']) {
     const sd = b.state.sides[side];
@@ -85,7 +117,7 @@ export function endTurn(b, usage, opts = {}) {
   for (const x of opts.expiry || []) log.push(...applyExpiry(b, x));
   for (const sd of ['me', 'opp']) for (const c of b.state.mons[sd]) if (c) c.hazard = false;
   t.open = false;
-  t.end = {noOrder: !!(opts.noOrder || t.noOrder), resFirst: opts.resFirst || undefined, hpFacts: opts.hpFacts?.length ? opts.hpFacts : undefined, expiry: opts.expiry?.length ? opts.expiry : undefined};
+  t.end = {noOrder: !!(opts.noOrder || t.noOrder), resFirst: opts.resFirst || undefined, hpFacts: opts.hpFacts?.length ? opts.hpFacts : undefined, expiry: opts.expiry?.length ? opts.expiry : undefined, moody: opts.moody?.length ? opts.moody : undefined};
   t.auto.push(...log);
   b.updatedAt = Date.now();
   return log;
@@ -242,6 +274,12 @@ export function addAct(b, input, usage) {
     if (!failed && tgt && a.move === 'leechseed' && !typesOf(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon)).includes('Grass')) condOf(b, tgt.side, tgt.mon).seeded = true;
     // サイコノイズ: 当たった相手は2ターンの間 回復できない (たべのこし等も発動しない)
     if (!failed && tgt && a.move === 'psychicnoise' && !condOf(b, tgt.side, tgt.mon).fainted) { condOf(b, tgt.side, tgt.mon).healBlock = t.n + 1; log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は2ターン回復できない`); }
+    // あくび: 状態異常がなく、まだ眠気がなければ眠気をつける
+    if (!failed && a.move === 'yawn') {
+      const yt = bounced ? {side, mon} : tgt;
+      const yc = yt ? condOf(b, yt.side, yt.mon) : null;
+      if (yc && !yc.fainted && !yc.status && !yc.drowsy && !sleepBlocked(b, yt.side, yt.mon, res)) { yc.drowsy = t.n; log.push(`${yt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, yt.side, yt.mon).species)}はねむけをさそわれた`); }
+    }
     if (!failed && bounced) applyMoveEffects(b, {...a, side: tgt.side, mon: tgt.mon, target: {side, mon}}, {log, resolveAbility: res});
     else if (!failed) applyMoveEffects(b, {...a, target: tgt}, {log, resolveAbility: res});
     if (!failed && tgt && (a.move === 'trick' || a.move === 'switcheroo')) {
@@ -285,6 +323,11 @@ export function addAct(b, input, usage) {
         if (passed && Object.values(passed).some(Boolean)) { condOf(b, side, a.to).boosts = passed; log.push('バトンタッチ: ランク変化を引き継ぎ'); }
       }
     }
+  }
+  // だいばくはつ・じばく・おきみやげ・いのちがけ・いやしのねがい等: 使ったポケモンは倒れる (外れても・守られても)
+  if (a.type === 'move' && SELF_KO.has(a.move) && !a.flags.cant) {
+    const uc = condOf(b, side, mon);
+    if (uc && !uc.fainted) { setHP(b, side, mon, 0); log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}は倒れた (${moveName(a.move)})`); }
   }
   // ドラゴンテール・ともえなげ・ほえる・ふきとばし: 相手を控えと入れ替える
   if (a.type === 'move' && FORCE_MOVES.has(a.move) && input.forceTo != null && !(a.flags.miss || a.flags.protect || a.flags.cant)) {
@@ -679,7 +722,7 @@ export function residualCandidates(b, usage) {
  * residual: 選んだターン終了時の処理 / finalHp: {'me0': 割合} ターン終了後のHP (分かったもの)
  * resFirst: 先に処理されたのはどちらか / expiry: [{key, ended, n}] 5ターン目のものが終わったか
  */
-export function finishTurn(b, usage, {residual = [], noOrder = false, finalHp = {}, resFirst, expiry = []} = {}) {
+export function finishTurn(b, usage, {residual = [], noOrder = false, finalHp = {}, resFirst, expiry = [], moody = []} = {}) {
   let t = ensureTurn(b);
   const log = [];
   // 「わからない」で飛ばした攻撃のHPを、ターン終了後のHPから逆算して入れ直す
@@ -727,7 +770,7 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, finalHp = 
     // 相手は表示 (整数%) をそのまま正とする (次の推定で表示の値が要るため)
     if (c && !c.fainted && (side === 'me' ? Math.abs(c.hp - val) > 0.7 : Math.abs(c.hp - val) > 1e-6)) log.push(...addEvent(b, {kind: 'hp', side, mon, hpAfter: val, note: 'ターン終了後に確認'}, usage));
   }
-  log.push(...endTurn(b, usage, {noOrder, resFirst, hpFacts, expiry}));
+  log.push(...endTurn(b, usage, {noOrder, resFirst, hpFacts, expiry, moody}));
   return log;
 }
 

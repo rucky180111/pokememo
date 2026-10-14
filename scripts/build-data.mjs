@@ -169,7 +169,7 @@ const TARGET_SPREAD = new Set(['allAdjacent', 'allAdjacentFoes']);
 // 確率で起きる追加効果 (scripts/make-secondaries.mjs で Showdown から書き出したもの + 個別の処理の技)
 const SEC = fs.existsSync(new URL('./secondaries.json', import.meta.url)) ? JSON.parse(fs.readFileSync(new URL('./secondaries.json', import.meta.url))) : {};
 SEC.triattack = [{ch: 20, st: ['brn', 'par', 'frz']}];
-SEC.direclaw = [{ch: 50, st: ['psn', 'par', 'slp']}];
+SEC.direclaw = [{ch: 30, st: ['psn', 'par', 'slp']}];
 const moves = {};
 for (const mv of gen.moves) {
   if (mv.id === 'noprobs' || mv.name === '(No Move)') continue;
