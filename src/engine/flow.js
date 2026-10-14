@@ -23,6 +23,14 @@ function autoCureBerries(b, log) {
   }
 }
 const STATUS_RESIDUAL = new Set(['hydration', 'shedskin', 'harvest']);
+// 追加効果が起きない理由 (りんぷん・おんみつマント・ちからずく)。なければ ''
+function secBlocked(b, side, mon, tgt, res) {
+  const tb = buildOf(b, tgt.side, tgt.mon), tc = condOf(b, tgt.side, tgt.mon);
+  if (res(b, tgt.side, tgt.mon) === 'shielddust') return 'りんぷん';
+  if (!tc.itemGone && tb.item === 'covertcloak') return 'おんみつマント';
+  if (res(b, side, mon) === 'sheerforce') return 'ちからずく';
+  return '';
+}
 const failed0 = a => a.flags.miss || a.flags.protect || a.flags.cant;
 export const EJECT_JA = {ejectbutton: 'だっしゅつボタン', redcard: 'レッドカード', ejectpack: 'だっしゅつパック', emergencyexit: 'ききかいひ', wimpout: 'にげごし'};
 // 変化技で自分のHPが変わる割合 (+回復 / −消費)
@@ -333,9 +341,16 @@ export function addAct(b, input, usage) {
     // やどりぎのタネ: くさタイプ以外に当たると、交代するまで毎ターン 1/8 減る
     if (!failed && tgt && a.move === 'leechseed' && !typesOf(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon)).includes('Grass')) condOf(b, tgt.side, tgt.mon).seeded = true;
     // しおづけ: 当たった相手は交代するまで毎ターン 1/16 (みず・はがねは 1/8) 減る (チャンピオンズでは本家の半分)
-    if (!failed && tgt && a.move === 'saltcure' && !condOf(b, tgt.side, tgt.mon).fainted) condOf(b, tgt.side, tgt.mon).salted = true;
+    if (!failed && tgt && a.move === 'saltcure' && !condOf(b, tgt.side, tgt.mon).fainted && !secBlocked(b, side, mon, tgt, res)) condOf(b, tgt.side, tgt.mon).salted = true;
     // サイコノイズ: 当たった相手は2ターンの間 回復できない (たべのこし等も発動しない)
-    if (!failed && tgt && a.move === 'psychicnoise' && !condOf(b, tgt.side, tgt.mon).fainted) { condOf(b, tgt.side, tgt.mon).healBlock = t.n + 1; log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は2ターン回復できない`); }
+    //   追加効果なので りんぷん・おんみつマント・ちからずく では起きない。あくタイプ・ぼうおんには当たらない
+    if (!failed && tgt && a.move === 'psychicnoise' && !condOf(b, tgt.side, tgt.mon).fainted) {
+      const pb = buildOf(b, tgt.side, tgt.mon), pc = condOf(b, tgt.side, tgt.mon), pab = res(b, tgt.side, tgt.mon);
+      const blockedBy = typeEffect('Psychic', typesOf(pb, pc)) === 0 ? 'あくタイプ' : pab === 'soundproof' ? 'ぼうおん' : pab === 'shielddust' ? 'りんぷん'
+        : secBlocked(b, side, mon, tgt, res);
+      if (blockedBy) log.push(`${blockedBy}のため かいふくふうじにならない`);
+      else { pc.healBlock = t.n + 1; log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(pb.species)}は2ターン回復できない (このターンと次のターン)`); }
+    }
     // あくび: 状態異常がなく、まだ眠気がなければ眠気をつける
     if (!failed && a.move === 'yawn') {
       const yt = bounced ? {side, mon} : tgt;
@@ -436,13 +451,15 @@ export function addAct(b, input, usage) {
     if (a.move === 'moonlight' || a.move === 'morningsun' || a.move === 'synthesis') d = w === 'Sun' ? 2 / 3 : w ? 1 / 4 : 1 / 2;
     if (a.move === 'shoreup') d = w === 'Sand' ? 2 / 3 : 1 / 2;
     if (a.move === 'curse' && !typesOf(build, uc).includes('Ghost')) d = 0;
+    const hb = (uc?.healBlock || 0) >= t.n;
+    if (hb && (d > 0 || a.move === 'rest')) { log.push(`${who}はかいふくふうじで${moveName(a.move)}が使えない`); d = 0; }
     if (uc && !uc.fainted && d) {
       const before = uc.hp;
       if (d < 0 && uc.hp <= -d * 100 && a.move !== 'curse') log.push(`${who}の${moveName(a.move)}: HPが足りないので失敗`);
       else { setHP(b, side, mon, uc.hp + d * 100); if (uc.hp !== before) log.push(`${who}: HP ${Math.round(before)}% → ${Math.round(uc.hp)}%`); }
     }
     // ねむる: HP全快して2ターン眠る
-    if (a.move === 'rest' && uc && !uc.fainted && uc.hp < 100 && !sleepBlocked(b, side, mon, res)) { setHP(b, side, mon, 100); uc.status = 'slp'; uc.statusKey = 'slpRest'; uc.statusCant = 0; uc.toxicCounter = 1; log.push(`${who}はねむって全回復`); }
+    if (a.move === 'rest' && !hb && uc && !uc.fainted && uc.hp < 100 && !sleepBlocked(b, side, mon, res)) { setHP(b, side, mon, 100); uc.status = 'slp'; uc.statusKey = 'slpRest'; uc.statusCant = 0; uc.toxicCounter = 1; log.push(`${who}はねむって全回復`); }
   }
   // さいきのいのり: ひんしの控えを1体、HP半分で復活させる
   if (a.type === 'move' && a.move === 'revivalblessing' && input.revive != null && !(a.flags.cant || a.flags.miss)) {
@@ -534,7 +551,7 @@ export function addEvent(b, ev, usage) {
     if (side === 'opp' && ev.item) build.item = ev.item;
     if (ev.consumed) cond.itemGone = true;
     let hp = ev.hpAfter;
-    if (hp == null && ev.consumed && ev.item === 'sitrusberry') hp = Math.min(100, cond.hp + 25 + (defaultAbilityResolver(b, side, mon) === 'cheekpouch' ? 100 / 3 : 0));
+    if (hp == null && ev.consumed && ev.item === 'sitrusberry' && !((cond.healBlock || 0) >= t.n)) hp = Math.min(100, cond.hp + 25 + (defaultAbilityResolver(b, side, mon) === 'cheekpouch' ? 100 / 3 : 0));
     if (hp != null) setHP(b, side, mon, hp);
     text = `${itemName(ev.item) || '持ち物'} ${ev.consumed ? '発動・消費' : '判明'}${hp != null ? ` → HP ${Math.round(hp)}%` : ''}`;
   } else if (ev.kind === 'hp') { setHP(b, side, mon, ev.hpAfter); text = `HP → ${Math.round(ev.hpAfter)}%${ev.note ? ` (${ev.note})` : ''}`; }
@@ -1203,6 +1220,8 @@ function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a},
   //  (受けたのが相手なら、相手の最大HPの見込みで概算する)
   const dealtReal = tgtBefore != null ? Math.round(((tgtBefore - tc.hp) / 100) * maxHPOf(b, tgt.side, tgt.mon)) : null;
   const steps = [];
+  // かいふくふうじ中は 吸収・かいがらのすず で回復しない (ヘドロえきのダメージは受ける)
+  if ((ab.healBlock || 0) >= (openTurn(b)?.n ?? turnNumber(b))) fx = fx.filter(k => k !== 'drain' && k !== 'shellbell');
   // おおきなねっこ: 吸収量1.3倍
   const root = !ab.itemGone && abd.item === 'bigroot' ? 1.3 : 1;
   if (fx.includes('drain') && DRAIN[move]) steps.push(dealtReal != null ? {k: 'fixed', amount: Math.round(((dealtReal * DRAIN[move][0]) / DRAIN[move][1]) * root)} : null);

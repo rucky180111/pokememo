@@ -497,7 +497,7 @@ export function applyMoveEffects(b, act, opts = {}) {
     if (move === 'sparklingaria' && tc.status === 'brn') { tc.status = ''; log.push(`うたかたのアリア: ${tn}のやけどが治った`); }
     if ((move === 'scald' || move === 'scorchingsands' || mv.t === 'Fire') && tc.status === 'frz' && mv.c !== 'Z') { tc.status = ''; log.push(`${tn}のこおりが溶けた`); }
     if (BIND_MOVES.has(move) && !tc.fainted && !tc.bound) { tc.bound = {turn: turnNumber(b), by: {side, mon}, band: !uc.itemGone && buildOf(b, side, mon).item === 'bindingband'}; log.push(`${tn}はしめつけられた (4〜5ターン)`); }
-    if (move === 'syrupbomb' && !tc.fainted) tc.syrup = turnNumber(b) + 2;
+    if (move === 'syrupbomb' && !tc.fainted && res(b, t.side, t.mon) !== 'shielddust' && !(buildOf(b, t.side, t.mon).item === 'covertcloak' && !tc.itemGone) && userAb !== 'sheerforce') tc.syrup = turnNumber(b) + 2;
     if (move === 'octolock' && !tc.fainted) { tc.octolock = {side, mon}; log.push(`${tn}はたこがためで逃げられない`); }
   }
   if (move === 'healbell') { for (const c of st.mons[side]) if (c && !c.fainted) c.status = ''; log.push('いやしのすず: 味方全員の状態異常が治った'); }

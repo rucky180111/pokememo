@@ -358,7 +358,7 @@ function SideState({battle, side, raw, isMega, abil}) {
   if (raw.seeded) tags.push(<span class="tag">やどりぎ</span>);
   if (raw.drowsy) tags.push(<span class="tag bad" title="次のターンの終わりに眠る (交代で消える)">ねむけ</span>);
   if (raw.status === 'tox') tags.push(<span class="tag muted">もうどく {raw.toxicCounter || 1}/16</span>);
-  if (raw.healBlock) tags.push(<span class="tag">かいふくふうじ</span>);
+  if ((raw.healBlock || 0) >= turnNumber(battle)) tags.push(<span class="tag bad" title="回復技・たべのこし・吸収・オボンなどで回復できない">かいふくふうじ (〜{raw.healBlock}ターン目)</span>);
   if (isMega) tags.push(<span class="tag accent">メガシンカ済み</span>);
   if (sd.megaUsed && !isMega) tags.push(<span class="tag">メガシンカ使用済み</span>);
   return (
@@ -548,8 +548,8 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
       {act.stage === 'hp' && <>
         {act.pierce && <p class="hint">まもるを貫通 (1/4)</p>}
         {sec.length > 0 && <div class="chips"><span class="muted">追加効果:</span>{sec.map(x => <button class={cx('chip sm', secOn(x) && 'on')} onClick={() => set({secFx: secOn(x) ? act.secFx.filter(y => JSON.stringify(y) !== JSON.stringify(x.e)) : [...act.secFx, x.e]})}>{x.label}</button>)}</div>}
-        {tItem && consumable(tItem) && <div class="chips"><button class={cx('chip sm', act.defItem === tItem && 'on')} onClick={() => set({defItem: act.defItem === tItem ? '' : tItem})}>{itemName(tItem)}が発動</button></div>}
-        {tgt.side === 'opp' && !tb.item && <div class="chips"><span class="muted">発動:</span>{['focussash', 'sitrusberry'].map(it => <button class={cx('chip sm', act.defItem === it && 'on')} onClick={() => set({defItem: act.defItem === it ? '' : it})}>{itemName(it)}</button>)}</div>}
+        {tItem && consumable(tItem) && !((tc.healBlock || 0) >= turnNumber(battle) && /berry$/.test(tItem) && tItem !== 'lumberry') && <div class="chips"><button class={cx('chip sm', act.defItem === tItem && 'on')} onClick={() => set({defItem: act.defItem === tItem ? '' : tItem})}>{itemName(tItem)}が発動</button></div>}
+        {tgt.side === 'opp' && !tb.item && <div class="chips"><span class="muted">発動:</span>{['focussash', 'sitrusberry'].filter(it => it !== 'sitrusberry' || !((tc.healBlock || 0) >= turnNumber(battle))).map(it => <button class={cx('chip sm', act.defItem === it && 'on')} onClick={() => set({defItem: act.defItem === it ? '' : it})}>{itemName(it)}</button>)}</div>}
         {PIVOT_MOVES.has(act.move) && <p class="hint">交代先: {act.to != null ? nameOf(battle, side, act.to) : '上から選択'}</p>}
         {fbench.length > 0 && <div class="chips"><span class="muted">引きずり出された:</span>{fbench.map(i => <button class={cx('chip sm', act.forceTo === i && 'on')} onClick={() => set({forceTo: act.forceTo === i ? null : i})}>{nameOf(battle, tgt.side, i)}</button>)}</div>}
         {ejects.length > 0 && <div class="chips"><span class="muted">交代:</span>{ejects.map(([k, who]) => <button class={cx('chip sm', act.eject?.reason === k && 'on')} onClick={() => set({eject: act.eject?.reason === k ? null : {reason: k, who, to: null}})}>{EJECT_JA[k]}</button>)}</div>}

@@ -124,3 +124,25 @@ test('特性: トレース・ミイラ・ひらいしん・シンクロ・うる
   addAct(b3, {side: 'me', type: 'move', move: 'toxic', inflict: 'tox'}, usage);
   assert.equal(condOf(b3, 'me', 0).status, 'tox');
 });
+
+test('サイコノイズ: 2ターン回復できない (回復技・たべのこし・吸収)。あくタイプ・りんぷん・ちからずくでは起きない。交代で解ける', async () => {
+  const b = battle([B('garchomp', {item: 'leftovers', moves: ['earthquake']}), B('hippowdon')], ['hatterene', 'mimikyu']);
+  addAct(b, {side: 'opp', type: 'move', move: 'psychicnoise', hpAfter: 70}, usage);
+  assert.equal(condOf(b, 'me', 0).healBlock, 2);
+  assert.ok(!residualCandidates(b, usage).some(x => x.side === 'me' && x.key === 'leftovers'), 'たべのこし無効');
+  addAct(b, {side: 'me', type: 'move', move: 'earthquake', hpAfter: 50}, usage);
+  finishTurn(b, usage, {});
+  addAct(b, {side: 'me', type: 'move', move: 'recover'}, usage);
+  assert.equal(condOf(b, 'me', 0).hp, 70, '次のターンも回復技は失敗');
+  addAct(b, {side: 'opp', type: 'move', move: 'psychic', hpAfter: 40}, usage);
+  finishTurn(b, usage, {});
+  addAct(b, {side: 'me', type: 'move', move: 'recover'}, usage);
+  assert.ok(condOf(b, 'me', 0).hp > 40, '3ターン目は回復できる');
+  const b2 = battle([B('umbreon')], ['hatterene']);
+  addAct(b2, {side: 'opp', type: 'move', move: 'psychicnoise', hpAfter: 100}, usage);
+  assert.ok(!condOf(b2, 'me', 0).healBlock, 'あくタイプには当たらない');
+  const b3 = battle([B('garchomp'), B('hippowdon')], ['hatterene']);
+  addAct(b3, {side: 'opp', type: 'move', move: 'psychicnoise', hpAfter: 70}, usage);
+  addAct(b3, {side: 'me', type: 'switch', to: 1}, usage);
+  assert.ok(!condOf(b3, 'me', 0).healBlock, '交代で解ける');
+});
