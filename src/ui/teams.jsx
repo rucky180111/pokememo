@@ -310,7 +310,7 @@ export function MonEditor({build, usage, onSave, onClose, isNew, title, lockSpec
                     <span class="sp-note-n num">{j + 1}</span>
                     <span class={cx('sp-lb', dex.natures[b.nature]?.p === k ? 'up' : dex.natures[b.nature]?.m === k ? 'down' : '')}>{STAT_JA[i]}</span>
                     <span class="num muted sp-note-v">{b.sp[i]}<small>→{stats[i]}</small></span>
-                    <input class="input" value={b.spNotes?.[k] || ''} placeholder={['例: 16n-1', '例: 11n / ○○確定1発', '例: ○○の地震を確定耐え', '', '例: ○○の特殊技耐え', '例: アシレーヌ抜き'][i]} onInput={e => set({spNotes: {...(b.spNotes || {}), [k]: e.currentTarget.value}})} />
+                    <input class="input" value={b.spNotes?.[k] || ''} onInput={e => set({spNotes: {...(b.spNotes || {}), [k]: e.currentTarget.value}})} />
                     <button class="btn ghost sm" disabled={j === 0} onClick={() => move(-1)} aria-label={`${STAT_JA[i]} を上へ`}>↑</button>
                     <button class="btn ghost sm" disabled={j === arr.length - 1} onClick={() => move(1)} aria-label={`${STAT_JA[i]} を下へ`}>↓</button>
                   </div>
