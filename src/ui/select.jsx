@@ -22,7 +22,7 @@ const mySpe = m => {
 
 export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
   const {store} = useApp();
-  const [pick, setPick] = useState(false);
+  const [pick, setPick] = useState(null); // 相手のパーティを選ぶパネル (開くときは最初に選ぶ枠の番号)
   const [oppEdit, setOppEdit] = useState(null);
   const [myEdit, setMyEdit] = useState(null);
   const [info, setInfo] = useState(false);
@@ -70,6 +70,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
     <div class="page-in select">
       <div class="sel-head">
         <h3>相手のパーティ <span class="muted">{battle.opp.length}/6</span></h3>
+        {battle.opp.length > 0 && <button class="btn ghost sm" onClick={() => setPick(0)}>まとめて選び直す</button>}
         <button class="btn ghost sm" onClick={() => setInfo(v => !v)}>{info ? '対戦情報をたたむ' : '対戦情報 (相手の名前・日付)'}</button>
       </div>
       {info && (
@@ -81,7 +82,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
       <div class="opp-grid">
         {[0, 1, 2, 3, 4, 5].map(i => {
           const o = battle.opp[i];
-          if (!o) return <button class="opp-tile empty" onClick={() => setPick(true)}>{i === battle.opp.length ? '＋ 追加' : ''}</button>;
+          if (!o) return <button class="opp-tile empty" onClick={() => setPick(i)}>{i === battle.opp.length ? '＋ 追加' : ''}</button>;
           const v = ctx.views[i];
           const s = dex.species[o.species];
           return (
@@ -177,9 +178,14 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
         <button class="btn primary grow" onClick={start}>{started ? '対戦フェーズへ' : `この選出で対戦開始 (${battle.pick.me.length}/${nPick})`}</button>
       </div>
 
-      {pick && <Picker kind="species" title={`相手のポケモン (${battle.opp.length + 1}体目)`} rank={usageRank} onClose={() => setPick(false)}
-        filter={id => !dex.species[id].mega && !dex.species[id].bo && !battle.opp.some(o => o.species === id)}
-        onPick={sid => { mut(b => { if (b.opp.length < 6) b.opp.push(newOpp(sid)); }); if (battle.opp.length >= 5) setPick(false); }} />}
+      {pick != null && <PartyPicker battle={battle} rank={usageRank} start={pick} onClose={() => setPick(null)}
+        onDone={list => { mut(b => {
+          list.forEach((sid, i) => {
+            if (!sid) return;
+            if (!b.opp[i]) b.opp.push(newOpp(sid));
+            else if (b.opp[i].species !== sid) b.opp[i] = {...newOpp(sid)};
+          });
+        }); setPick(null); }} />}
       {oppEdit != null && battle.opp[oppEdit] && <OppSheet battle={battle} idx={oppEdit} ctx={ctx} mut={mut} usage={usage} onClose={() => setOppEdit(null)} />}
       {myEdit != null && (
         <MonEditor title="この対戦での自分の型" usage={usage} isNew={!!myEdit.add}
@@ -190,3 +196,32 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
   );
 }
 void moveName;
+
+// 相手の6体をまとめて入れる: 上の6つの枠に順に入り、枠を押すとそこを選び直せる。確定で決める
+function PartyPicker({battle, rank, start, onClose, onDone}) {
+  const [list, setList] = useState(() => [0, 1, 2, 3, 4, 5].map(i => battle.opp[i]?.species || ''));
+  const firstEmpty = l => { const k = l.findIndex(x => !x); return k < 0 ? null : k; };
+  const [slot, setSlot] = useState(() => start ?? firstEmpty(list) ?? 0);
+  const pickOne = sid => {
+    const next = list.slice();
+    next[slot ?? 0] = sid;
+    setList(next);
+    const k = next.findIndex((x, i) => !x && i > (slot ?? 0));
+    setSlot(k >= 0 ? k : firstEmpty(next));
+  };
+  const n = list.filter(Boolean).length;
+  const header = (
+    <>
+      <div class="party-slots">
+        {list.map((sid, i) => (
+          <button class={cx('party-slot', sid && 'filled', slot === i && 'on')} onClick={() => setSlot(i)}>
+            {sid ? <><Sprite id={sid} size={40} /><span class="nm">{speciesName(sid)}</span></> : <span class="muted">{i + 1}</span>}
+          </button>
+        ))}
+      </div>
+      <p class="party-hint">{slot == null ? '6体そろいました。枠を押すと選び直せます。' : `${slot + 1}番目を選んでいます。枠を押すとそこを選び直せます。`}</p>
+    </>
+  );
+  return <Picker kind="species" title={`相手のパーティ (${n}/6)`} rank={rank} onClose={onClose} onPick={pickOne} header={header}
+    actions={<button class="btn primary" disabled={!n} onClick={() => onDone(list)}>確定</button>} />;
+}

@@ -33,7 +33,7 @@ export function MonName({id, sub, icon}) {
 }
 
 // 画面下からせり上がるパネル
-export function Sheet({title, onClose, children, wide, actions}) {
+export function Sheet({title, onClose, children, wide, actions, tall}) {
   const depth = useContext(DepthCtx);
   useEffect(() => {
     const me = {};
@@ -55,7 +55,7 @@ export function Sheet({title, onClose, children, wide, actions}) {
   // 画面のどこから開いても最前面に出るよう、body 直下に描画する
   return createPortal(
     <div class="overlay" style={{zIndex: 50 + depth}} onClick={e => { if (e.target === e.currentTarget) onClose?.(); }}>
-      <div class={cx('sheet', wide && 'wide')} role="dialog" aria-label={title}>
+      <div class={cx('sheet', wide && 'wide', tall && 'tall')} role="dialog" aria-label={title}>
         <div class="sheet-head">
           <h2>{title}</h2>
           <div class="sheet-actions">{actions}<button class="btn ghost" onClick={onClose} aria-label="閉じる">閉じる</button></div>
@@ -75,7 +75,7 @@ const CAT_JA = {P: '物理', S: '特殊', Z: '変化'};
  * rank: {id: 率} を渡すと、その順に上位表示して率を出す (使用率など)
  * prefer: 先頭に出したい id の配列 (習得技など)。preferOnly を切り替えて全件も出せる。
  */
-export function Picker({kind, title, onPick, onClose, filter, rank, prefer, preferLabel, allowClear, clearLabel}) {
+export function Picker({kind, title, onPick, onClose, filter, rank, prefer, preferLabel, allowClear, clearLabel, header, actions}) {
   const [q, setQ] = useState('');
   const [all, setAll] = useState(!prefer);
   const [types, setTypes] = useState([]);
@@ -99,11 +99,12 @@ export function Picker({kind, title, onPick, onClose, filter, rank, prefer, pref
     return out.slice(0, types.length || cat ? 400 : 120);
   }, [kind, q, all, rank, preferSet, filter, types, cat]);
   return (
-    <Sheet title={title} onClose={onClose}>
+    <Sheet title={title} onClose={onClose} tall actions={actions}>
+      {header}
       <div class="picker-bar">
         <input ref={ref} class="input" type="search" inputMode="search" autocomplete="off" autocapitalize="off" spellcheck={false}
           placeholder="なまえで検索 (ひらがな可)" value={q} onInput={e => setQ(e.currentTarget.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && list[0]) onPick(list[0].id); }} />
+          onKeyDown={e => { if (e.key === 'Enter' && list[0]) { onPick(list[0].id); if (header) setQ(''); } }} />
         {prefer && <label class="check"><input type="checkbox" checked={all} onChange={e => setAll(e.currentTarget.checked)} />{preferLabel || 'すべて表示'}</label>}
       </div>
       {typed && (
@@ -119,7 +120,7 @@ export function Picker({kind, title, onPick, onClose, filter, rank, prefer, pref
       <div class="picker-list">
         {allowClear && !q && <button class="row" onClick={() => onPick('')}><span class="muted">{clearLabel || '(なし / 未設定)'}</span></button>}
         {list.map(e => (
-          <button class="row" key={e.id} onClick={() => onPick(e.id)}>
+          <button class="row" key={e.id} onClick={() => { onPick(e.id); if (header) { setQ(''); ref.current?.focus(); } }}>
             {kind === 'species' ? <span class="row-mon"><Sprite id={e.id} size={36} /><MonName id={e.id} /></span> : <span class="nm">{e.j}</span>}
             <span class="row-sub">
               {kind === 'moves' && (() => { const m = dex.moves[e.id]; return <><TypeChip type={m.t} small /><span class="tag">{CAT_JA[m.c]}</span>{m.bp ? <span class="num">{m.bp}</span> : null}{m.pr ? <span class="tag">優先{m.pr > 0 ? '+' : ''}{m.pr}</span> : null}</>; })()}

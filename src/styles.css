@@ -1026,3 +1026,14 @@ select.pl-dd { appearance: none; -webkit-appearance: none; padding-right: 22px; 
 .pa-ko { font-size: 12px; font-weight: 700; }
 .pa-ko.sure { color: #fff; background: var(--bad); padding: 1px 6px; border-radius: 999px; }
 .pa-ko.maybe { color: var(--bad); }
+
+/* 検索パネルは高さを固定 (絞り込みで枠が動かない) */
+.sheet.tall { height: 92dvh; }
+@media (min-width: 700px) { .sheet.tall { height: 88dvh; } }
+.sheet.tall .picker-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.party-slots { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; padding: 8px 12px 4px; }
+.party-slot { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px; border: 1.5px dashed var(--border); border-radius: 10px; background: var(--surface); min-height: 70px; color: var(--text); font-size: 11px; }
+.party-slot.filled { border-style: solid; }
+.party-slot.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent); }
+.party-slot .nm { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.party-hint { padding: 0 12px; font-size: 12px; color: var(--muted); }
