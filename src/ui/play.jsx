@@ -84,11 +84,13 @@ export function PlayBoard({battle, ctx, mut, usage, toast, setSheet}) {
     toast(last || okMsg || '記録しました');
   };
   // 技を選んでいるときのダメージ予想 (相手のHPバーと右側の両方で使う)
-  const pred = useMemo(() => {
+  // 3通り (想定・無振り・全振り) をまとめて計算し、選んでいるものをHPバーに出す
+  const preds = useMemo(() => {
     if (act?.kind !== 'move' || !act.tgt || dex.moves[act.move]?.c === 'Z') return null;
-    return predict(battle, ctx, act.side, act.mon, act.tgt, act.move, act.scen, act.crit);
-  }, [ctx, act?.kind, act?.side, act?.mon, act?.move, act?.scen, act?.crit, act?.tgt?.mon]);
-  const p = {battle, ctx, mut, usage, toast, act, setAct, commit, setSheet, pred};
+    return Object.fromEntries(['base', 'min', 'max'].map(k => [k, predict(battle, ctx, act.side, act.mon, act.tgt, act.move, k, act.crit)]));
+  }, [ctx, act?.kind, act?.side, act?.mon, act?.move, act?.crit, act?.tgt?.mon]);
+  const pred = preds ? preds[act.scen] : null;
+  const p = {battle, ctx, mut, usage, toast, act, setAct, commit, setSheet, pred, preds};
   const sideMons = side => {
     const a = battle.state.sides[side].active;
     return a.length ? a.map((i, slot) => ({i, slot})) : [{i: null, slot: 0}];
@@ -119,7 +121,7 @@ function FieldBar({battle}) {
 }
 
 // ---- 1体ぶんの枠 ----
-function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, commit, setSheet, pred}) {
+function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, commit, setSheet, pred, preds}) {
   const sd = battle.state.sides[side];
   const bench = benchOf(battle, side);
   const live = bench.filter(i => !condOf(battle, side, i)?.fainted);
@@ -158,7 +160,7 @@ function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, co
             );
           })}
         </div>
-        <ActionArea side={side} mon={mon} slot={slot} battle={battle} ctx={ctx} usage={usage} act={mine ? act : null} setAct={setAct} commit={commit} needSend={needSend} done={done} pred={pred} />
+        <ActionArea side={side} mon={mon} slot={slot} battle={battle} ctx={ctx} usage={usage} act={mine ? act : null} setAct={setAct} commit={commit} needSend={needSend} done={done} pred={pred} preds={preds} />
       </div>
     </section>
   );
@@ -356,7 +358,7 @@ function HpBar({side, mon, battle, raw, max, targeted, setAct, mut, usage}) {
 }
 
 // ---- 右側: 行動の入力 (予想 → 確定 → HP) ----
-function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, needSend, done, pred}) {
+function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, needSend, done, pred, preds}) {
   if (needSend && (!act || act.kind !== 'send')) return <div class="pl-act hint-box">{side === 'me' ? '次に出すポケモンを上から選んでください' : '相手が出したポケモンを上から選んでください'}</div>;
   if (act?.kind === 'send') {
     return (
@@ -376,17 +378,18 @@ function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, n
       </div>
     );
   }
-  if (act?.kind === 'move') return <MoveAction side={side} mon={mon} battle={battle} usage={usage} act={act} setAct={setAct} commit={commit} r={pred} />;
+  if (act?.kind === 'move') return <MoveAction side={side} mon={mon} battle={battle} usage={usage} act={act} setAct={setAct} commit={commit} r={pred} preds={preds} />;
   if (mon == null) return null;
   return <div class={cx('pl-act hint-box', done && 'done')}>{done ? 'このターンは行動済み' : '技を押すとダメージの予想が出ます。交代は ⇄'}</div>;
 }
 
-function MoveAction({side, mon, battle, usage, act, setAct, commit, r}) {
+function MoveAction({side, mon, battle, usage, act, setAct, commit, r, preds}) {
   const mv = dex.moves[act.move];
   const tgt = act.tgt;
   const damaging = mv && mv.c !== 'Z';
   const foes = living(battle, other(side));
   const tgtHp = tgt ? (condOf(battle, tgt.side, tgt.mon)?.hp ?? 100) : 100;
+  const tgtMax = tgt?.side === 'me' ? maxHPOf(battle, tgt.mon) : null;
   const mid = r?.ok && !r.status ? Math.max(0, tgtHp - (r.minPct + r.maxPct) / 2) : tgtHp;
   const set = patch => setAct(a => ({...a, ...patch}));
   const base = {side, mon, type: 'move', move: act.move, crit: act.crit, sameTurn: true, target: battle.format === 'double' ? tgt : null};
@@ -433,9 +436,20 @@ function MoveAction({side, mon, battle, usage, act, setAct, commit, r}) {
       </div>
       {act.stage === 'pick' && <>
         {damaging && tgt && <>
-          {battle.opp.length > 0 && <Seg small value={act.scen} options={scenLabels} onChange={v => set({scen: v})} />}
-          <div class="pa-dmg">
-            {!r?.ok ? <span class="muted">計算できません</span> : r.immune ? <b>効果なし</b> : <><b class="num">{fmtPct(r.minPct)}〜{fmtPct(r.maxPct)}%</b> <span class="muted">{r.koText}</span></>}
+          <div class="pa-rows">
+            {scenLabels.map(([k, label]) => {
+              const x = preds?.[k];
+              const o = outcome(x, tgtHp, tgtMax);
+              return (
+                <button class={cx('pa-row', act.scen === k && 'on', o?.ko)} onClick={() => set({scen: k})}>
+                  <span class="pa-lb">{label}</span>
+                  {!x?.ok ? <span class="muted">計算できません</span> : x.immune ? <b>効果なし</b> : <>
+                    <span class="pa-after num">{o.from} → <b>{o.to}</b></span>
+                    <span class="pa-sub"><span class={cx('pa-ko', o.ko)}>{o.koLabel}</span><small class="muted num">{fmtPct(x.minPct)}〜{fmtPct(x.maxPct)}%</small></span>
+                  </>}
+                </button>
+              );
+            })}
           </div>
         </>}
         {!damaging && <p class="muted">変化技{act.inflict ? ` (${STATUS_OPTS.find(x => x[0] === act.inflict)?.[1]})` : ''}</p>}
@@ -460,6 +474,22 @@ function MoveAction({side, mon, battle, usage, act, setAct, commit, r}) {
       </>}
     </div>
   );
+}
+
+/** 予想の結果: 今のHP → 残りの範囲、ひんしにできるか */
+function outcome(r, hp, max) {
+  if (!r?.ok || r.status || r.immune) return null;
+  const lo = Math.max(0, hp - r.maxPct), hi = Math.max(0, hp - r.minPct);
+  const show = v => (max ? `${Math.round((max * v) / 100)}` : `${dispOf(v)}%`);
+  const cur = r.defHP || 0;
+  const rolls = (r.rolls || []).filter(Number.isFinite);
+  let ko = '', koLabel;
+  if (cur > 0 && r.min >= cur) { ko = 'sure'; koLabel = '確定でひんし'; }
+  else if (cur > 0 && r.max >= cur) {
+    const p = rolls.length === 16 ? rolls.filter(x => x >= cur).length / 16 : null; // 連続技は1発ずつの乱数なので割合は出さない
+    ko = 'maybe'; koLabel = `乱数でひんし${p != null ? ` (${Math.round(p * 1000) / 10}%)` : ''}`;
+  } else koLabel = r.koText || '';
+  return {from: max ? `${Math.round((max * hp) / 100)}` : `${dispOf(hp)}%`, to: lo === hi ? show(lo) : `${show(lo)}〜${show(hi)}`, ko, koLabel};
 }
 
 // ---- ターン終了 (右下) ----

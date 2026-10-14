@@ -1,7 +1,7 @@
 // オフラインでも開けるようにアプリ本体をキャッシュする。
 // 取得できたら新しいものに差し替え、できなければキャッシュを使う (stale-while-revalidate)。
-const CACHE = 'pokememo-ff6e5c8ee5';
-const SHELL = ['./', './index.html', './app.js?v=ff6e5c8ee5', './app.css?v=ff6e5c8ee5', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './usage-single.json'];
+const CACHE = 'pokememo-3c9b44740a';
+const SHELL = ['./', './index.html', './app.js?v=3c9b44740a', './app.css?v=3c9b44740a', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './usage-single.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
