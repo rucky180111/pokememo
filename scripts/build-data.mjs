@@ -83,6 +83,9 @@ function moveProps(file, into) {
     if (fl) o.fl = fl[1].split(',').map(s => s.split(':')[0].trim()).filter(Boolean);
     const pr = /\n\t\tpriority: (-?\d+)/.exec('\n' + body);
     if (pr) o.pr = Number(pr[1]);
+    const pp = /\n\t\tpp: (\d+)/.exec('\n' + body);
+    if (pp) o.pp = Number(pp[1]);
+    if (/\n\t\tnoPPBoosts: true/.test('\n' + body)) o.noPPB = true;
     const mh = /\n\t\tmultihit: (\[\d+, \d+\]|\d+)/.exec('\n' + body);
     if (mh) o.mh = JSON.parse(mh[1]);
   }
@@ -189,6 +192,8 @@ for (const mv of gen.moves) {
   for (const f of ['sound', 'punch', 'bite', 'slicing', 'bullet', 'pulse', 'wind']) if (mv.flags?.[f] || p.fl?.includes(f)) fl.push(f);
   if (p.fl?.includes('protect') === false && cat !== 'Status') fl.push('noprotect');
   if (fl.length) o.fl = fl;
+  // PP: チャンピオンズは 20 を上限に、(PP/5+1)*4 (ポイントアップ相当込み)
+  if (p.pp) o.pp = p.noPPB ? p.pp : (Math.min(20, p.pp) / 5 + 1) * 4;
   if (SEC[mv.id]) o.sec = SEC[mv.id];
   moves[mv.id] = o;
 }
