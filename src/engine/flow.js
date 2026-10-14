@@ -1,6 +1,10 @@
 // 時系列での入力: 行動を1つずつ追加していく。追加のたびに盤面・判明情報・能力の絞り込みへ反映する。
-import {dex, speciesName, moveName, statsOf, itemName, abilityName} from './dex.js';
-import {currentSpecies, currentAbility, finalSpeed} from './calc.js';
+import {dex, speciesName, moveName, statsOf, itemName, abilityName, TYPE_JA} from './dex.js';
+import {currentSpecies, typesOf, currentAbility, finalSpeed, disguiseIntact} from './calc.js';
+
+export const FORCE_MOVES = new Set(['dragontail', 'circlethrow', 'roar', 'whirlwind']);
+// マジックミラーではね返る変化技
+const BOUNCE = new Set(['stealthrock', 'spikes', 'toxicspikes', 'stickyweb', 'yawn', 'taunt', 'encore', 'thunderwave', 'willowisp', 'toxic', 'glare', 'spore', 'sleeppowder', 'stunspore', 'hypnosis', 'leechseed', 'partingshot', 'charm', 'faketears', 'scaryface', 'screech', 'roar', 'whirlwind', 'trick', 'switcheroo', 'soak', 'magicpowder', 'trickortreat', 'forestscurse', 'nobleroar', 'tickle', 'stringshot', 'cottonspore', 'disable', 'torment', 'embargo', 'healblock', 'confuseray', 'swagger', 'sweetkiss', 'teeterdance', 'gastroacid', 'worryseed', 'simplebeam', 'entrainment', 'skillswap', 'poisonpowder', 'lovelykiss', 'sing', 'grasswhistle', 'darkvoid', 'yawn', 'defog', 'memento', 'babydolleyes', 'playnice', 'venomdrench', 'tearfullook', 'captivate', 'meanlook', 'block', 'spiderweb']);
 import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA, WEATHER_ABILITY, TERRAIN_ABILITY} from './battle.js';
 import {boardContext} from './board.js';
 import {inferFromTaken, inferFromDealt, applyInference, inferable, applyHpConstraint} from './infer-dmg.js';
@@ -136,7 +140,23 @@ export function addAct(b, input, usage) {
     if (side === 'opp' && !condOf(b, side, mon)?.transformed && dex.moves[a.move] && !build.moves.includes(a.move) && build.moves.length < 4) build.moves.push(a.move);
     const foe = other(side);
     const tgt = a.target || (() => { const f = b.state.sides[foe].active.filter(i => i != null && !condOf(b, foe, i)?.fainted); return f.length === 1 ? {side: foe, mon: f[0]} : null; })();
-    const failed = a.flags.miss || a.flags.protect || a.flags.cant;
+    let failed = a.flags.miss || a.flags.protect || a.flags.cant;
+    const mvd = dex.moves[a.move];
+    // へんげんじざい・リベロ: 技を出す前にその技のタイプになる (場に出ている間に1回だけ)
+    {
+      const uc = condOf(b, side, mon), uab = res(b, side, mon);
+      if (mvd && !a.flags.cant && (uab === 'protean' || uab === 'libero') && !uc.proteanUsed && a.move !== 'struggle') {
+        uc.proteanUsed = true;
+        if (!(typesOf(build, uc).length === 1 && typesOf(build, uc)[0] === mvd.t)) { uc.types = [mvd.t]; log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}の${abilityName(uab)}: ${TYPE_JA[mvd.t] || mvd.t}タイプになった`); }
+      }
+    }
+    // おうごんのからだ: 相手からの変化技を受けない / マジックミラー: はね返す
+    let bounced = false;
+    if (!failed && tgt && tgt.side !== side && mvd?.c === 'Z') {
+      const tab = res(b, tgt.side, tgt.mon);
+      if (tab === 'goodasgold' && (!mvd.tg || mvd.tg === 'allAdjacentFoes' || mvd.tg === 'any')) { failed = true; log.push(`${speciesName(buildOf(b, tgt.side, tgt.mon).species)}のおうごんのからだ: ${moveName(a.move)}は効かない`); }
+      else if (tab === 'magicbounce' && BOUNCE.has(a.move)) { bounced = true; log.push(`${speciesName(buildOf(b, tgt.side, tgt.mon).species)}のマジックミラー: ${moveName(a.move)}をはね返した`); }
+    }
     // 持ち物の発動: 攻撃側 (いのちのたま等) と受ける側 (タスキ・オボン・半減実など)
     const atkItem = input.atkItem?.item, defItem = tgt ? input.defItem?.item : null;
     if (atkItem && side === 'opp') build.item = atkItem;
@@ -146,6 +166,14 @@ export function addAct(b, input, usage) {
     const sash = defItem === 'focussash' || !!input.endured;
     const heal = defItem === 'sitrusberry' ? 25 : defItem === 'oranberry' ? null : 0;
     let hp = input.hpAfter;
+    // ばけのかわ: ダメージを受けず HP が 1/8 減るだけ。推定には使わない
+    const disguiseHit = !failed && tgt && mvd && mvd.c !== 'Z' && disguiseIntact(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon)) && !['moldbreaker', 'teravolt', 'turboblaze', 'myceliummight'].includes(res(b, side, mon));
+    if (disguiseHit) {
+      const tc0 = condOf(b, tgt.side, tgt.mon);
+      tc0.disguiseBroken = true;
+      if (hp == null || !Number.isFinite(hp) || hp > tc0.hp) hp = Math.max(0, tc0.hp - 12.5);
+      log.push('ばけのかわがはがれた (HP -1/8)。このダメージからの推定はしません');
+    }
     if (sash && !failed && tgt) hp = tgt.side === 'me' ? 100 / statsOf(currentSpecies(buildOf(b, 'me', tgt.mon), condOf(b, 'me', tgt.mon)), buildOf(b, 'me', tgt.mon).sp, buildOf(b, 'me', tgt.mon).nature)[0] : 1;
     if (input.hits) a.hits = input.hits;
     if (atkItem) a.atkItem = atkItem;
@@ -176,7 +204,7 @@ export function addAct(b, input, usage) {
       if (heal && tgt.side === 'me') { const tb0 = buildOf(b, 'me', tgt.mon); const mx = statsOf(currentSpecies(tb0, tc), tb0.sp, tb0.nature)[0]; healPct = (Math.floor(mx / 4) / mx) * 100; }
       const hitAfter = heal ? Math.max(0.1, a.hpAfter - healPct) : a.hpAfter;
       if (heal === null) log.push('オレンのみの回復量は割合に直せないため、このダメージからの推定は見送り');
-      const unsafe = tgt.side !== side ? unsafeForInference(b, t, side, mon, tgt, a.move, res, a.flags.crit) : '';
+      const unsafe = disguiseHit ? 'ばけのかわ' : tgt.side !== side ? unsafeForInference(b, t, side, mon, tgt, a.move, res, a.flags.crit) : '';
       if (unsafe && tgt.side !== side && inferable(a.move) && a.hpAfter > 0) log.push(`${unsafe}ため、このダメージからの推定は見送り`);
       if (!unsafe && tgt.side !== side && inferable(a.move) && heal !== null && a.hpAfter > 0 && (sash || before > hitAfter)) {
         try {
@@ -203,10 +231,11 @@ export function addAct(b, input, usage) {
     if (tgt && !a.target && tgt.side !== side) a.target = tgt;
     condOf(b, side, mon).glaive = !failed && a.move === 'glaiverush';
     // やどりぎのタネ: くさタイプ以外に当たると、交代するまで毎ターン 1/8 減る
-    if (!failed && tgt && a.move === 'leechseed' && !dex.species[currentSpecies(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon))]?.t.includes('Grass')) condOf(b, tgt.side, tgt.mon).seeded = true;
+    if (!failed && tgt && a.move === 'leechseed' && !typesOf(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon)).includes('Grass')) condOf(b, tgt.side, tgt.mon).seeded = true;
     // サイコノイズ: 当たった相手は2ターンの間 回復できない (たべのこし等も発動しない)
     if (!failed && tgt && a.move === 'psychicnoise' && !condOf(b, tgt.side, tgt.mon).fainted) { condOf(b, tgt.side, tgt.mon).healBlock = t.n + 1; log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は2ターン回復できない`); }
-    if (!failed) applyMoveEffects(b, {...a, target: tgt}, {log, resolveAbility: res});
+    if (!failed && bounced) applyMoveEffects(b, {...a, side: tgt.side, mon: tgt.mon, target: {side, mon}}, {log, resolveAbility: res});
+    else if (!failed) applyMoveEffects(b, {...a, target: tgt}, {log, resolveAbility: res});
     if (!failed && tgt && (a.move === 'trick' || a.move === 'switcheroo')) {
       // 持ち物が入れ替わると、以後の持ち物は確定できない
       condOf(b, side, mon).tricked = true; condOf(b, tgt.side, tgt.mon).tricked = true;
@@ -231,7 +260,7 @@ export function addAct(b, input, usage) {
     // 攻撃した側のHPの変化 (いのちのたま・反動・ゴツゴツメット・さめはだ・吸収)
     if (!failed && tgt && tgt.side !== side && input.selfFx?.length) attackerHpEffects(b, {side, mon, tgt, move: a.move, fx: input.selfFx, hpAfter: input.atkHpAfter, tgtBefore: hpBeforeHit, a}, log);
     // 追加効果・変化技で相手が状態異常になった
-    if (!failed && tgt && input.inflict && !condOf(b, tgt.side, tgt.mon).fainted) {
+    if (!failed && tgt && input.inflict && !condOf(b, tgt.side, tgt.mon).fainted && !bounced) {
       const tc2 = condOf(b, tgt.side, tgt.mon);
       tc2.status = input.inflict; tc2.toxicCounter = 1; a.inflict = input.inflict;
       log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は${STATUS_JA[input.inflict]}になった`);
@@ -247,6 +276,18 @@ export function addAct(b, input, usage) {
         sendOut(b, side, s2, a.to, {log, resolveAbility: res});
         if (passed && Object.values(passed).some(Boolean)) { condOf(b, side, a.to).boosts = passed; log.push('バトンタッチ: ランク変化を引き継ぎ'); }
       }
+    }
+  }
+  // ドラゴンテール・ともえなげ・ほえる・ふきとばし: 相手を控えと入れ替える
+  if (a.type === 'move' && FORCE_MOVES.has(a.move) && input.forceTo != null && !(a.flags.miss || a.flags.protect || a.flags.cant)) {
+    const ft = a.target || input.target;
+    const fside = ft?.side || other(side);
+    const fmon = ft?.mon ?? b.state.sides[fside].active.find(i => i != null);
+    const fslot = b.state.sides[fside].active.indexOf(fmon);
+    if (fslot >= 0 && !condOf(b, fside, fmon)?.fainted && input.forceTo !== fmon) {
+      a.forceTo = input.forceTo;
+      log.push(`${fside === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, fside, input.forceTo).species)}が引きずり出された`);
+      sendOut(b, fside, fslot, input.forceTo, {log, resolveAbility: res});
     }
   }
   if (input.hpUnknown) a.hpUnknown = true;
@@ -509,7 +550,7 @@ export {RESIDUAL_JA};
 
 function residualFrac(b, side, mon, key) {
   const build = buildOf(b, side, mon), cond = condOf(b, side, mon);
-  const types = dex.species[currentSpecies(build, cond)]?.t || [];
+  const types = typesOf(build, cond) || [];
   const w = b.state.field.weather;
   switch (key) {
     case 'sand': return -1 / 16;
@@ -571,7 +612,7 @@ export function residualCandidates(b, usage) {
       if (mon == null) continue;
       const build = buildOf(b, side, mon), cond = condOf(b, side, mon);
       if (!build || !cond || cond.fainted) continue;
-      const types = dex.species[currentSpecies(build, cond)]?.t || [];
+      const types = typesOf(build, cond) || [];
       const known = ctx.strictAbility(b, side, mon);
       const abs = known ? [known] : side === 'opp' ? (dex.species[currentSpecies(build, cond)]?.ab || []) : [];
       const sure = ab => known === ab;
@@ -736,6 +777,9 @@ function onHitEffects(b, {side, mon, move, crit, tgt, before, defItem}, res, log
   else if (ab === 'berserk' && before > 50 && tc.hp <= 50) boost({spa: 1}, name);
   else if (ab === 'seedsower' && setTerrain(b, 'Grassy')) log.push(`${name}: グラスフィールドに`);
   else if (ab === 'sandspit' && setWeather(b, 'Sand')) log.push(`${name}: 天候がすなあらしに`);
+  else if ((ab === 'gooey' || ab === 'tanglinghair') && mv.fl?.includes('contact')) { const l = []; applyBoosts(b, side, mon, {spe: -1}, {log: l, fromOpp: true, resolveAbility: res}); if (l.length) log.push(`${name}: ${l.join('、')}`); }
+  else if (ab === 'flashfire' && t === 'Fire') { tc.abilityOn = true; log.push(`${name}: ほのお技の威力が上がる`); }
+  else if (ab === 'toxicdebris' && mv.c === 'P') log.push(`${name}: どくびしが撒かれた (どくびしのダメージ・状態異常は手入力)`);
   else if (ab === 'cottondown') { const l = []; applyBoosts(b, side, mon, {spe: -1}, {log: l, fromOpp: true, resolveAbility: res}); if (l.length) log.push(`${name}: ${l.join('、')}`); }
 }
 
@@ -786,7 +830,7 @@ export function hazardDamage(b, side, mon) {
   const sd = b.state.sides[side];
   const bd = buildOf(b, side, mon), c = condOf(b, side, mon);
   if (!bd || !c || c.fainted) return null;
-  const types = dex.species[currentSpecies(bd, c)]?.t || [];
+  const types = typesOf(bd, c) || [];
   const ab = defaultAbilityResolver(b, side, mon);
   if (ab === 'magicguard') return null;
   let frac = 0;
@@ -860,7 +904,7 @@ export function inferHpFromDisplay(b, oppIdx, d0, d1, steps) {
 // 処理の種類 → HP計算の手順 (盤面の状態から必要な値を添える)
 function stepOf(b, side, mon, key) {
   const bd = buildOf(b, side, mon), c = condOf(b, side, mon);
-  const types = dex.species[currentSpecies(bd, c)]?.t || [];
+  const types = typesOf(bd, c) || [];
   const st = {k: key};
   if (key === 'tox') st.n = Math.min(15, c.toxicCounter || 1);
   if (key === 'blacksludge') st.poison = types.includes('Poison');

@@ -10,6 +10,7 @@ import {SelectTab} from './select.jsx';
 import {Arena, OppStatTable} from './arena.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
 import {DamageTab} from './analysis.jsx';
+import {BattleLog} from './turn.jsx';
 
 const TABS = [['setup', '① 選出'], ['board', '② 対戦'], ['dmg', '③ ダメージ計算']];
 const RESULT_OPTS = [['', '未決'], ['win', '勝ち'], ['lose', '負け'], ['draw', '引分']];
@@ -213,20 +214,20 @@ function speedRangeText(o, v, battle, idx) {
 }
 
 // ---- ログ ----
-export function LogTab({battle, mut, onDelete}) {
+export function LogTab({battle, mut, onDelete, ctx, usage, toast}) {
   return (
     <div class="page-in">
-      {!battle.turns.length && <Empty>まだターンの記録がありません。ターン入力から記録すると、ここにターンごとのメモ欄が並びます。記録の修正はバトルログの行をタップしてください。</Empty>}
-      <ol class="log">
-        {battle.turns.map((t, ti) => (
-          <li key={t.n}>
-            <div class="log-head"><strong>ターン {t.n}</strong>{t.orderKnown && <span class="tag">行動順を推定に使用</span>}</div>
-            {t.acts.map(a => <div class={cx('log-act', a.side)}>{describeAct(battle, a)}</div>)}
-            {(t.auto || []).map(x => <div class="log-auto">{x}</div>)}
-            <input class="input log-note" placeholder="このターンのメモ" value={t.note || ''} onChange={e => mut(b => { b.turns[ti].note = e.currentTarget.value; })} />
-          </li>
-        ))}
-      </ol>
+      {ctx ? <BattleLog battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} notes /> : (
+        <ol class="log">
+          {battle.turns.map((t, ti) => (
+            <li key={t.n}>
+              <div class="log-head"><strong>ターン {t.n}</strong></div>
+              {t.acts.map(a => <div class={cx('log-act', a.side)}>{describeAct(battle, a)}</div>)}
+              <input class="input log-note" placeholder="このターンのメモ" value={t.note || ''} onChange={e => mut(b => { b.turns[ti].note = e.currentTarget.value; })} />
+            </li>
+          ))}
+        </ol>
+      )}
       <label class="field"><span>対戦のメモ (反省点・気づき)</span>
         <textarea class="input" rows={5} value={battle.memo} onChange={e => mut(b => { b.memo = e.currentTarget.value; })} />
       </label>

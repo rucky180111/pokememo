@@ -5,7 +5,7 @@ import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engine/calc.js';
 import {megaTarget, buildOf, condOf, other, PIVOT_MOVES, faintedCount, pickCount} from '../engine/battle.js';
-import {RECOIL, HALF_RECOIL, DRAIN, SELF_FX_JA} from '../engine/flow.js';
+import {RECOIL, HALF_RECOIL, DRAIN, SELF_FX_JA, FORCE_MOVES} from '../engine/flow.js';
 import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn, replay, expiryCandidates, hazardDamage, dispOf} from '../engine/flow.js';
 import {Picker, Sheet, Seg, Toggle, Sprite, cx} from './common.jsx';
 
@@ -126,7 +126,24 @@ function EntryAbilityAsk({battle, mut, usage, toast}) {
 // 自分の行動予定 (ターンをまたいで画面を切り替えても残す)
 const plans = new Map();
 
+// 左の列: ターン入力だけ (大きく使う)。直前の数行だけログを見せる
 export function Timeline({battle, ctx, mut, usage, toast}) {
+  const last = battle.turns[battle.turns.length - 1];
+  const recent = last ? last.acts.slice(-2) : [];
+  return (
+    <div class="ar-left">
+      {recent.length > 0 && (
+        <div class="tl-recent">
+          {recent.map(a => <div class={cx('tl-mini', a.side)}><span>{SIDE_JA[a.side] || '場'}</span> {actLine(battle, a)}</div>)}
+        </div>
+      )}
+      <Composer battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} />
+    </div>
+  );
+}
+
+/** バトルログ (タップで修正)。右の「ログ・メモ」タブに置く */
+export function BattleLog({battle, ctx, mut, usage, toast, notes}) {
   const [edit, setEdit] = useState(null); // {ti, ai}
   const tlRef = useRef(null);
   const nActs = battle.turns.reduce((a, t) => a + t.acts.length, 0);
@@ -134,7 +151,7 @@ export function Timeline({battle, ctx, mut, usage, toast}) {
   const editable = canReplay(battle);
   const double = battle.format === 'double';
   return (
-    <div class="ar-left">
+    <div class="battle-log">
       <h3>バトルログ {editable && battle.turns.length > 0 && <small class="muted">(タップして修正)</small>}</h3>
       <div class="tl" ref={tlRef}>
         {!battle.turns.length && <p class="muted">下のターン入力で、自分の行動を選んでから、動いた順に記録します。記録した順番は行動順として、相手の素早さの推定に使います。</p>}
@@ -152,11 +169,11 @@ export function Timeline({battle, ctx, mut, usage, toast}) {
             {!t.open && ti === battle.turns.length - 1 && editable && (
               <button class="btn ghost sm tl-reopen" onClick={() => { mut(b => { reopenLastTurn(b, usage); }); toast('ターン終了を取り消しました。行動を追加できます'); }}>このターンに行動を追加する</button>
             )}
+            {notes && <input class="input log-note" placeholder="このターンのメモ" value={t.note || ''} onChange={e => mut(b => { b.turns[ti].note = e.currentTarget.value; })} />}
           </div>
         ))}
         {!editable && battle.turns.length > 0 && <p class="hint">この対戦は以前の形式で記録されているため、過去の記録は修正できません。</p>}
       </div>
-      <Composer battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} />
       {edit && <EditSheet battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} {...edit} onClose={() => setEdit(null)} />}
     </div>
   );
@@ -164,6 +181,7 @@ export function Timeline({battle, ctx, mut, usage, toast}) {
 
 // ---- 入力欄 (1画面ずつ進む) ----
 // ページ: plan (① 自分の行動) → who (② 次に動いたのは) → act (技 → 結果 → ダメージ) → who ... → end (③ ターン終了)
+const stacks = new Map();
 const PAGE_TITLE = {plan: '① 自分の行動', who: '② 行動順', act: '② 行動の内容', end: '③ ターン終了'};
 
 function Composer({battle, ctx, mut, usage, toast}) {
@@ -174,10 +192,12 @@ function Composer({battle, ctx, mut, usage, toast}) {
   const planKey = `${battle.id}:${turnNo}`;
   const [plan, setPlanState] = useState(() => plans.get(planKey) || {});
   const startStack = () => (open?.acts.some(a => a.type !== 'event') ? ['plan', 'who'] : ['plan']);
-  const [stack, setStack] = useState(startStack);
+  // 画面を切り替えても入力の途中から続けられるよう、どこまで進んだかを覚えておく
+  const [stack, setStackRaw] = useState(() => stacks.get(planKey) || startStack());
+  const setStack = v => setStackRaw(prev => { const nx = typeof v === 'function' ? v(prev) : v; stacks.set(planKey, nx); return nx; });
   const [pendingNext, setPendingNext] = useState(false);
   const backRef = useRef(null);
-  useEffect(() => { setPlanState(plans.get(planKey) || {}); setActor(null); setStack(startStack()); }, [planKey]);
+  useEffect(() => { setPlanState(plans.get(planKey) || {}); setActor(null); setStack(stacks.get(planKey) || startStack()); }, [planKey]);
   const setPlan = p => { plans.set(planKey, p); setPlanState(p); };
   const page = stack[stack.length - 1];
   const go = p => setStack(s => [...s, p]);
@@ -379,7 +399,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
     }
     return {type: i.type || null, move: i.move || '', to: i.to ?? null, target: t, mega: !!i.mega, megaForme: i.megaForme || '',
       outcome: i.cant ? 'cant' : i.miss ? 'miss' : i.protect ? 'protect' : 'hit', hp, crit: !!i.crit, hits: i.hits || 0,
-      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, healedBy: i.healedBy || [], hpMode: 'left', secFx: i.secFx || [], selfFx: i.selfFx || [], atkHp: '', inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
+      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, healedBy: i.healedBy || [], hpMode: 'left', secFx: i.secFx || [], selfFx: i.selfFx || [], atkHp: '', forceTo: i.forceTo ?? null, inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
   };
   const [f, setF] = useState(fromInit);
   const [pick, setPick] = useState(null);
@@ -398,6 +418,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
   const tgtNow = tgt ? condOf(battle, tgt.side, tgt.mon)?.hp ?? 100 : 100;
   const bench = benchOf(battle, side);
   const pivot = mv && PIVOT_MOVES.has(f.move) && hit;
+  const forced = mv && FORCE_MOVES.has(f.move) && hit && tgt ? benchOf(battle, tgt.side) : null;
   // 攻撃を受けた側がターン終了時に回復しうるもの (入れたHPが回復後かどうかを選べるように)
   const healOpts = (() => {
     if (!tgt) return [];
@@ -436,6 +457,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
       atkHpAfter: h && ff.selfFx?.length && ff.atkHp !== '' && ff.atkHp != null ? (side === 'me' ? (Number(ff.atkHp) / maxHPOf(battle, mon)) * 100 : Number(ff.atkHp)) : undefined,
       target: double ? tgt : null, hpAfter, healedBy: h && hpAfter != null && ff.healedBy.length ? ff.healedBy : undefined, inflict: h && ff.inflict ? ff.inflict : '',
       to: m2 && PIVOT_MOVES.has(ff.move) && h && ff.to != null ? ff.to : null,
+      forceTo: m2 && FORCE_MOVES.has(ff.move) && h && ff.forceTo != null ? ff.forceTo : undefined,
     });
   };
   const submit = (patch = {}) => { const ff = {...f, ...patch}; if (!ff.type) return; onSubmit(build_input(ff)); };
@@ -445,7 +467,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
   const chooseMove = id => { set({type: 'move', move: id, inflict: STATUS_MOVE[id] || '', hits: 0, outcome: 'hit'}); if (wizard) goStep('result'); };
   const chooseSwitch = i => { if (wizard) submit({type: 'switch', to: i, move: ''}); else set({type: 'switch', to: i, move: ''}); };
   // 結果を選んだ → ダメージなどの入力が要るなら次へ、要らなければ記録
-  const needDetail = m => m && (m.c !== 'Z' || STATUS_MOVE[f.move] || (PIVOT_MOVES.has(f.move) && bench.length) || (double && !m.sp && foes.length > 1));
+  const needDetail = m => m && (m.c !== 'Z' || STATUS_MOVE[f.move] || (PIVOT_MOVES.has(f.move) && bench.length) || FORCE_MOVES.has(f.move) || (double && !m.sp && foes.length > 1));
   // 確率で起きる追加効果: ダメージのあとに「起きたか」を聞く
   const STAT_NAME = {atk: 'こうげき', def: 'ぼうぎょ', spa: 'とくこう', spd: 'とくぼう', spe: 'すばやさ', accuracy: '命中率', evasion: '回避率'};
   const tgtName = tgt ? `${SIDE_JA[tgt.side]}の${monName(battle, tgt.side, tgt.mon)}` : '';
@@ -596,6 +618,11 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
         <span class="muted">攻撃側の持ち物:</span>
         <button class={cx('chip', f.atkItem ? 'on' : 'add')} onClick={() => (f.atkItem ? set({atkItem: ''}) : setPick('atk'))}>{f.atkItem ? itemName(f.atkItem) : '判明したら選ぶ…'}</button>
       </div>
+      {forced && forced.length > 0 && (
+        <div class="sw-row pivot"><span class="muted">{tgt.side === 'opp' ? '相手が' : '自分が'}引きずり出されたのは</span>
+          {forced.map(i => <MonBtn battle={battle} side={tgt.side} mon={i} on={f.forceTo === i} onClick={() => set({forceTo: f.forceTo === i ? null : i})} />)}
+        </div>
+      )}
       {pivot && bench.length > 0 && (
         <div class="sw-row pivot"><span class="muted">交代先</span>
           {bench.map(i => <MonBtn battle={battle} side={side} mon={i} on={f.to === i} onClick={() => set({to: f.to === i ? null : i})} />)}

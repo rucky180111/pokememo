@@ -18,6 +18,10 @@ export const STATUSES = [['', 'なし'], ['brn', 'やけど'], ['par', 'まひ']
 
 // 現在の姿 (メガ・フォルム込み) の種族ID
 export const currentSpecies = (build, cond) => (cond?.forme && dex.species[cond.forme] ? cond.forme : build.species);
+// 今のタイプ (みずびたし・へんげんじざい等で変わっていればそれ)
+export const typesOf = (build, cond) => (cond?.types?.length ? cond.types : dex.species[currentSpecies(build, cond)]?.t || []);
+// ばけのかわが残っているか (ミミッキュ)
+export const disguiseIntact = (build, cond) => currentSpecies(build, cond) === 'mimikyu' && currentAbility(build, cond) === 'disguise' && !cond?.disguiseBroken;
 
 // 現在の姿での特性。メガシンカ中はメガ側の特性に置き換わる。
 export function currentAbility(build, cond) {
@@ -36,12 +40,14 @@ export function toCalcPokemon(build, cond = newCond(), extra = {}) {
   if (!s) throw new Error(`unknown species: ${sid}`);
   const evs = {};
   STAT_KEYS.forEach((k, i) => { evs[k] = clampSP(build.sp?.[i]); });
-  const ability = currentAbility(build, cond);
+  let ability = currentAbility(build, cond);
+  // へんげんじざい・リベロは一度使うとタイプが固定される (計算機は「どの技でも一致」と扱うので外す)
+  if ((ability === 'protean' || ability === 'libero') && cond.proteanUsed) ability = '';
   const itemId = cond.itemGone ? '' : build.item;
   const boosts = {};
   for (const k of BOOST_KEYS) boosts[k] = Math.max(-6, Math.min(6, cond.boosts?.[k] || 0));
   // へんしん (メタモン): HP 以外の能力は相手と同じ。HP の種族値だけ元のポケモンのものにする
-  const overrides = build.hpBase ? {baseStats: {hp: build.hpBase, atk: s.bs[1], def: s.bs[2], spa: s.bs[3], spd: s.bs[4], spe: s.bs[5]}} : undefined;
+  let overrides = build.hpBase ? {baseStats: {hp: build.hpBase, atk: s.bs[1], def: s.bs[2], spa: s.bs[3], spd: s.bs[4], spe: s.bs[5]}} : undefined;
   const p = new Pokemon(gen, s.n, {
     ...(overrides ? {overrides} : {}),
     item: dex.items[itemId]?.n,
@@ -54,6 +60,12 @@ export function toCalcPokemon(build, cond = newCond(), extra = {}) {
     abilityOn: !!cond.abilityOn || (ability === 'unburden' && !!cond.itemGone && !!build.item),
     alliesFainted: extra.alliesFainted || 0,
   });
+  if (cond.types?.length) {
+    // 計算機は内部で複製するときに種族のタイプと混ぜてしまうので、複製後もタイプを上書きする
+    const types = cond.types.slice(0, 3);
+    const fix = q => { q.types = types; q.species = {...q.species, types}; const base = q.clone; q.clone = function () { return fix(base.call(this)); }; return q; };
+    fix(p);
+  }
   const max = p.maxHP();
   const pct = cond.hp == null ? 100 : Math.max(0, Math.min(100, cond.hp));
   p.originalCurHP = pct >= 100 ? max : Math.max(1, Math.min(max, Math.round((max * pct) / 100)));
@@ -158,6 +170,9 @@ export function calcDamage(attacker, defender, moveId, opts = {}) {
         koText = nMin === nMax ? `確定${nMin}発` : `${nMin}〜${Number.isFinite(nMax) ? nMax : '∞'}発`;
       }
     }
+    // ばけのかわ: 最初の1回はダメージを受けず、HP が 1/8 減るだけ (かたやぶり系は無視)
+    const disguise = max > 0 && disguiseIntact(defender.build, defender.cond) && !['moldbreaker', 'teravolt', 'turboblaze', 'myceliummight'].includes(currentAbility(attacker.build, attacker.cond));
+    if (disguise) koText = `ばけのかわで1回無効 (HP-1/8)・その後 ${koText}`;
     const moveType = result.rawDesc?.moveType || result.move?.type || mv.t;
     let eff = typeEffect(moveType, def.types);
     if (moveId === 'freezedry' && def.types.includes('Water')) eff = typeEffect('Ice', def.types.filter(t => t !== 'Water')) * 2;
@@ -172,7 +187,7 @@ export function calcDamage(attacker, defender, moveId, opts = {}) {
       rolls: flatten(result.damage),
       n, chance, guaranteed, koText,
       immune: max === 0,
-      eff, moveType,
+      eff, moveType, disguise,
       defHP: curHP, defMaxHP: maxHP,
       atkSpecies: atk.name, defSpecies: def.name,
       hits: move.hits,

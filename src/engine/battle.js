@@ -1,7 +1,8 @@
 // 対戦データの生成と、盤面 (仮想のゲーム状況) の状態遷移。
 // UI から独立した純粋なロジックで、tests/ から直接検証する。
+import {TYPE_JA} from './dex.js';
 import {dex, megaFormeFor, speciesName, moveName, abilityName} from './dex.js';
-import {newCond, emptyBoosts, currentSpecies, BOOST_KEYS} from './calc.js';
+import {newCond, emptyBoosts, currentSpecies, typesOf, BOOST_KEYS} from './calc.js';
 
 export const UNDO_DEPTH = 6;
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -205,14 +206,18 @@ function leaveField(b, side, i, {log = [], resolveAbility} = {}) {
   cond.transformed = null;
   cond.healBlock = 0;
   cond.seeded = false;
+  cond.types = null; // みずびたし・へんげんじざい等のタイプ変化は交代で戻る
+  cond.proteanUsed = false;
   if (cond.status === 'tox') cond.toxicCounter = 1;
-  if (cond.forme && !dex.species[cond.forme]?.mega) cond.forme = null; // メガシンカは交代しても戻らない
+  if (cond.forme && !dex.species[cond.forme]?.mega && cond.forme !== 'palafinhero') cond.forme = null; // メガシンカは交代しても戻らない
   if (cond.fainted) return;
   const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}`;
   if (ab === 'regenerator' && cond.hp < 100) {
     cond.hp = Math.min(100, Math.round((cond.hp + 100 / 3) * 10) / 10);
     log.push(`${who}のさいせいりょく: HP ${Math.round(cond.hp)}% に回復`);
   }
+  // マイティチェンジ (イルカマン): 一度下がるとマイティフォルムになる (以後ずっと)
+  if (ab === 'zerotohero' && build.species === 'palafin' && dex.species.palafinhero) { cond.hero = true; log.push(`${who}はマイティフォルムになる`); }
   if (ab === 'naturalcure' && cond.status) {
     cond.status = '';
     log.push(`${who}のしぜんかいふく: 状態異常が回復`);
@@ -230,6 +235,7 @@ export function sendOut(b, side, slot, monIdx, opts = {}) {
   if (prev != null) leaveField(b, side, prev, {log, resolveAbility: opts.resolveAbility});
   s.active[slot] = monIdx;
   if (monIdx == null) return log;
+  { const c = condOf(b, side, monIdx); if (c?.hero) c.forme = 'palafinhero'; }
   // 設置技がある場に出た → ダメージを確認する (ターン入力で聞く)
   { const c = condOf(b, side, monIdx); if (c) c.hazard = !!(s.sr || s.spikes) && !c.fainted; }
   if (!b.pick[side].includes(monIdx)) b.pick[side].push(monIdx);
@@ -329,6 +335,25 @@ export function applyMoveEffects(b, act, opts = {}) {
   const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(currentSpecies(buildOf(b, side, mon), condOf(b, side, mon)))}`;
   const st = b.state;
 
+  // タイプを変える技
+  const tgtRef = act.target;
+  const tcond = tgtRef ? condOf(b, tgtRef.side, tgtRef.mon) : null;
+  const tname = tgtRef ? `${tgtRef.side === 'me' ? '自分' : '相手'}の${speciesName(currentSpecies(buildOf(b, tgtRef.side, tgtRef.mon), tcond))}` : '';
+  const setTypes = (c, types, name) => { c.types = types; log.push(`${name}は${types.map(t => TYPE_JA[t] || t).join('・')}タイプになった`); };
+  if (tcond && !tcond.fainted) {
+    const tt = typesOf(buildOf(b, tgtRef.side, tgtRef.mon), tcond);
+    if (move === 'soak') setTypes(tcond, ['Water'], tname);
+    if (move === 'magicpowder') setTypes(tcond, ['Psychic'], tname);
+    if (move === 'trickortreat' && !tt.includes('Ghost')) setTypes(tcond, [...tt, 'Ghost'], tname);
+    if (move === 'forestscurse' && !tt.includes('Grass')) setTypes(tcond, [...tt, 'Grass'], tname);
+    if (move === 'reflecttype') setTypes(condOf(b, side, mon), [...tt], who);
+  }
+  {
+    const uc = condOf(b, side, mon), ut = typesOf(buildOf(b, side, mon), uc);
+    if (move === 'burnup' && ut.includes('Fire')) setTypes(uc, ut.filter(t => t !== 'Fire').length ? ut.filter(t => t !== 'Fire') : ['???'], who);
+    if (move === 'doubleshock' && ut.includes('Electric')) setTypes(uc, ut.filter(t => t !== 'Electric').length ? ut.filter(t => t !== 'Electric') : ['???'], who);
+  }
+
   const weatherMove = {raindance: 'Rain', sunnyday: 'Sun', sandstorm: 'Sand', snowscape: 'Snow', chillyreception: 'Snow'}[move];
   if (weatherMove && setWeather(b, weatherMove, {side, mon})) log.push(`${moveName(move)}: 天候が${WEATHER_JA[weatherMove]}に`);
   const terrainMove = {electricterrain: 'Electric', grassyterrain: 'Grassy', mistyterrain: 'Misty', psychicterrain: 'Psychic'}[move];
@@ -389,7 +414,7 @@ export function applyMoveEffects(b, act, opts = {}) {
     }
   }
   if (move === 'curse') {
-    const types = dex.species[currentSpecies(buildOf(b, side, mon), condOf(b, side, mon))]?.t || [];
+    const types = typesOf(buildOf(b, side, mon), condOf(b, side, mon)) || [];
     if (!types.includes('Ghost')) applyBoosts(b, side, mon, {atk: 1, def: 1, spe: -1}, {log, resolveAbility: res});
   }
   if (move === 'knockoff') {

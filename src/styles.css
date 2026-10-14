@@ -905,3 +905,17 @@ tr.td-miss th { background: #ffe9d6; }
 .os-rate.known { border-color: var(--accent); background: var(--accent-soft); }
 .os-rate:disabled { cursor: default; }
 .os-rate:disabled:not(.known) { opacity: .55; }
+
+/* 入力欄を大きく: 左の列は入力だけ。ログは右の「ログ・メモ」 */
+.arena.wide { grid-template-columns: minmax(330px, 400px) minmax(0, 1fr) minmax(250px, 290px); }
+.arena.wide .composer { max-height: none; flex: 1 1 auto; overflow-y: auto; }
+.ar-left .composer { font-size: 15px; }
+.ar-left .move-grid.big .mv-btn { min-height: 56px; font-size: 15.5px; }
+.ar-left .mon-btn { width: 84px; }
+.ar-left .oc-btn { min-height: 54px; font-size: 15px; }
+.ar-left .oc-btn.hit { min-height: 62px; font-size: 17px; }
+.tl-recent { border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 6px; display: flex; flex-direction: column; gap: 2px; }
+.tl-mini { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-mini span { font-weight: 700; } .tl-mini.me span { color: var(--me); } .tl-mini.opp span { color: var(--opp); }
+.battle-log .tl { max-height: none; min-height: 0; }
+.battle-log .log-note { margin: 2px 0 6px 18px; width: calc(100% - 18px); min-height: 32px; font-size: 13px; }

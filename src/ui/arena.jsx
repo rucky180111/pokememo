@@ -1,7 +1,7 @@
 // 対戦フェーズ: 左 = 時系列とターン入力 / 中央 = 相手と自分の盤面 / 右 = ダメージ表・統計
 import {useMemo, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf, STAT_JA, STAT_KEYS} from '../engine/dex.js';
-import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility, finalSpeed} from '../engine/calc.js';
+import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility, finalSpeed, typesOf} from '../engine/calc.js';
 import {condOf, turnNumber} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {speedOutlook} from '../engine/assume.js';
@@ -25,7 +25,7 @@ export function Arena({battle, ctx, mut, usage, toast, wide, onDelete}) {
   const p = {battle, ctx, mut, usage, toast, setSheet, onDelete};
   return (
     <div class={cx('arena', wide && 'wide')}>
-      {!wide && <div class="arena-tabs"><Seg value={pane} options={[['left', 'ターン入力'], ['center', '盤面'], ['right', 'ダメージ・傾向']]} onChange={setPane} /></div>}
+      {!wide && <div class="arena-tabs"><Seg value={pane} options={[['left', 'ターン入力'], ['center', '盤面'], ['right', 'ダメージ・ログ']]} onChange={setPane} /></div>}
       {(wide || pane === 'left') && <Timeline {...p} />}
       {(wide || pane === 'center') && (
         <div class="ar-center">
@@ -155,7 +155,9 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet, toast}) {
         <MegaButtons battle={battle} side={side} mon={idx} mut={mut} usage={usage} />
         {transformed && <span class="tag accent">へんしん中 ({speciesName((side === 'opp' ? battle.opp : battle.my)[idx].species)})</span>}
         {zoro && !transformed && <button class="btn ghost sm" onClick={() => setAskZoro(true)} title="イリュージョンの正体がゾロアークだったとき">正体は{speciesName(zoro.o.species)}</button>}
-        <span class="types">{s.t.map(t => <TypeChip type={t} />)}</span>
+        {raw.types?.length ? <span class="tag accent">タイプ変化</span> : null}
+        {raw.disguiseBroken && <span class="tag">ばけのかわ はがれた</span>}
+        <span class="types">{typesOf(build, cond).map(t => <TypeChip type={t} />)}</span>
       </div>
       <div class="mp-info">
         <span class="mi"><span class="mi-lb">持ち物</span>
@@ -244,10 +246,10 @@ function RightPane(props) {
   const [tab, setTab] = useState('dmg');
   return (
     <div class="ar-right">
-      <Seg value={tab} options={[['dmg', 'ダメージ'], ['stat', '傾向'], ['log', 'メモ']]} onChange={setTab} />
+      <Seg value={tab} options={[['dmg', 'ダメージ'], ['stat', '傾向'], ['log', 'ログ・メモ']]} onChange={setTab} />
       {tab === 'dmg' && <DamagePane {...props} />}
       {tab === 'stat' && <PredictTab battle={props.battle} ctx={props.ctx} />}
-      {tab === 'log' && <LogTab battle={props.battle} mut={props.mut} onDelete={props.onDelete} />}
+      {tab === 'log' && <LogTab battle={props.battle} mut={props.mut} onDelete={props.onDelete} ctx={props.ctx} usage={props.usage} toast={props.toast} />}
     </div>
   );
 }
