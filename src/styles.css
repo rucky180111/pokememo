@@ -183,7 +183,6 @@ button.chip { min-height: 34px; }
 .sp-num { padding: 4px 6px; min-height: 34px; text-align: right; }
 .sp-val { text-align: right; font-weight: 700; }
 .sp-row input[type=range] { width: 100%; min-width: 0; }
-.move-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 
 /* 対戦画面 */
 .battle-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; flex-wrap: wrap; }
@@ -850,3 +849,8 @@ tr.td-miss th { background: #ffe9d6; }
 .td-fix li.bad { color: #b3261e; }
 .td-mini { display: inline-flex; flex-wrap: wrap; gap: 3px; vertical-align: middle; }
 .td-mini .td-combo { padding: 1px; border: 1px dashed var(--border); border-radius: 6px; margin-right: 3px; }
+
+.moves4 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.moves4 .chip { min-width: 0; border-radius: 8px; }
+.moves4 .chip .mv-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.moves4 .chip.empty { border-style: dashed; background: transparent; }

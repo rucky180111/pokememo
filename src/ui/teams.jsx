@@ -159,7 +159,7 @@ export function TeamEditor({id}) {
               <div class="card-top"><MonName id={m.species} icon={48} /><span class="muted">{itemName(m.item) || '持ち物なし'}</span></div>
               <div class="muted">{abilityName(m.ability)} / {buildSummary(m)}</div>
               <div class="num dim">{statsOf(m.species, m.sp, m.nature).join('-')}</div>
-              <div class="chips">{(m.moves || []).map(mv => <span class="chip"><TypeChip type={dex.moves[mv]?.t} small />{moveName(mv)}</span>)}{!(m.moves || []).length && <span class="muted">技が未設定</span>}</div>
+              {(m.moves || []).length ? <div class="moves4">{[0, 1, 2, 3].map(i => { const mv = m.moves[i]; return mv ? <span class="chip"><TypeChip type={dex.moves[mv]?.t} small /><span class="mv-nm">{moveName(mv)}</span></span> : <span class="chip empty" />; })}</div> : <span class="muted">技が未設定</span>}
               {m.note && <div class="note">{m.note}</div>}
             </button>
             <div class="card-tools">
