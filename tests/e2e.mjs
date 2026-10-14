@@ -198,7 +198,7 @@ check(await page.locator('.party-strip .ps-mon.unseen').count() === 5 && await p
 await shot(page, 'arena-center');
 check(await page.locator('.mon-panel.opp .mp-table tbody tr').count() === 4, '相手の表に 種族値/推定Pt/能力上昇/実数値');
 check(await page.locator('.mon-panel.opp .mp-speed li').count() >= 5, '素早さ一覧に自分の位置が入る');
-check(await page.locator('.mon-panel.me .mv-box').count() === 4, '自分の技4つ');
+check(await page.locator('.mon-panel.me .mp-moves > *').count() === 4, '自分の技4つ');
 await pane('ダメージ・傾向');
 await page.waitForSelector('.dp-move');
 await shot(page, 'arena-damage');

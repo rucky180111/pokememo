@@ -141,8 +141,8 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet, toast}) {
     if (!est) return [];
     const mods = new Set();
     for (const r of est.rows) if (r.known && r.byMod) for (const m of Object.keys(r.byMod)) mods.add(Number(m));
-    const all = [[1, '推定Pt 補正なし'], [1.1, '推定Pt 補正↑'], [0.9, '推定Pt 補正↓']].filter(([m]) => mods.has(m));
-    return all.length ? all : [[1, '推定能力Pt']];
+    const all = [[1, '能力Pt 補正なし'], [1.1, '能力Pt 補正↑'], [0.9, '能力Pt 補正↓']].filter(([m]) => mods.has(m));
+    return all.length ? all : [[1, '能力Pt']];
   })();
   const fmtVal = r => (r.valLo === r.valHi ? `${r.valLo}` : `${r.valLo}〜${r.valHi}`);
   const tr = battle.state.field.trickRoom;
@@ -210,21 +210,19 @@ function MonPanel({side, idx, battle, ctx, mut, usage, setSheet, toast}) {
             </tr>
           </tbody>
         </table>
-        <div class="mp-speed">
+        {side === 'opp' && <div class="mp-speed">
           <div class="cap">素早さ{tr ? ' (トリル中)' : ''}</div>
-          {side === 'me' ? <div class="spd-me num">{speeds.mine}</div> : (
-            <ol>
-              {speeds.rows.map(r => <li class={cx('num', r.mine && 'mine', !r.ok && 'ruled', r.scarf && 'scarf', !r.mine && speeds.mine != null && (r.v > speeds.mine ? 'fast' : r.v < speeds.mine ? 'slow' : 'tie'))}><span>{r.label}</span><b>{r.v}</b></li>)}
-            </ol>
-          )}
-        </div>
+          <ol>
+            {speeds.rows.map(r => <li class={cx('num', r.mine && 'mine', !r.ok && 'ruled', r.scarf && 'scarf', !r.mine && speeds.mine != null && (r.v > speeds.mine ? 'fast' : r.v < speeds.mine ? 'slow' : 'tie'))}><span>{r.label}</span><b>{r.v}</b></li>)}
+          </ol>
+        </div>}
       </div>
       {side === 'opp' && <p class="hint mp-remain">H・B・D = 与えたダメージ、A・C = 受けたダメージ、S = 行動順 から推定 (空欄は未推定、× はその性格補正では説明がつかない)。H・B・D は観測に合う中で使うポイントが最小の振り方です。未確定の残り能力Pt: <b class="num">{est.remain}</b> / 66{speeds.o?.pFaster != null ? ` ・ 先手率 自分 ${rate(speeds.o.pSlower)}` : ''}</p>}
       <div class="mp-lower">
         <div class="mp-moves">
           {[0, 1, 2, 3].map(i => {
             const m = moves[i];
-            if (m) return <span class="mv-box"><TypeChip type={dex.moves[m]?.t} small />{moveName(m)}</span>;
+            if (m) return <span class="mv-btn mv-show"><span class={cx('mv-bar', `t-${dex.moves[m]?.t}`)} /><span class="mv-nm">{moveName(m)}</span></span>;
             return <span class="mv-box empty">{side === 'opp' ? '未判明' : '—'}</span>;
           })}
         </div>

@@ -1,12 +1,63 @@
 // 選出フェーズ: 相手6体を入れて、その場で「誰を出すか」を決める
 import {useMemo, useState} from 'preact/hooks';
-import {dex, speciesName, itemName, moveName, typeEffect} from '../engine/dex.js';
+import {dex, speciesName, itemName, moveName, typeEffect, statsOf, megaFormeFor} from '../engine/dex.js';
 import {newOpp, sendOut, activeCount, pickCount} from '../engine/battle.js';
-import {leadRate} from '../engine/assume.js';
+import {leadRate, parseSpread} from '../engine/assume.js';
 import {oppSpeciesStats, similarTeams, leadsOf, matchupMatrix} from '../engine/predict.js';
 import {useApp, Picker, TypeChip, Sprite, cx, rate} from './common.jsx';
 import {MonEditor} from './teams.jsx';
 import {OppSheet} from './battle.jsx';
+
+// 使用率の配分から、相手の素早さ (いちばん多い値・最小・最大) とスカーフ率
+function oppSpeed(sid, usage) {
+  const d = usage?.pokemon?.[sid];
+  const s = dex.species[sid];
+  if (!s) return null;
+  const base = s.mega || sid;
+  const w = new Map();
+  for (const [k, r] of d?.sp || []) { const p = parseSpread(k); if (!p) continue; const v = statsOf(sid, p.sp, p.nature)[5]; w.set(v, (w.get(v) || 0) + r); }
+  if (!w.size) { const lo = statsOf(sid, [0, 0, 0, 0, 0, 0], 'Brave')[5], hi = statsOf(sid, [0, 0, 0, 0, 0, 32], 'Jolly')[5]; return {top: null, lo, hi, scarf: 0, base}; }
+  const vals = [...w.keys()];
+  const top = [...w.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const scarf = (d.it || []).find(([i]) => i === 'choicescarf')?.[1] || 0;
+  return {top, lo: Math.min(...vals), hi: Math.max(...vals), scarf};
+}
+
+function SpeedLine({battle, usage}) {
+  const rows = [];
+  battle.my.forEach(m => {
+    if (!dex.species[m.species]) return;
+    rows.push({side: 'me', id: m.species, v: statsOf(m.species, m.sp, m.nature)[5]});
+    const mega = megaFormeFor(m.species, m.item);
+    if (mega) rows.push({side: 'me', id: mega, v: statsOf(mega, m.sp, m.nature)[5]});
+  });
+  battle.opp.forEach(o => {
+    const ids = [o.species, ...((dex.species[o.species]?.megas || []).filter(x => usage?.pokemon?.[x]))];
+    for (const id of ids) {
+      const sp = oppSpeed(id, usage);
+      if (!sp) continue;
+      rows.push({side: 'opp', id, v: sp.top ?? sp.hi, lo: sp.lo, hi: sp.hi});
+      if (sp.scarf >= 0.05) rows.push({side: 'opp', id, v: Math.floor((sp.top ?? sp.hi) * 1.5), scarf: sp.scarf});
+    }
+  });
+  if (!rows.length) return null;
+  rows.sort((a, b) => b.v - a.v || (a.side === 'me' ? -1 : 1));
+  return (
+    <div class="sel-speed">
+      <h4>素早さ <span class="muted">(相手はいちばん多い配分の値と、使用率にある範囲)</span></h4>
+      <ol>
+        {rows.map(r => (
+          <li class={cx(r.side, r.scarf && 'scarf')}>
+            <b class="num">{r.v}</b>
+            <Sprite id={r.id} size={26} />
+            <span class="nm">{speciesName(r.id)}{r.scarf ? ` スカーフ (${Math.round(r.scarf * 100)}%)` : ''}</span>
+            {r.side === 'opp' && !r.scarf && r.lo !== r.hi && <small class="muted num">{r.lo}〜{r.hi}</small>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
 
 export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
   const {store} = useApp();
@@ -148,6 +199,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
           </tbody>
         </table>
       </div>
+      {battle.opp.length > 0 && <SpeedLine battle={battle} usage={usage} />}
       <div class="btnrow pad-s">
         {battle.my.map((m, i) => <button class="btn ghost sm" onClick={() => setMyEdit(i)}><Sprite id={m.species} size={28} />{speciesName(m.species)}の型</button>)}
         {battle.my.length < 6 && <button class="btn ghost sm" onClick={() => setMyEdit({add: true})}>＋ 自分のポケモン</button>}

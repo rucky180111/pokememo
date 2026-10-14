@@ -10,12 +10,12 @@ import {TeamDiagnosis} from './teamdiag.jsx';
 
 // 調整メモの並び (優先順位)
 const spOrderOf = b => { const o = (b.spOrder || []).filter(k => STAT_KEYS.includes(k)); return [...o, ...STAT_KEYS.filter(k => !o.includes(k))]; };
-// 能力ポイントの「効率のよい点」: H は実数値が 16n-1、上昇補正の能力は 1 ポイントで実数値が 2 上がる点 (11n)
+// 能力ポイントの目印: H は実数値が 16n、上昇補正の能力は 1 ポイントで実数値が 2 上がる点 (11n)
 function spMarks(species, sp, nature, i) {
   if (!dex.species[species]) return [];
   const at = v => { const x = sp.slice(); x[i] = v; return statsOf(species, x, nature)[i]; };
   const out = [];
-  if (i === 0) { for (let v = 0; v <= SP_MAX; v++) if (at(v) % 16 === 15) out.push(v); return out; }
+  if (i === 0) { for (let v = 0; v <= SP_MAX; v++) if (at(v) % 16 === 0) out.push(v); return out; }
   if (dex.natures[nature]?.p !== STAT_KEYS[i]) return out;
   for (let v = 1; v <= SP_MAX; v++) if (at(v) - at(v - 1) >= 2) out.push(v);
   return out;
