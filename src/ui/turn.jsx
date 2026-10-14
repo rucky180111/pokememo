@@ -1,22 +1,21 @@
-// 対戦フェーズの左側: 時系列とターンの入力。
-// 入力の流れ: ① 自分の行動を選ぶ (相手の選択待ちの間に) → ② 動いた順に1体ずつ記録 → ③ ターン終了時の処理を確認して締める。
-// 記録した行動はあとから時系列をタップして直せる (最初の状態から全ターンを入れ直す)。
-import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
+// バトルログ (タップで修正) と、記録の修正フォーム・その他の変化・メガシンカのボタン。
+// 入力そのものは盤面 (play.jsx) で行う。修正すると最初の状態から全ターンを入れ直す。
+import {useEffect, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engine/calc.js';
-import {megaTarget, buildOf, condOf, other, PIVOT_MOVES, faintedCount, pickCount} from '../engine/battle.js';
+import {megaTarget, buildOf, condOf, other, PIVOT_MOVES} from '../engine/battle.js';
 import {RECOIL, HALF_RECOIL, DRAIN, SELF_FX_JA, FORCE_MOVES} from '../engine/flow.js';
-import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn, replay, expiryCandidates, hazardDamage, dispOf} from '../engine/flow.js';
+import {addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, dispOf} from '../engine/flow.js';
 import {Picker, Sheet, Seg, Toggle, Sprite, cx} from './common.jsx';
 
 const SIDE_JA = {me: '自分', opp: '相手'};
 const FLAGS = [['reflect', 'リフレクター'], ['lightScreen', 'ひかりのかべ'], ['auroraVeil', 'オーロラベール'], ['tailwind', 'おいかぜ'], ['sr', 'ステルスロック']];
-const STATUS_OPTS = [['brn', 'やけど'], ['par', 'まひ'], ['psn', 'どく'], ['tox', 'もうどく'], ['slp', 'ねむり'], ['frz', 'こおり']];
+export const STATUS_OPTS = [['brn', 'やけど'], ['par', 'まひ'], ['psn', 'どく'], ['tox', 'もうどく'], ['slp', 'ねむり'], ['frz', 'こおり']];
 // 変化技で必ず入る状態異常 (無効だったら外す)
-const STATUS_MOVE = {willowisp: 'brn', thunderwave: 'par', glare: 'par', stunspore: 'par', nuzzle: 'par', toxic: 'tox', poisonpowder: 'psn', toxicthread: 'psn', spore: 'slp', sleeppowder: 'slp', hypnosis: 'slp', sing: 'slp', darkvoid: 'slp', lovelykiss: 'slp', grasswhistle: 'slp'};
+export const STATUS_MOVE = {willowisp: 'brn', thunderwave: 'par', glare: 'par', stunspore: 'par', nuzzle: 'par', toxic: 'tox', poisonpowder: 'psn', toxicthread: 'psn', spore: 'slp', sleeppowder: 'slp', hypnosis: 'slp', sing: 'slp', darkvoid: 'slp', lovelykiss: 'slp', grasswhistle: 'slp'};
 // 発動すると無くなる持ち物
 const CONSUMED = new Set(['focussash', 'whiteherb', 'powerherb', 'airballoon', 'weaknesspolicy', 'mentalherb', 'redcard', 'ejectbutton', 'ejectpack', 'throatspray', 'boosterenergy', 'roomservice', 'adrenalineorb', 'absorbbulb', 'cellbattery', 'luminousmoss', 'snowball', 'normalgem', 'covertcloak']);
-const consumable = id => /berry$/.test(id || '') || /gem$/.test(id || '') || CONSUMED.has(id);
+export const consumable = id => /berry$/.test(id || '') || /gem$/.test(id || '') || CONSUMED.has(id);
 const OUTCOMES = [['hit', '当たった'], ['miss', '外れた'], ['protect', 'まもられた'], ['cant', '行動できず']];
 
 const alive = (b, side) => b.state.sides[side].active.filter(i => i != null && !condOf(b, side, i)?.fainted);
@@ -48,97 +47,6 @@ function MonBtn({battle, side, mon, on, onClick}) {
       <span class="mb-hp"><i class={cx(hp <= 25 ? 'red' : hp <= 50 && 'yellow')} style={{width: `${Math.max(0, hp)}%`}} /></span>
       <span class="mb-pct num">{Math.round(hp)}%</span>
     </button>
-  );
-}
-
-// 場に出たとき: 設置技のダメージ・ふうせん
-function EntryHazardAsk({battle, mut, usage, toast}) {
-  const [val, setVal] = useState({});
-  const list = ['me', 'opp'].flatMap(side => battle.state.sides[side].active.filter(i => i != null && condOf(battle, side, i)?.hazard && !condOf(battle, side, i)?.fainted).map(mon => ({side, mon})));
-  if (!list.length) return null;
-  return list.map(({side, mon}) => {
-    const d = hazardDamage(battle, side, mon);
-    const max = side === 'me' ? maxHPOf(battle, mon) : null;
-    const c = condOf(battle, side, mon);
-    const after = d ? Math.max(0, c.hp - d.pct) : c.hp;
-    const k = `${side}${mon}`;
-    const rec = ev => { mut(b => addEvent(b, {kind: 'hazard', side, mon, ...ev}, usage)); setVal({...val, [k]: ''}); };
-    return (
-      <div class="tc-box ask">
-        <div class="tc-h">{SIDE_JA[side]}の{monName(battle, side, mon)}が場に出ました: {d ? d.parts.join('・') : '設置技'}のダメージ</div>
-        <div class="chips">
-          {d && <button class="chip add" onClick={() => rec(side === 'opp' ? {hpAfter: dispOf(after)} : {})}>計算どおり → {max ? `${Math.round((after * max) / 100)}/${max}` : `${dispOf(after)}%`}</button>}
-          <label class="cp-hp">HPを入力
-            <input class="input sm num" type="number" inputMode="decimal" value={val[k] ?? ''} onInput={e => setVal({...val, [k]: e.currentTarget.value})} />{max ? `/${max}` : '%'}
-            <button class="btn sm" disabled={!val[k]} onClick={() => rec({hpAfter: max ? (Number(val[k]) / max) * 100 : Number(val[k])})}>記録</button>
-          </label>
-          <button class="chip" onClick={() => rec({none: true})}>ダメージを受けなかった{side === 'opp' ? ' (あつぞこブーツ等)' : ''}</button>
-        </div>
-      </div>
-    );
-  });
-}
-
-// 場に出ただけで表示される特性 (かならず表示されるもの / 条件しだいで表示されるもの)
-const ENTRY_ALWAYS = new Set(['intimidate', 'drizzle', 'drought', 'sandstream', 'snowwarning', 'electricsurge', 'grassysurge', 'psychicsurge', 'mistysurge', 'pressure', 'moldbreaker', 'teravolt', 'turboblaze', 'unnerve', 'trace', 'download', 'intrepidsword', 'dauntlessshield', 'airlock', 'cloudnine', 'forewarn', 'screencleaner', 'supremeoverlord', 'neutralizinggas', 'comatose', 'vesselofruin', 'swordofruin', 'tabletsofruin', 'beadsofruin', 'hadronengine', 'orichalcumpulse', 'asoneglastrier', 'asonespectrier', 'curiousmedicine']);
-const ENTRY_MAYBE = new Set(['anticipation', 'frisk', 'protosynthesis', 'quarkdrive', 'hospitality', 'zerotohero', 'costar', 'imposter']);
-
-// 相手が場に出たとき: 特性が表示されたかを聞く (表示されなかったら、かならず表示される特性は候補から外す)
-function EntryAbilityAsk({battle, mut, usage, toast}) {
-  const asks = battle.state.sides.opp.active.filter(i => {
-    if (i == null) return false;
-    const o = battle.opp[i], c = condOf(battle, 'opp', i);
-    if (!o || o.ability || o.entryAsked || c?.fainted || dex.species[c?.forme]?.mega) return false;
-    const ab = (dex.species[o.species]?.ab || []).filter(a => !(o.abilityNot || []).includes(a));
-    return ab.length > 1 && ab.some(a => ENTRY_ALWAYS.has(a) || ENTRY_MAYBE.has(a));
-  });
-  if (!asks.length) return null;
-  const decide = (i, ab) => {
-    mut(b => {
-      const o = b.opp[i];
-      o.entryAsked = true;
-      if (ab) o.ability = ab;
-      else {
-        o.abilityNot = [...new Set([...(o.abilityNot || []), ...dex.species[o.species].ab.filter(a => ENTRY_ALWAYS.has(a))])];
-        const left = dex.species[o.species].ab.filter(a => !o.abilityNot.includes(a));
-        if (left.length === 1) o.ability = left[0];
-      }
-      if (canReplay(b)) replay(b, usage);
-    });
-    toast(ab ? `特性を${abilityName(ab)}で確定しました` : '場に出たときに表示される特性を候補から外しました');
-  };
-  return asks.map(i => {
-    const o = battle.opp[i];
-    const ab = dex.species[o.species].ab.filter(a => !(o.abilityNot || []).includes(a));
-    return (
-      <div class="tc-box ask">
-        <div class="tc-h">相手の{speciesName(o.species)}が場に出たとき、特性は表示されましたか?</div>
-        <div class="chips">
-          {ab.filter(a => ENTRY_ALWAYS.has(a) || ENTRY_MAYBE.has(a)).map(a => <button class="chip add" onClick={() => decide(i, a)}>{abilityName(a)} が表示された</button>)}
-          <button class="chip" onClick={() => decide(i, '')}>表示されなかった</button>
-        </div>
-        <p class="hint">候補: {ab.map(abilityName).join(' / ')}。{ab.some(a => ENTRY_ALWAYS.has(a)) ? '表示されなかったときは、場に出ると必ず表示される特性を候補から外します。' : ''}</p>
-      </div>
-    );
-  });
-}
-
-// 自分の行動予定 (ターンをまたいで画面を切り替えても残す)
-const plans = new Map();
-
-// 左の列: ターン入力だけ (大きく使う)。直前の数行だけログを見せる
-export function Timeline({battle, ctx, mut, usage, toast}) {
-  const last = battle.turns[battle.turns.length - 1];
-  const recent = last ? last.acts.slice(-2) : [];
-  return (
-    <div class="ar-left">
-      {recent.length > 0 && (
-        <div class="tl-recent">
-          {recent.map(a => <div class={cx('tl-mini', a.side)}><span>{SIDE_JA[a.side] || '場'}</span> {actLine(battle, a)}</div>)}
-        </div>
-      )}
-      <Composer battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} />
-    </div>
   );
 }
 
@@ -179,211 +87,6 @@ export function BattleLog({battle, ctx, mut, usage, toast, notes}) {
   );
 }
 
-// ---- 入力欄 (1画面ずつ進む) ----
-// ページ: plan (① 自分の行動) → who (② 次に動いたのは) → act (技 → 結果 → ダメージ) → who ... → end (③ ターン終了)
-const stacks = new Map();
-const PAGE_TITLE = {plan: '① 自分の行動', who: '② 行動順', act: '② 行動の内容', end: '③ ターン終了'};
-
-function Composer({battle, ctx, mut, usage, toast}) {
-  const [mode, setMode] = useState('flow');
-  const [actor, setActor] = useState(null); // {side, mon}
-  const open = openTurn(battle);
-  const turnNo = open ? open.n : battle.turns.length + 1;
-  const planKey = `${battle.id}:${turnNo}`;
-  const [plan, setPlanState] = useState(() => plans.get(planKey) || {});
-  const startStack = () => (open?.acts.some(a => a.type !== 'event') ? ['plan', 'who'] : ['plan']);
-  // 画面を切り替えても入力の途中から続けられるよう、どこまで進んだかを覚えておく
-  const [stack, setStackRaw] = useState(() => stacks.get(planKey) || startStack());
-  const setStack = v => setStackRaw(prev => { const nx = typeof v === 'function' ? v(prev) : v; stacks.set(planKey, nx); return nx; });
-  const [pendingNext, setPendingNext] = useState(false);
-  const backRef = useRef(null);
-  useEffect(() => { setPlanState(plans.get(planKey) || {}); setActor(null); setStack(stacks.get(planKey) || startStack()); }, [planKey]);
-  const setPlan = p => { plans.set(planKey, p); setPlanState(p); };
-  const page = stack[stack.length - 1];
-  const go = p => setStack(s => [...s, p]);
-  const back = () => {
-    if (page === 'act' && backRef.current?.()) return;
-    setStack(s => (s.length > 1 ? s.slice(0, -1) : s));
-  };
-
-  const acted = (side, mon) => !!open?.acts.some(a => a.type !== 'event' && a.side === side && (a.mon === mon || a.to === mon));
-  const actors = ['me', 'opp'].flatMap(side => alive(battle, side).map(mon => ({side, mon, done: acted(side, mon)})));
-  const remaining = actors.filter(a => !a.done);
-  const myTodo = alive(battle, 'me').filter(m => !acted('me', m));
-  const needSend = ['me', 'opp'].filter(side => {
-    const sd = battle.state.sides[side];
-    return sd.active.some(x => x == null || condOf(battle, side, x)?.fainted) && benchOf(battle, side).length > 0;
-  });
-  // 記録したあと: まだ動いていないポケモンがいれば ②、いなければ ③ へ
-  useEffect(() => {
-    if (!pendingNext) return;
-    setPendingNext(false);
-    setStack(['plan', 'who', ...(remaining.length ? [] : ['end'])]);
-  }, [battle]);
-  // ① で決めることがない (全員行動済み・場にいない) ときは ② へ
-  useEffect(() => { if (mode === 'flow' && page === 'plan' && !myTodo.length && alive(battle, 'opp').length && !needSend.length) setStack(['plan', 'who']); }, [page, myTodo.length, needSend.length]);
-
-  const record = input => {
-    const log = mut(b => addAct(b, {...input, sameTurn: true}, usage));
-    toast(log?.length ? log[log.length - 1] : '記録しました');
-    setActor(null);
-    setPendingNext(true);
-  };
-  // ① で次に決めるポケモン (ダブルは1体ずつ)
-  const [planIdx, setPlanIdx] = useState(0);
-  const planMon = myTodo[Math.min(planIdx, myTodo.length - 1)];
-  const planDone = p => {
-    const next = myTodo.indexOf(planMon) + 1;
-    setPlan({...plan, [planMon]: p});
-    if (next < myTodo.length) setPlanIdx(next); else { setPlanIdx(0); go('who'); }
-  };
-
-  // 片方の選出 (シングル3体) が全員倒れたら終了
-  const lostSide = ['opp', 'me'].find(side => faintedCount(battle, side) >= pickCount(battle.format));
-  const [keepGoing, setKeepGoing] = useState(false);
-  const autoRes = lostSide === 'opp' ? 'win' : 'lose';
-  useEffect(() => { if (lostSide && !battle.result && battle.kind !== 'sim') mut(b => { b.result = autoRes; }); }, [lostSide]);
-  if (lostSide && !keepGoing) {
-    const hasOpen = !!open?.acts.length;
-    return (
-      <div class="composer">
-        <div class={cx('tc-box', 'game-over', autoRes)}>
-          <div class="go-title">{lostSide === 'opp' ? `相手を${pickCount(battle.format)}体倒しました。勝ち！` : `自分の${pickCount(battle.format)}体が倒れました。負け`}</div>
-          {hasOpen
-            ? <button class="btn primary" onClick={() => { mut(b => { finishTurn(b, usage); if (b.kind !== 'sim') b.result = autoRes; }); toast('対戦を終了しました'); }}>最後のターンを確定して終了</button>
-            : <p class="muted">対戦の記録は保存されています。結果は右上で変えられます。</p>}
-          <button class="btn ghost sm" onClick={() => setKeepGoing(true)}>記録を続ける・直す</button>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div class="composer">
-      <div class="cp-head">
-        <strong>ターン {turnNo}</strong>
-        <Seg small value={mode} options={[['flow', '行動'], ['ev', 'その他の変化']]} onChange={v => { setMode(v); }} />
-      </div>
-
-      {needSend.map(side => (
-        <div class="tc-box warn send-ask">
-          <div class="tc-h">{(() => { const f = battle.state.sides[side].active.find(x => x != null && condOf(battle, side, x)?.fainted); return f != null ? `${SIDE_JA[side]}の${speciesName(buildOf(battle, side, f).species)}が倒れました。` : ''; })()}<b>{side === 'me' ? '次に出すポケモンを選んでください' : '相手が次に出したポケモンを選んでください'}</b></div>
-          <div class="chips">
-            {benchOf(battle, side).map(i => <MonBtn battle={battle} side={side} mon={i} onClick={() => { mut(b => addEvent(b, {kind: 'send', side, to: i}, usage)); }} />)}
-          </div>
-        </div>
-      ))}
-
-      <EntryAbilityAsk battle={battle} mut={mut} usage={usage} toast={toast} />
-      <EntryHazardAsk battle={battle} mut={mut} usage={usage} toast={toast} />
-
-      {mode === 'ev' && <EventForm battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} />}
-
-      {mode === 'flow' && <>
-        <div class="wz-nav">
-          <button class="btn sm wz-back" disabled={stack.length <= 1 && page !== 'act'} onClick={back}>‹ 戻る</button>
-          <span class="wz-title">{PAGE_TITLE[page]}</span>
-          <span class="wz-dots">{['plan', 'who', 'end'].map((k, i) => <i class={cx((page === k || (k === 'who' && page === 'act')) && 'on')}>{i + 1}</i>)}</span>
-        </div>
-
-        {page === 'plan' && (
-          <div class="tc-box wz-page">
-            {planMon != null ? <>
-              <p class="hint">相手の選択を待つ間に、{battle.format === 'double' ? `${monName(battle, 'me', planMon)}の` : ''}行動を選んでおきます。選ぶと次の画面に進みます。</p>
-              <PlanRow key={planMon} battle={battle} mon={planMon} plan={plan[planMon]} onDone={planDone} onChange={p => setPlan({...plan, [planMon]: p})} />
-              <div class="btnrow"><button class="btn ghost sm" onClick={() => go('who')}>あとで選ぶ</button></div>
-            </> : <p class="muted">自分のポケモンが場にいません。上で場に出すポケモンを選んでください。</p>}
-          </div>
-        )}
-
-        {page === 'who' && (
-          <div class="tc-box wz-page">
-            <p class="hint">{open?.acts.some(a => a.type !== 'event') ? '次に行動したポケモンを選んでください。' : '先に行動したポケモンを選んでください。'}</p>
-            <div class="actor-row">
-              {remaining.map(a => {
-                const p = a.side === 'me' ? plan[a.mon] : null;
-                return (
-                  <button class={cx('actor-btn', a.side)} onClick={() => {
-                    // ① で交代を選んでいたら、そのまま記録する
-                    if (p?.type === 'switch') { record({side: 'me', mon: a.mon, type: 'switch', to: p.to}); return; }
-                    setActor({side: a.side, mon: a.mon}); go('act');
-                  }}>
-                    <span class="ab-side">{SIDE_JA[a.side]}</span>
-                    <span class="ab-name">{monName(battle, a.side, a.mon)}</span>
-                    <span class="ab-sub">{p ? (p.type === 'switch' ? `交代→${speciesName(buildOf(battle, 'me', p.to).species)}` : moveName(p.move)) : a.side === 'opp' ? '技・交代を入力' : '行動を入力'}</span>
-                  </button>
-                );
-              })}
-            </div>
-            {!remaining.length && <p class="muted">すべてのポケモンの行動を記録しました。</p>}
-            {actors.some(a => megaFormes(battle, a.side, a.mon).length) && (
-              <div class="mega-row">
-                <span class="muted">ターンの最初にメガシンカ:</span>
-                {actors.flatMap(a => megaFormes(battle, a.side, a.mon).map((fm, _, arr) => (
-                  <button class={cx('btn sm mega-btn', a.side)} onClick={() => { const log = mut(b => addEvent(b, {kind: 'mega', side: a.side, mon: a.mon, forme: fm}, usage)); toast(log?.[log.length - 1] || 'メガシンカ'); }}>
-                    {SIDE_JA[a.side]}の{monName(battle, a.side, a.mon)} {megaLabel(fm, arr.length > 1)}
-                  </button>
-                )))}
-              </div>
-            )}
-            <div class="btnrow">
-              <button class={cx('btn grow', !remaining.length && 'primary')} disabled={!open} onClick={() => go('end')}>ターン終了へ{remaining.length > 0 && <small class="muted">&nbsp;(未記録 {remaining.length}体)</small>}</button>
-            </div>
-          </div>
-        )}
-
-        {page === 'act' && actor && (
-          <ActForm key={`${actor.side}${actor.mon}${turnNo}`} wizard backRef={backRef} battle={battle} ctx={ctx} usage={usage} side={actor.side} mon={actor.mon}
-            init={actor.side === 'me' ? plan[actor.mon] : null} onSubmit={record} />
-        )}
-
-        {page === 'end' && open && (
-          <EndTurn battle={battle} usage={usage}
-            onDone={opts => {
-              const log = mut(b => finishTurn(b, usage, opts));
-              toast(log?.length ? log[log.length - 1] : 'ターンを終了しました');
-            }} />
-        )}
-        {page === 'end' && !open && <p class="muted pad-s">このターンの記録はまだありません。</p>}
-      </>}
-    </div>
-  );
-}
-
-// ① 自分の行動予定 (技か交代を押すと決定)
-function PlanRow({battle, mon, plan, onChange, onDone}) {
-  const build = battle.my[mon];
-  const double = battle.format === 'double';
-  const foes = alive(battle, 'opp');
-  const bench = benchOf(battle, 'me');
-  const [needTarget, setNeedTarget] = useState(null);
-  const pickMove = m => {
-    const p = {...(plan || {}), type: 'move', move: m, target: null};
-    const mv = dex.moves[m];
-    if (double && !mv.sp && foes.length > 1) { onChange(p); setNeedTarget(p); return; }
-    onDone(p);
-  };
-  return (
-    <div class="plan">
-      <div class="move-grid big">
-        {(build.moves || []).filter(m => dex.moves[m]).map(m => (
-          <button class={cx('mv-btn', plan?.type === 'move' && plan.move === m && 'on')} onClick={() => pickMove(m)}>
-            <span class={cx('mv-bar', `t-${dex.moves[m].t}`)} /><span class="mv-nm">{moveName(m)}</span>
-          </button>
-        ))}
-      </div>
-      {needTarget && (
-        <div class="chips pivot"><span class="muted">対象:</span>{foes.map(i => <button class="chip" onClick={() => onDone({...needTarget, target: {side: 'opp', mon: i}})}>{monName(battle, 'opp', i)}</button>)}</div>
-      )}
-      {canMegaNow(battle, 'me', mon) && <div class="chips"><Toggle small on={!!plan?.mega} onChange={v => onChange({...(plan || {}), mega: v})}>メガシンカする</Toggle></div>}
-      {bench.length > 0 && <div class="sw-row"><span class="muted">交代</span>
-        {bench.map(i => <MonBtn battle={battle} side="me" mon={i} on={plan?.type === 'switch' && plan.to === i} onClick={() => onDone({type: 'switch', to: i})} />)}
-      </div>}
-    </div>
-  );
-}
-
-// 1体ぶんの行動の入力 (新規・修正で共用)
-// wizard: 「技 → 結果 → ダメージ」と1画面ずつ進む。backRef.current() で1つ前の画面に戻る (戻れたら true)
 export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel, submitLabel = '記録する', onDelete, wizard, backRef}) {
   const foeSide = other(side);
   const double = battle.format === 'double';
@@ -710,94 +413,6 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
   );
 }
 
-// ③ ターン終了時の処理
-function EndTurn({battle, usage, onBack, onDone}) {
-  const cands = useMemo(() => residualCandidates(battle, usage), [battle]);
-  const expiries = useMemo(() => expiryCandidates(battle), [battle]);
-  const keyOf = c => `${c.side}${c.mon}${c.key}`;
-  const [on, setOn] = useState(() => new Set(cands.filter(c => c.checked).map(keyOf)));
-  const [noOrder, setNoOrder] = useState(false);
-  const [fin, setFin] = useState({}); // ターン終了後のHP (入力したもの)
-  const [first, setFirst] = useState('');
-  const [exp, setExp] = useState({});
-  const toggle = k => setOn(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
-  const fmt = c => (c.side === 'me' ? `${c.hp > 0 ? '+' : ''}${c.hp}` : `${c.pct > 0 ? '+' : ''}${Math.round(c.pct * 10) / 10}%`);
-  // ポケモンごとにまとめる (場にいるポケモン全員: HPが分からない攻撃を受けた・回復/定数ダメージがある)
-  const open = openTurn(battle);
-  const mons = ['me', 'opp'].flatMap(side => alive(battle, side).map(mon => ({side, mon})));
-  const groups = mons.map(m => {
-    const list = cands.filter(c => c.side === m.side && c.mon === m.mon);
-    const unknown = !!open?.acts.some(x => x.hpUnknown && x.target?.side === m.side && x.target?.mon === m.mon);
-    const leech = list.some(c => c.key === 'leechheal' || c.key === 'leechseed');
-    const c = condOf(battle, m.side, m.mon);
-    const max = m.side === 'me' ? maxHPOf(battle, m.mon) : null;
-    // チェックした処理を順に当てたあとのHP (計算)
-    let hp = c.hp;
-    for (const x of list) if (on.has(keyOf(x))) hp = Math.max(0, Math.min(100, hp + x.pct));
-    return {...m, list, unknown, leech, max, calc: unknown ? null : hp};
-  }).filter(g => g.list.length || g.unknown);
-  const sidesWith = new Set(groups.filter(g => g.list.some(x => on.has(keyOf(x)))).map(g => g.side));
-  const show = v => (v == null ? '' : v);
-  const toPct = (g, v) => (v === '' || v == null ? null : g.max ? (Number(v) / g.max) * 100 : Number(v));
-  const done = () => {
-    const finalHp = {};
-    for (const g of groups) { const p = toPct(g, fin[`${g.side}${g.mon}`]); if (p != null && Number.isFinite(p)) finalHp[`${g.side}${g.mon}`] = p; }
-    onDone({
-      residual: cands.filter(c => on.has(keyOf(c))), noOrder, finalHp,
-      resFirst: first || undefined,
-      expiry: expiries.filter(x => exp[x.key] != null).map(x => ({key: x.key, ended: exp[x.key], n: x.n})),
-    });
-  };
-  const missing = groups.some(g => g.unknown && (fin[`${g.side}${g.mon}`] ?? '') === '');
-  return (
-    <div class="tc-box wz-page">
-      {groups.length === 0 && <p class="muted">ターン終了時に処理されるものはありません。</p>}
-      {groups.map(g => (
-        <div class={cx('res-group', g.side, g.unknown && 'need')}>
-          <div class="rg-h"><span class={cx('side-tag', g.side)}>{SIDE_JA[g.side]}</span><b>{monName(battle, g.side, g.mon)}</b></div>
-          {g.list.length > 0 && (
-            <ul class="res-list">
-              {g.list.map(c => (
-                <li><label>
-                  <input type="checkbox" checked={on.has(keyOf(c))} onChange={() => toggle(keyOf(c))} />
-                  {c.label} {!c.unknown && <span class={cx('num', c.pct < 0 ? 'neg' : 'pos')}>{fmt(c)}</span>}
-                  {!c.checked && <small class="muted"> (起きていたら)</small>}
-                </label></li>
-              ))}
-            </ul>
-          )}
-          <label class="rg-hp">
-            <span>{g.unknown ? 'ターン終了後のHPは?' : g.leech ? 'ターン終了後のHP (やどりぎの回復量から相手のHPが分かります)' : 'ターン終了後のHP'}</span>
-            {g.calc != null && <span class="muted">計算 {g.max ? `${Math.round((g.calc * g.max) / 100)}/${g.max}` : `${dispOf(g.calc)}%`}</span>}
-            <input class="input num" type="number" inputMode="decimal" min={0} max={g.max || 100} placeholder={g.unknown ? '入力' : '違えば入力'}
-              value={show(fin[`${g.side}${g.mon}`])} onInput={e => setFin({...fin, [`${g.side}${g.mon}`]: e.currentTarget.value})} />
-            <span class="muted">{g.max ? `/ ${g.max}` : '%'}</span>
-          </label>
-          {g.unknown && <p class="hint">分からなかったダメージを、ここで入れたHPから逆算してバトルログを更新します。</p>}
-        </div>
-      ))}
-      {sidesWith.size === 2 && (
-        <div class="res-q">
-          <span>先に処理されたのは? <small class="muted">(速いほうが先。素早さの推定に使います)</small></span>
-          <Seg small value={first} options={[['', 'わからない'], ['me', '自分'], ['opp', '相手']]} onChange={setFirst} />
-        </div>
-      )}
-      {expiries.map(x => (
-        <div class="res-q">
-          <span>{x.label}は終わりましたか? <small class="muted">({x.n}ターン目{x.byName ? `・${x.byName}` : ''})</small></span>
-          <Seg small value={exp[x.key] == null ? '' : exp[x.key] ? 'y' : 'n'} options={[['', '未回答'], ['y', '終わった'], ['n', '続いている']]} onChange={v => setExp({...exp, [x.key]: v === '' ? null : v === 'y'})} />
-        </div>
-      ))}
-      {expiries.some(x => x.n === 5) && <p class="hint">5ターンで終わらなければ、起こしたポケモンは延長する持ち物 (しめったいわ・ひかりのねんど・グランドコートなど) を持っています。</p>}
-      <label class="check"><input type="checkbox" checked={noOrder} onChange={e => setNoOrder(e.currentTarget.checked)} />このターンの行動順は素早さの推定に使わない (せんせいのツメ・クイックドロウなど)</label>
-      <div class="btnrow">
-        {onBack && <button class="btn" onClick={onBack}>戻る</button>}
-        <button class="btn primary grow" onClick={done}>{missing ? 'HPを入れずにターンを終える' : 'ターンを終える'}</button>
-      </div>
-    </div>
-  );
-}
-
 // 記録した行動・出来事の修正
 function EditSheet({battle, ctx, mut, usage, toast, ti, ai, onClose}) {
   const t = battle.turns[ti];
@@ -823,7 +438,7 @@ function EditSheet({battle, ctx, mut, usage, toast, ti, ai, onClose}) {
 }
 
 // その他の出来事 (持ち物・HP・状態異常・ランク・特性・場の変化など)
-function EventForm({battle, mut, usage, toast}) {
+export function EventForm({battle, mut, usage, toast}) {
   const [side, setSide] = useState('opp');
   const [actor, setActor] = useState(null);
   const [ev, setEv] = useState({kind: 'item'});

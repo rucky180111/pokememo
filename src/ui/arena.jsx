@@ -1,22 +1,18 @@
-// 対戦フェーズ: 左 = 時系列とターン入力 / 中央 = 相手と自分の盤面 / 右 = ダメージ表・統計
+// 対戦フェーズ: 盤面 (入力もここで完結、play.jsx) と、右の ダメージ・傾向・ログ。ターン終了は右下 (スマホは盤面の下)
 import {useMemo, useState} from 'preact/hooks';
-import {dex, speciesName, itemName, abilityName, moveName, statsOf, STAT_JA, STAT_KEYS} from '../engine/dex.js';
-import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility, finalSpeed, typesOf} from '../engine/calc.js';
-import {condOf, turnNumber} from '../engine/battle.js';
+import {dex, speciesName, abilityName, moveName, STAT_JA, STAT_KEYS} from '../engine/dex.js';
+import {BOOST_KEYS, currentSpecies, currentAbility} from '../engine/calc.js';
+import {condOf} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
-import {speedOutlook} from '../engine/assume.js';
 import {estimateStats, scenarioBuild} from '../engine/estimate.js';
-import {Seg, Toggle, TypeChip, Sprite, Empty, Confirm, cx, fmtPct, rate} from './common.jsx';
+import {Seg, Toggle, TypeChip, Empty, cx, fmtPct, rate} from './common.jsx';
 import {OppSheet, dmgClass, LogTab} from './battle.jsx';
 import {MonEditor} from './teams.jsx';
 import {DmgBar} from './board.jsx';
-import {revealIllusion} from '../engine/flow.js';
 import {PredictTab} from './analysis.jsx';
-import {Timeline, MegaButtons} from './turn.jsx';
+import {PlayBoard, TurnBar} from './play.jsx';
 import {dispOf} from '../engine/flow.js';
 
-const SIDE_JA = {me: '自分', opp: '相手'};
-const FLAGS = [['reflect', 'リフレクター'], ['lightScreen', 'ひかりのかべ'], ['auroraVeil', 'オーロラベール'], ['tailwind', 'おいかぜ'], ['sr', 'ステルスロック']];
 const alive = (battle, side) => battle.state.sides[side].active.filter(i => i != null && !condOf(battle, side, i)?.fainted);
 
 export function Arena({battle, ctx, mut, usage, toast, wide, onDelete}) {
@@ -25,219 +21,25 @@ export function Arena({battle, ctx, mut, usage, toast, wide, onDelete}) {
   const p = {battle, ctx, mut, usage, toast, setSheet, onDelete};
   return (
     <div class={cx('arena', wide && 'wide')}>
-      {!wide && <div class="arena-tabs"><Seg value={pane} options={[['left', 'ターン入力'], ['center', '盤面'], ['right', 'ダメージ・ログ']]} onChange={setPane} /></div>}
-      {(wide || pane === 'left') && <Timeline {...p} />}
+      {!wide && <div class="arena-tabs"><Seg value={pane} options={[['center', '盤面'], ['right', 'ダメージ・ログ']]} onChange={setPane} /></div>}
       {(wide || pane === 'center') && (
         <div class="ar-center">
-          <PartyStrip battle={battle} onOpen={i => setSheet({side: 'opp', idx: i})} />
-          <SidePanels side="opp" {...p} />
-          <FieldRow battle={battle} />
-          <SidePanels side="me" {...p} />
+          <PlayBoard {...p} />
+          {!wide && <TurnBar {...p} />}
         </div>
       )}
-      {(wide || pane === 'right') && <RightPane {...p} />}
+      {(wide || pane === 'right') && (
+        <div class="ar-right-col">
+          <RightPane {...p} />
+          {wide && <TurnBar {...p} />}
+        </div>
+      )}
       {sheet && sheet.side === 'opp' && battle.opp[sheet.idx] && <OppSheet battle={battle} idx={sheet.idx} ctx={ctx} mut={mut} usage={usage} onClose={() => setSheet(null)} />}
       {sheet && sheet.side === 'me' && battle.my[sheet.idx] && (
         <MonEditor title="この対戦での自分の型" usage={usage} build={battle.my[sheet.idx]}
           onSave={bd => { mut(b => { b.my[sheet.idx] = bd; }); setSheet(null); }} onClose={() => setSheet(null)} />
       )}
     </div>
-  );
-}
-
-// ---- 中央: 盤面 ----
-// 相手のパーティ6体。まだ出てきていないポケモンは暗く、場に出て選出が分かったら明るくする
-function PartyStrip({battle, onOpen}) {
-  if (!battle.opp.length) return null;
-  const seen = battle.pick.opp || [];
-  const active = battle.state.sides.opp.active;
-  const n = battle.format === 'double' ? 4 : 3;
-  return (
-    <div class="party-strip">
-      <span class="ps-lb">相手の選出 <b class="num">{Math.min(seen.length, n)}/{n}</b></span>
-      <div class="ps-mons">
-        {battle.opp.map((o, i) => {
-          const c = condOf(battle, 'opp', i);
-          const st = active.includes(i) ? 'active' : c?.fainted ? 'fainted' : seen.includes(i) ? 'seen' : 'unseen';
-          return (
-            <button class={cx('ps-mon', st)} onClick={() => onOpen(i)} title={speciesName(o.species)}>
-              <Sprite id={c?.forme || o.species} size={48} />
-              <span class="ps-nm">{speciesName(o.species)}</span>
-              {st !== 'unseen' && <span class="ps-hp"><i style={{width: `${c?.hp ?? 100}%`}} /></span>}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function FieldRow({battle}) {
-  const f = battle.state.field;
-  const W = Object.fromEntries(WEATHERS), T = Object.fromEntries(TERRAINS);
-  const now = turnNumber(battle);
-  const el = k => (f[k] && f.since?.[k] != null ? <small class="muted"> {Math.max(1, now - f.since[k] + 1)}ターン目</small> : null);
-  return (
-    <div class="ar-field">
-      <span>天候 <b class={cx(f.weather && 'on')}>{W[f.weather || '']}</b>{el('weather')}</span>
-      <span>フィールド <b class={cx(f.terrain && 'on')}>{T[f.terrain || '']}</b>{el('terrain')}</span>
-      {f.trickRoom && <span class="tag accent">トリックルーム{el('trickRoom')}</span>}
-      {f.gravity && <span class="tag accent">じゅうりょく</span>}
-      <span class="tag">ターン {turnNumber(battle)}</span>
-    </div>
-  );
-}
-
-function SidePanels({side, battle, ...rest}) {
-  const act = battle.state.sides[side].active.filter(i => i != null);
-  if (!act.length) return <div class={cx('mon-panel', side, 'empty')}><Empty>{side === 'opp' ? '相手のポケモンが場にいません。左の入力欄の「相手が場に出す」から選んでください。' : '自分のポケモンが場にいません。左の入力欄を「自分」にして出してください。'}</Empty></div>;
-  return <>{act.map(i => <MonPanel key={`${side}${i}`} side={side} idx={i} battle={battle} {...rest} />)}</>;
-}
-
-function MonPanel({side, idx, battle, ctx, mut, usage, setSheet, toast}) {
-  const build = ctx.build(side, idx);
-  const raw = condOf(battle, side, idx);
-  const cond = ctx.cond(side, idx);
-  const sid = currentSpecies(build, cond);
-  const s = dex.species[sid];
-  const view = side === 'opp' ? ctx.views[idx] : null;
-  const opp = side === 'opp' ? battle.opp[idx] : null;
-  const sd = battle.state.sides[side];
-  const est = useMemo(() => (opp ? estimateStats(opp, sid) : null), [opp, sid]);
-  const myStats = side === 'me' ? statsOf(sid, build.sp, build.nature) : null;
-  const maxHP = myStats ? myStats[0] : null;
-  const spdCtx = {format: battle.format, field: battle.state.field};
-  // 素早さの一覧 (下降 → 最速)。相手はスカーフの有無で2系統
-  const speeds = useMemo(() => {
-    const myIdx = alive(battle, 'me')[0];
-    const mine = myIdx != null ? finalSpeed({build: battle.my[myIdx], cond: battle.state.mons.me[myIdx]}, {...spdCtx, side: battle.state.sides.me}) : null;
-    if (side === 'me') return {mine: finalSpeed({build, cond: raw}, {...spdCtx, side: sd}), rows: []};
-    const o = speedOutlook(opp, view, raw, usage, mine, {...spdCtx, side: sd});
-    const rows = [];
-    for (const b of o.bench) {
-      rows.push({label: b.label, v: b.eff, ok: b.ok});
-      if (o.canScarf) rows.push({label: `${b.label}+スカーフ`, v: b.scarfEff, ok: b.okScarf, scarf: true});
-    }
-    if (mine != null) rows.push({label: '自分', v: mine, ok: true, mine: true});
-    rows.sort((a, b) => b.v - a.v || (a.mine ? 1 : -1));
-    return {mine, rows, o};
-  }, [ctx]);
-  const isMega = !!dex.species[raw.forme]?.mega;
-  // へんしん中 (メタモン) / イリュージョンの可能性 (相手のパーティにゾロアークがいる)
-  const transformed = raw.transformed;
-  const zoro = side === 'opp' ? battle.opp.map((o, i) => ({o, i})).find(x => /^zoroark/.test(x.o.species) && x.i !== idx && !condOf(battle, 'opp', x.i)?.fainted) : null;
-  const [askZoro, setAskZoro] = useState(false);
-  const reveal = () => {
-    setAskZoro(false);
-    let n = -1;
-    mut(b => { n = revealIllusion(b, usage, zoro.i); });
-    toast?.(n >= 0 ? `ゾロアークに付け替えました (${n}件)` : '最初の盤面が残っていないため付け替えできません');
-  };
-  const moves = side === 'me' ? (build.moves || []) : (opp.moves || []);
-  // 補正なしで説明がつくならその範囲を、つかなければ補正あり(↑)/下降(↓)の範囲を出す
-  const rg = e => (e[0] === e[1] ? `${e[0]}` : `${e[0]}〜${e[1]}`);
-  // 推定能力Pt の段: 推定済みの能力に出てくる性格補正のパターンぶんだけ出す
-  const estRows = (() => {
-    if (!est) return [];
-    const mods = new Set();
-    for (const r of est.rows) if (r.known && r.byMod) for (const m of Object.keys(r.byMod)) mods.add(Number(m));
-    const all = [[1, '能力Pt 補正なし'], [1.1, '能力Pt 補正↑'], [0.9, '能力Pt 補正↓']].filter(([m]) => mods.has(m));
-    return all.length ? all : [[1, '能力Pt']];
-  })();
-  const fmtVal = r => (r.valLo === r.valHi ? `${r.valLo}` : `${r.valLo}〜${r.valHi}`);
-  const tr = battle.state.field.trickRoom;
-  return (
-    <section class={cx('mon-panel', side, raw.fainted && 'fainted')}>
-      <div class="mp-head">
-        <span class={cx('side-tag', side)}>{SIDE_JA[side]}</span>
-        <Sprite id={sid} size={44} />
-        <button class="mp-name" onClick={() => setSheet({side, idx})}>{s.j}</button>
-        <MegaButtons battle={battle} side={side} mon={idx} mut={mut} usage={usage} />
-        {transformed && <span class="tag accent">へんしん中 ({speciesName((side === 'opp' ? battle.opp : battle.my)[idx].species)})</span>}
-        {zoro && !transformed && <button class="btn ghost sm" onClick={() => setAskZoro(true)} title="イリュージョンの正体がゾロアークだったとき">正体は{speciesName(zoro.o.species)}</button>}
-        {raw.types?.length ? <span class="tag accent">タイプ変化</span> : null}
-        {raw.disguiseBroken && <span class="tag">ばけのかわ はがれた</span>}
-        <span class="types">{typesOf(build, cond).map(t => <TypeChip type={t} />)}</span>
-      </div>
-      <div class="mp-info">
-        <span class="mi"><span class="mi-lb">持ち物</span>
-          <b class={cx(raw.itemGone && 'strike', side === 'opp' && !opp.item && 'guess')}>{side === 'opp' ? (opp.item ? itemName(opp.item) : `${itemName(view?.build.item) || '不明'}?`) : itemName(build.item) || 'なし'}</b>{raw.itemGone ? <small class="muted"> (消費)</small> : null}
-        </span>
-        <span class="mi"><span class="mi-lb">特性</span>
-          {side === 'me' || opp.ability || s.mega || !view?.abilityGuess
-            ? <b>{abilityName(currentAbility(build, cond))}</b>
-            : <span class="ab-cands">{(view.abilities || []).map(([a, r]) => <span class="ab-cand">{abilityName(a)}{r > 0 ? <small> {Math.round(r * 100)}%</small> : null}</span>)}</span>}
-          {side === 'opp' && (opp.ability || s.mega) ? <small class="tag sm">確定</small> : null}
-        </span>
-      </div>
-      <div class="mp-hp">
-        <div class="hpbar"><div class={cx('hpfill', raw.hp > 50 ? 'g' : raw.hp > 20 ? 'y' : 'r')} style={{width: `${raw.hp}%`}} /></div>
-        <b class="num">{raw.fainted ? 'ひんし' : maxHP ? `${Math.round((maxHP * raw.hp) / 100)}/${maxHP}` : `${dispOf(raw.hp)}%`}</b>
-      </div>
-      {transformed && <p class="hint">HP 以外の能力・タイプ・特性・技・ランク変化は、へんしんした相手と同じです (ダメージ計算もその前提)。持ち物と HP は元のポケモンのまま。この間の行動は推定に使いません。</p>}
-      <div class="mp-body" style={transformed ? {display: 'none'} : undefined}>
-        <table class="mp-table">
-          <thead><tr><th></th>{STAT_JA.map(l => <th>{l}</th>)}</tr></thead>
-          <tbody>
-            <tr><th>種族値</th>{s.bs.map(v => <td class="num">{v}</td>)}</tr>
-            {side === 'me' && <tr class="est"><th>能力Pt</th>{build.sp.map(v => <td class="num">{v}</td>)}</tr>}
-            {side === 'opp' && estRows.map(([mod, label]) => (
-              <tr class="est" key={mod}>
-                <th title="H・B・D は与えたダメージ、A・C は受けたダメージ、S は行動順から推定">{label}</th>
-                {est.rows.map(r => {
-                  // 推定できていない能力は空欄。性格補正のパターンごとに段を分ける
-                  if (!r.known) return <td></td>;
-                  if (r.key === 'hp') return <td class="num known">{mod === estRows[0][0] ? rg([r.spLo, r.spHi]) : ''}</td>;
-                  const e = r.byMod?.[mod];
-                  return <td class={cx('num', e && 'known')}>{e ? rg(e) : '×'}</td>;
-                })}
-              </tr>
-            ))}
-            <tr><th>能力上昇</th><td></td>
-              {BOOST_KEYS.map(k => {
-                const v = raw.boosts[k] || 0;
-                return <td class={cx('num rankv', v > 0 && 'pos', v < 0 && 'neg')}>{v > 0 ? `+${v}` : v}</td>;
-              })}
-            </tr>
-            <tr class="real"><th>実数値</th>
-              {STAT_KEYS.map((k, i) => {
-                const st = raw.boosts[k] || 0;
-                const r = side === 'opp' ? est.rows[i] : {valLo: myStats[i], valHi: myStats[i]};
-                const base = fmtVal(r);
-                // 能力上昇があれば補正後の値を出し、元の値をかっこで添える
-                if (!st) return <td class={cx('num', r.known && 'known')}>{base}</td>;
-                const up = v => Math.floor(st > 0 ? (v * (2 + st)) / 2 : (v * 2) / (2 - st));
-                return <td class={cx('num', r.known && 'known', st > 0 ? 'pos' : 'neg')}>{fmtVal({valLo: up(r.valLo), valHi: up(r.valHi)})}<small>({base})</small></td>;
-              })}
-            </tr>
-          </tbody>
-        </table>
-        {side === 'opp' && <div class="mp-speed">
-          <div class="cap">素早さ{tr ? ' (トリル中)' : ''}</div>
-          <ol>
-            {speeds.rows.map(r => <li class={cx('num', r.mine && 'mine', !r.ok && 'ruled', r.scarf && 'scarf', !r.mine && speeds.mine != null && (r.v > speeds.mine ? 'fast' : r.v < speeds.mine ? 'slow' : 'tie'))}><span>{r.label}</span><b>{r.v}</b></li>)}
-          </ol>
-        </div>}
-      </div>
-      {side === 'opp' && <p class="hint mp-remain">H・B・D = 与えたダメージ、A・C = 受けたダメージ、S = 行動順 から推定 (空欄は未推定、× はその性格補正では説明がつかない)。H・B・D は観測に合う中で使うポイントが最小の振り方です。未確定の残り能力Pt: <b class="num">{est.remain}</b> / 66{speeds.o?.pFaster != null ? ` ・ 先手率 自分 ${rate(speeds.o.pSlower)}` : ''}</p>}
-      <div class="mp-lower">
-        <div class="mp-moves">
-          {[0, 1, 2, 3].map(i => {
-            const m = moves[i];
-            if (m) return <span class="mv-btn mv-show"><span class={cx('mv-bar', `t-${dex.moves[m]?.t}`)} /><span class="mv-nm">{moveName(m)}</span></span>;
-            return <span class="mv-box empty">{side === 'opp' ? '未判明' : '—'}</span>;
-          })}
-        </div>
-        <div class="mp-state">
-          <div class="cap">場の状態</div>
-          {raw.status && <span class="tag bad">{Object.fromEntries(STATUSES)[raw.status]}</span>}
-                    {FLAGS.filter(([k]) => sd[k]).map(([, l]) => <span class="tag accent">{l}</span>)}
-          {sd.spikes > 0 && <span class="tag accent">まきびし×{sd.spikes}</span>}
-          {!raw.status && !isMega && !FLAGS.some(([k]) => sd[k]) && !sd.spikes && <span class="muted">なし</span>}
-        </div>
-      </div>
-      {askZoro && <Confirm title="イリュージョンの正体" message={`いま場にいる${speciesName(battle.opp[idx].species)}は、${speciesName(zoro.o.species)}のイリュージョンでしたか？ 化けていた間の記録 (技・ダメージ・HP) を${speciesName(zoro.o.species)}に付け替えて入れ直します。${speciesName(battle.opp[idx].species)}は選出の最後のポケモンとして記録します。`} okLabel="付け替える" onOk={reveal} onClose={() => setAskZoro(false)} />}
-    </section>
   );
 }
 

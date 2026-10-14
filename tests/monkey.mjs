@@ -95,7 +95,7 @@ for (let step = 0; step < STEPS; step++) {
       const r = e.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return false;
       return !SKIP.test(e.textContent || '') && !SKIP.test(e.getAttribute('aria-label') || '');
-    }).map(({e, i}) => { e.dataset.mk = String(i); return {i, tag: e.tagName, type: e.type, inComposer: !!e.closest('.composer') || !!e.closest('.overlay'), back: /戻る|‹/.test(e.textContent || ''), text: (e.textContent || e.getAttribute('aria-label') || e.value || '').trim().slice(0, 30)}; });
+    }).map(({e, i}) => { e.dataset.mk = String(i); return {i, tag: e.tagName, type: e.type, inComposer: !!e.closest('.play') || !!e.closest('.turnbar') || !!e.closest('.overlay'), back: /戻る|‹/.test(e.textContent || ''), text: (e.textContent || e.getAttribute('aria-label') || e.value || '').trim().slice(0, 30)}; });
   }, SKIP.source);
   if (!cands.length) { await page.keyboard.press('Escape'); continue; }
   // ターン入力を進める操作を多めに選ぶ (戻るは控えめに)

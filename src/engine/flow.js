@@ -298,6 +298,11 @@ export function addAct(b, input, usage) {
       sendOut(b, fside, fslot, input.forceTo, {log, resolveAbility: res});
     }
   }
+  // PP: プレッシャーの相手に使うと 2 減る
+  if (a.type === 'move' && dex.moves[a.move] && !a.flags.cant) {
+    const ft = a.target || (() => { const f = b.state.sides[other(side)].active.filter(i => i != null); return f.length ? {side: other(side), mon: f[0]} : null; })();
+    a.pp = ft && ft.side !== side && defaultAbilityResolver(b, ft.side, ft.mon) === 'pressure' ? 2 : 1;
+  }
   if (input.hpUnknown) a.hpUnknown = true;
   a.auto = log;
   a.in = inputCopy(input);
@@ -991,4 +996,25 @@ function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a},
   }
   a.selfFx = fx;
   log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(abd.species)}: ${fx.map(k => SELF_FX_JA[k]).join('・')}`);
+}
+
+/** 技の残りPP (記録した使用回数から) */
+export function ppLeft(b, side, mon, move) {
+  const max = dex.moves[move]?.pp;
+  if (!max) return null;
+  let used = 0;
+  for (const t of b.turns) for (const a of t.acts) if (a.type === 'move' && a.side === side && a.mon === mon && a.move === move && !a.flags?.cant) used += a.pp || 1;
+  return {left: Math.max(0, max - used), max};
+}
+
+/** このターン、その側は行動済みか (行動した・倒された・倒れて交代で出てきた) */
+export function sideDone(b, side) {
+  const t = openTurn(b);
+  if (!t) return false;
+  if (t.acts.some(a => a.type !== 'event' && a.side === side)) return true;
+  // 行動のあとに倒れて出てきた (ターン途中の交代) なら、このターンはもう動かない
+  const firstAct = t.acts.findIndex(a => a.type !== 'event');
+  if (firstAct >= 0 && t.acts.some((a, i) => i > firstAct && a.type === 'event' && a.kind === 'send' && a.side === side)) return true;
+  const act = b.state.sides[side].active.filter(i => i != null);
+  return !act.length || act.every(i => condOf(b, side, i)?.fainted);
 }

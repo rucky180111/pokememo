@@ -87,3 +87,20 @@ test('バトルスイッチ: 攻撃技でブレード (計算もブレードのA
   addAct(b, {side: 'me', type: 'switch', to: 1, sameTurn: false}, usage);
   assert.equal(condOf(b, 'me', 0).forme, null);
 });
+
+test('ターンの区切り: 両方が1回ずつ動いたら終われる。PPは使った回数だけ減る。分かっている持ち物の回復は聞かずに入る', async () => {
+  const {sideDone, ppLeft, residualCandidates, finishTurn} = await import('../src/engine/flow.js');
+  const b = battle([B('garchomp', {moves: ['earthquake'], item: 'leftovers'})], ['corviknight']);
+  b.opp[0].item = 'leftovers';
+  assert.ok(!sideDone(b, 'me') && !sideDone(b, 'opp'));
+  addAct(b, {side: 'me', type: 'move', move: 'earthquake', hpAfter: 100, sameTurn: true}, usage);
+  assert.ok(sideDone(b, 'me') && !sideDone(b, 'opp'));
+  addAct(b, {side: 'opp', type: 'move', move: 'bravebird', hpAfter: 60, sameTurn: true}, usage);
+  assert.ok(sideDone(b, 'opp'));
+  assert.deepEqual(ppLeft(b, 'me', 0, 'earthquake'), {left: 11, max: 12});
+  const sure = residualCandidates(b, usage).filter(c => c.checked);
+  assert.ok(sure.some(c => c.side === 'me' && c.key === 'leftovers'), '自分のたべのこし');
+  finishTurn(b, usage, {residual: sure});
+  assert.ok(condOf(b, 'me', 0).hp > 60);
+  assert.ok(!sideDone(b, 'me'));
+});
