@@ -49,20 +49,27 @@ function predict(battle, ctx, side, mon, tgt, move, scen, crit) {
 }
 
 // 攻撃した側のHPの変化で、確実に起きるもの (分かっている持ち物・特性・技の効果)
-function sureSelfFx(battle, side, mon, tgt, move) {
+function sureSelfFx(battle, side, mon, tgt, move, tgtHpAfter) {
   const m = dex.moves[move];
   if (!m || m.c === 'Z' || !tgt || tgt.side === side) return [];
   const out = [];
   const ab = buildOf(battle, side, mon), ac = condOf(battle, side, mon);
   const tb = buildOf(battle, tgt.side, tgt.mon), tc = condOf(battle, tgt.side, tgt.mon);
-  if (!ac.itemGone && ab.item === 'lifeorb') out.push('lifeorb');
-  if (RECOIL[move] || HALF_RECOIL.has(move)) out.push('recoil');
-  if (DRAIN[move]) out.push('drain');
-  if (m.fl?.includes('contact')) {
-    if (!tc.itemGone && tb.item === 'rockyhelmet') out.push('helmet');
-    const tab = currentAbility(tb, tc);
-    if ((tgt.side === 'me' || tb.ability) && (tab === 'roughskin' || tab === 'ironbarbs')) out.push('roughskin');
+  // 特性は「分かっているもの」だけ使う (相手の未判明の特性は推測しない)
+  const known = (s0, bd, c) => (s0 === 'me' || bd.ability || dex.species[currentSpecies(bd, c)]?.mega ? currentAbility(bd, c) : '');
+  const aab = known(side, ab, ac), tab = known(tgt.side, tb, tc);
+  const guard = aab === 'magicguard';
+  const sheer = aab === 'sheerforce' && (m.sec?.length || 0) > 0;
+  if (!ac.itemGone && ab.item === 'lifeorb' && !guard && !sheer) out.push('lifeorb');
+  if (HALF_RECOIL.has(move) ? !guard : RECOIL[move] && !guard && aab !== 'rockhead') out.push('recoil');
+  if (DRAIN[move]) out.push(tab === 'liquidooze' ? 'ooze' : 'drain');
+  if (!ac.itemGone && ab.item === 'shellbell' && !sheer) out.push('shellbell');
+  if (m.fl?.includes('contact') && aab !== 'longreach') {
+    if (!tc.itemGone && tb.item === 'rockyhelmet' && !guard) out.push('helmet');
+    if ((tab === 'roughskin' || tab === 'ironbarbs') && !guard) out.push('roughskin');
+    if (tab === 'aftermath' && tgtHpAfter != null && tgtHpAfter <= 0 && !guard) out.push('aftermath');
   }
+  if (tab === 'innardsout' && tgtHpAfter != null && tgtHpAfter <= 0 && !guard) out.push('innards');
   return out;
 }
 
@@ -135,6 +142,8 @@ function FieldBar({battle}) {
       <span>フィールド <b class={cx(f.terrain && 'on')}>{T[f.terrain || '']}</b>{age('terrain')}</span>
       {f.trickRoom && <span class="tag accent">トリックルーム{age('trickRoom')}</span>}
       {f.gravity && <span class="tag accent">じゅうりょく</span>}
+      {f.magicRoom && <span class="tag accent">マジックルーム</span>}
+      {f.wonderRoom && <span class="tag accent">ワンダールーム</span>}
     </div>
   );
 }
@@ -263,7 +272,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
             );
           })}
         </div>
-        <SideState battle={battle} side={side} raw={raw} isMega={isMega} />
+        <SideState battle={battle} side={side} raw={raw} isMega={isMega} abil={side === 'me' || buildOf(battle, side, mon).ability ? abil : ''} />
       </div>
       {pick === 'item' && <Picker kind="items" title="相手の持ち物" allowClear clearLabel="不明に戻す" rank={view?.items?.length ? Object.fromEntries(view.items) : null} onClose={() => setPick(null)}
         filter={id => !dex.items[id].ms || !!dex.items[id].ms[opp.species]}
@@ -318,20 +327,34 @@ function SpeedBox({battle, ctx, usage, mon, raw}) {
 }
 
 // ねむり・こおりの残り (チャンピオンズ: ねむりは2回目の行動で1/3・3回目で必ず起きる、ねむるは3回目、こおりは毎回25%・3回目で必ず溶ける)
-function statusNote(c) {
+function statusNote(c, ab) {
   if (c.status !== 'slp' && c.status !== 'frz') return '';
   const n = String(c.statusKey || '').startsWith(c.status) ? c.statusCant || 0 : 0;
   if (c.status === 'frz') return n >= 2 ? ' (次は必ず溶ける)' : ' (25%で溶ける)';
+  // はやおき: 眠りの経過が2倍
+  if (ab === 'earlybird') { if (c.statusKey === 'slpRest') return n >= 1 ? ' (次は起きる)' : ' (あと1回眠る)'; return n === 0 ? ' (次は1/3で起きる)' : ' (次は必ず起きる)'; }
   if (c.statusKey === 'slpRest') return n >= 2 ? ' (次は起きる)' : ` (あと${2 - n}回眠る)`;
   return n === 0 ? ' (次は眠ったまま)' : n === 1 ? ' (次は1/3で起きる)' : ' (次は必ず起きる)';
 }
 
-function SideState({battle, side, raw, isMega}) {
+function SideState({battle, side, raw, isMega, abil}) {
   const sd = battle.state.sides[side];
   const tags = [];
-  if (raw.status) tags.push(<span class="tag bad">{ST_JA[raw.status]}{statusNote(raw)}</span>);
+  if (raw.status) tags.push(<span class="tag bad">{ST_JA[raw.status]}{statusNote(raw, abil)}</span>);
   for (const [k, l] of FLAGS) if (sd[k]) tags.push(<span class="tag accent">{l}</span>);
   if (sd.spikes > 0) tags.push(<span class="tag accent">まきびし×{sd.spikes}</span>);
+  if (sd.tspikes > 0) tags.push(<span class="tag accent">どくびし×{sd.tspikes}</span>);
+  if (sd.wish) tags.push(<span class="tag">ねがいごと</span>);
+  if (sd.healingWish) tags.push(<span class="tag">いやしのねがい</span>);
+  if (raw.bound) tags.push(<span class="tag bad">しめつけ</span>);
+  if (raw.syrup) tags.push(<span class="tag bad">みずあめ</span>);
+  if (raw.octolock) tags.push(<span class="tag bad">たこがため</span>);
+  if (raw.salted) tags.push(<span class="tag bad">しおづけ</span>);
+  if (raw.perish != null) tags.push(<span class="tag bad">ほろび {Math.min(3, raw.perish)}</span>);
+  if (raw.destinyBond) tags.push(<span class="tag">みちづれ</span>);
+  if (raw.aquaRing) tags.push(<span class="tag">アクアリング</span>);
+  if (raw.ingrain) tags.push(<span class="tag">ねをはる</span>);
+  if (raw.abilityChanged != null) tags.push(<span class="tag accent">特性: {raw.abilityChanged ? abilityName(raw.abilityChanged) : 'なし'}</span>);
   if (raw.seeded) tags.push(<span class="tag">やどりぎ</span>);
   if (raw.drowsy) tags.push(<span class="tag bad" title="次のターンの終わりに眠る (交代で消える)">ねむけ</span>);
   if (raw.status === 'tox') tags.push(<span class="tag muted">もうどく {raw.toxicCounter || 1}/16</span>);
@@ -446,7 +469,7 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
   const tItem = tc && !tc.itemGone ? tb.item : '';
   const save = () => {
     const hp = Math.max(0, Math.min(100, act.hp ?? mid));
-    const extra = {hpAfter: hp, pierce: act.pierce || undefined, secFx: act.secFx.length ? act.secFx : undefined, inflict: act.inflict || '', selfFx: sureSelfFx(battle, side, mon, tgt, act.move), exact: tgt.side === 'me'};
+    const extra = {hpAfter: hp, pierce: act.pierce || undefined, secFx: act.secFx.length ? act.secFx : undefined, inflict: act.inflict || '', selfFx: sureSelfFx(battle, side, mon, tgt, act.move, hp), exact: tgt.side === 'me'};
     if (act.defItem) extra.defItem = {item: act.defItem, consumed: consumable(act.defItem)};
     if (act.defItem === 'focussash') { extra.endured = true; delete extra.hpAfter; }
     if (PIVOT_MOVES.has(act.move)) extra.to = act.to;

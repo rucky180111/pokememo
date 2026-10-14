@@ -27,6 +27,7 @@ export const disguiseIntact = (build, cond) => currentSpecies(build, cond) === '
 export function currentAbility(build, cond) {
   // ダメージ計算で「特性を入れない / 別の特性にする」ときの上書き
   if (build.abilityOverride !== undefined) return build.abilityOverride || '';
+  if (cond?.abilityChanged != null) return cond.abilityChanged;
   const sid = currentSpecies(build, cond);
   const s = dex.species[sid];
   if (!s) return '';
@@ -158,6 +159,11 @@ export function calcDamage(attacker, defender, moveId, opts = {}) {
     const moveOpts = {isCrit: !!opts.crit, ability: atk.ability, item: atk.item};
     if (opts.hits) moveOpts.hits = opts.hits;
     if (opts.singleTarget && mv.sp) moveOpts.overrides = {target: 'normal'};
+    // 対戦の流れで変わる威力 (おはかまいり・ふんどのこぶし・じだんだ 等。board.js の moveState)
+    if (opts.bp) moveOpts.overrides = {...(moveOpts.overrides || {}), basePower: opts.bp};
+    // 決まった量のダメージを与える技 (計算機が対応していないもの)
+    const fixed = fixedDamage(moveId, atk, def, attacker, defender, opts);
+    if (fixed) return fixed;
     const move = new Move(gen, mv.n, moveOpts);
     const result = calculate(gen, atk, def, move, field);
     const [min, max] = result.range();
@@ -184,6 +190,7 @@ export function calcDamage(attacker, defender, moveId, opts = {}) {
     // ばけのかわ: 最初の1回はダメージを受けず、HP が 1/8 減るだけ (かたやぶり系は無視)
     const disguise = max > 0 && disguiseIntact(defender.build, defender.cond) && !['moldbreaker', 'teravolt', 'turboblaze', 'myceliummight'].includes(currentAbility(attacker.build, attacker.cond));
     if (disguise) koText = `ばけのかわで1回無効 (HP-1/8)・その後 ${koText}`;
+    if (opts.bp && opts.stateNote) koText = `威力${opts.bp} (${opts.stateNote})・${koText}`;
     const moveType = result.rawDesc?.moveType || result.move?.type || mv.t;
     let eff = typeEffect(moveType, def.types);
     if (moveId === 'freezedry' && def.types.includes('Water')) eff = typeEffect('Ice', def.types.filter(t => t !== 'Water')) * 2;
@@ -207,6 +214,40 @@ export function calcDamage(attacker, defender, moveId, opts = {}) {
   } catch (e) {
     return {ok: false, moveId, error: String(e?.message || e)};
   }
+}
+
+const OHKO = new Set(['fissure', 'horndrill', 'guillotine', 'sheercold']);
+const FIXED = new Set(['superfang', 'endeavor', 'counter', 'mirrorcoat', 'metalburst', 'comeuppance', ...OHKO]);
+// いかりのまえば・がむしゃら・一撃必殺・カウンター/ミラーコート/メタルバースト/ほうふく
+function fixedDamage(moveId, atk, def, attacker, defender, opts) {
+  if (!FIXED.has(moveId)) return null;
+  const mv = dex.moves[moveId];
+  const maxHP = def.maxHP(), curHP = def.curHP();
+  const types = def.types;
+  const dab = currentAbility(defender.build, defender.cond);
+  let eff = typeEffect(mv.t, types);
+  if (moveId === 'sheercold' && types.includes('Ice')) eff = 0;
+  if (OHKO.has(moveId) && dab === 'sturdy') eff = 0;
+  if (dab === 'wonderguard' || (mv.t === 'Ground' && (dab === 'levitate' || dab === 'eelevate'))) eff = 0;
+  let dmg = 0, note = '';
+  if (eff > 0) {
+    if (moveId === 'superfang') dmg = Math.max(1, Math.floor(curHP / 2));
+    else if (moveId === 'endeavor') { dmg = Math.max(0, curHP - atk.curHP()); if (!dmg) note = '自分のHPのほうが多いので失敗'; }
+    else if (OHKO.has(moveId)) { dmg = curHP; note = '一撃必殺 (当たれば)'; }
+    else {
+      const taken = Math.round(((opts.takenPct || 0) / 100) * atk.maxHP());
+      dmg = taken > 0 ? Math.max(1, Math.floor(taken * (opts.takenMult || 1))) : 0;
+      if (!dmg) note = opts.stateNote || '先に攻撃を受けていないので失敗';
+    }
+  }
+  const pct = (dmg / maxHP) * 100;
+  const n = dmg > 0 ? Math.ceil(curHP / dmg) : 0;
+  return {
+    ok: true, moveId, status: false, min: dmg, max: dmg, minPct: pct, maxPct: pct,
+    rolls: Array(16).fill(dmg), n, chance: dmg > 0 ? 1 : null, guaranteed: dmg > 0,
+    koText: dmg > 0 ? `${note ? `${note}・` : ''}確定${n}発` : note, immune: eff === 0, eff, moveType: mv.t, disguise: false,
+    defHP: curHP, defMaxHP: maxHP, atkSpecies: atk.name, defSpecies: def.name, hits: 1, desc: '', fixed: true,
+  };
 }
 
 // 場の補正込みの素早さ実数値 (こだわりスカーフ・おいかぜ・まひ・天候特性・ランク込み)

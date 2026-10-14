@@ -1,8 +1,28 @@
 // 時系列での入力: 行動を1つずつ追加していく。追加のたびに盤面・判明情報・能力の絞り込みへ反映する。
-import {dex, speciesName, moveName, statsOf, itemName, abilityName, TYPE_JA} from './dex.js';
-import {currentSpecies, typesOf, currentAbility, finalSpeed, disguiseIntact} from './calc.js';
+import {dex, speciesName, moveName, statsOf, itemName, abilityName, TYPE_JA, typeEffect} from './dex.js';
+import {currentSpecies, typesOf, currentAbility, finalSpeed, disguiseIntact, defaultHits} from './calc.js';
 
 export const FORCE_MOVES = new Set(['dragontail', 'circlethrow', 'roar', 'whirlwind']);
+// シンクロ: どく・まひ・やけどにされると、相手も同じ状態異常に (判明している特性のみ)
+function syncStatus(b, holder, src, st, log) {
+  if (!['psn', 'tox', 'par', 'brn'].includes(st) || defaultAbilityResolver(b, holder.side, holder.mon) !== 'synchronize') return;
+  const sc = condOf(b, src.side, src.mon);
+  if (!sc || sc.fainted || sc.status) return;
+  sc.status = st; sc.toxicCounter = 1;
+  log.push(`シンクロ: ${src.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, src.side, src.mon).species)}も${STATUS_JA[st]}になった`);
+}
+const ABILITY_MOVES = {worryseed: 'insomnia', simplebeam: 'simple', entrainment: null, skillswap: null, gastroacid: ''};
+// 状態異常を治すきのみ: 持っていると分かっていれば、状態異常になった時点で自動で食べる
+const CURE_BERRY = {lumberry: ['psn', 'tox', 'par', 'brn', 'slp', 'frz'], cheriberry: ['par'], chestoberry: ['slp'], pechaberry: ['psn', 'tox'], rawstberry: ['brn'], aspearberry: ['frz']};
+function autoCureBerries(b, log) {
+  for (const side of ['me', 'opp']) for (const i of b.state.sides[side].active) {
+    const c = i != null ? condOf(b, side, i) : null, bd = i != null ? buildOf(b, side, i) : null;
+    if (!c || c.fainted || !c.status || c.itemGone || !CURE_BERRY[bd.item]?.includes(c.status)) continue;
+    log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(bd.species)}は${itemName(bd.item)}で${STATUS_JA[c.status]}が治った`);
+    c.status = ''; c.statusKey = ''; c.itemGone = true;
+  }
+}
+const STATUS_RESIDUAL = new Set(['hydration', 'shedskin', 'harvest']);
 const failed0 = a => a.flags.miss || a.flags.protect || a.flags.cant;
 export const EJECT_JA = {ejectbutton: 'だっしゅつボタン', redcard: 'レッドカード', ejectpack: 'だっしゅつパック', emergencyexit: 'ききかいひ', wimpout: 'にげごし'};
 // 変化技で自分のHPが変わる割合 (+回復 / −消費)
@@ -63,6 +83,8 @@ export function endTurn(b, usage, opts = {}) {
   for (const side of ['me', 'opp']) for (const i of b.state.sides[side].active) {
     if (i == null || condOf(b, side, i).fainted || entered.has(`${side}${i}`)) continue;
     if (res(b, side, i) === 'speedboost') applyBoosts(b, side, i, {spe: 1}, {log, resolveAbility: () => ''});
+    // はらぺこスイッチ (モルペコ): ターンの終わりに まんぷく ⇔ はらぺこ (オーラぐるまのタイプが変わる)
+    if (res(b, side, i) === 'hungerswitch' && /^morpeko/.test(buildOf(b, side, i).species)) { const c = condOf(b, side, i); c.forme = c.forme === 'morpekohangry' ? null : 'morpekohangry'; log.push(`モルペコは${c.forme ? 'はらぺこ' : 'まんぷく'}もようになった`); }
   }
   // ムラッケ: どれかが2段階上がり、別のどれかが1段階下がる (どれかは入力)
   for (const m of opts.moody || []) {
@@ -72,6 +94,19 @@ export function endTurn(b, usage, opts = {}) {
     if (m.up) d[m.up] = 2;
     if (m.down) d[m.down] = (d[m.down] || 0) - 1;
     if (Object.keys(d).length) applyBoosts(b, m.side, m.mon, d, {log, resolveAbility: () => ''});
+  }
+  // みずあめボム (3ターン素早さ-1)・たこがため (防御・特防-1)・ほろびのうた・ねがいごと/しめつけの後始末
+  for (const side of ['me', 'opp']) {
+    const sd = b.state.sides[side];
+    if (sd.wish && sd.wish.turn <= t.n) sd.wish = null;
+    for (const i of sd.active) {
+      const c = i != null ? condOf(b, side, i) : null;
+      if (!c || c.fainted) continue;
+      if (c.syrup && c.syrup >= t.n) applyBoosts(b, side, i, {spe: -1}, {log, fromOpp: true, resolveAbility: res});
+      if (c.octolock && b.state.sides[c.octolock.side].active.includes(c.octolock.mon)) applyBoosts(b, side, i, {def: -1, spd: -1}, {log, fromOpp: true, resolveAbility: res});
+      if (c.bound && t.n - c.bound.turn >= 4) c.bound = null;
+      if (c.perish != null) { c.perish--; if (c.perish <= 0) { setHP(b, side, i, 0); log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, side, i).species)}はほろびのうたで倒れた`); } else log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, side, i).species)} ほろびカウント ${c.perish}`); }
+    }
   }
   // あくび: 次のターンの終わりに眠る (交代すれば消える。状態異常なら眠らない)
   for (const side of ['me', 'opp']) for (const i of b.state.sides[side].active) {
@@ -88,6 +123,7 @@ export function endTurn(b, usage, opts = {}) {
     if (sd.tailwind && sd.since?.tailwind != null && t.n - sd.since.tailwind + 1 >= 4) { setSideFlag(b, side, 'tailwind', false); log.push(`${side === 'me' ? '自分' : '相手'}のおいかぜが終了 (4ターン)`); }
   }
   if (b.state.field.trickRoom && b.state.field.since?.trickRoom != null && t.n - b.state.field.since.trickRoom + 1 >= 5) { setFieldFlag(b, 'trickRoom', false); log.push('トリックルームが終了 (5ターン)'); }
+  for (const [k, l] of [['magicRoom', 'マジックルーム'], ['wonderRoom', 'ワンダールーム']]) if (b.state.field[k] && b.state.field.since?.[k] != null && t.n - b.state.field.since[k] + 1 >= 5) { setFieldFlag(b, k, false); log.push(`${l}が終了 (5ターン)`); }
   // 天候・フィールド・トリックルームの残りターンの目安
   const f = b.state.field;
   for (const [key, label, base, ext] of [['weather', '天候', 5, 8], ['terrain', 'フィールド', 5, 8]]) {
@@ -120,6 +156,7 @@ export function endTurn(b, usage, opts = {}) {
   }
   // 5ターン目 (延長なら8ターン目) の天候・フィールド・壁: 終わったかどうか → 延長する持ち物の判定
   for (const x of opts.expiry || []) log.push(...applyExpiry(b, x));
+  autoCureBerries(b, log);
   for (const sd of ['me', 'opp']) for (const c of b.state.mons[sd]) if (c) c.hazard = false;
   t.open = false;
   t.end = {noOrder: !!(opts.noOrder || t.noOrder), resFirst: opts.resFirst || undefined, hpFacts: opts.hpFacts?.length ? opts.hpFacts : undefined, expiry: opts.expiry?.length ? opts.expiry : undefined, moody: opts.moody?.length ? opts.moody : undefined};
@@ -179,6 +216,8 @@ export function addAct(b, input, usage) {
     const tgt = a.target || (() => { const f = b.state.sides[foe].active.filter(i => i != null && !condOf(b, foe, i)?.fainted); return f.length === 1 ? {side: foe, mon: f[0]} : null; })();
     let failed = a.flags.miss || a.flags.protect || a.flags.cant;
     const mvd = dex.moves[a.move];
+    // みちづれは次に技を出すまで
+    if (!a.flags.cant) condOf(b, side, mon).destinyBond = false;
     // ねむり・こおり: 行動できなかった回数を数える。技を出せた = 目を覚ました / 溶けた (ねごと・いびきは眠ったまま)
     {
       const uc = condOf(b, side, mon);
@@ -221,7 +260,11 @@ export function addAct(b, input, usage) {
     if (atkItem || defItem) ctx = boardContext(b, usage);
     // きあいのタスキ・がんじょう・こらえる等で「本来は倒れるダメージを耐えた」
     const sash = defItem === 'focussash' || !!input.endured;
-    const heal = defItem === 'sitrusberry' ? 25 : defItem === 'oranberry' ? null : 0;
+    // ほおぶくろ: きのみを食べると さらに最大HPの1/3回復
+    const cheek = defItem && /berry$/.test(defItem) && tgt && defaultAbilityResolver(b, tgt.side, tgt.mon) === 'cheekpouch' ? 100 / 3 : 0;
+    // じゅくせい: きのみの効果が2倍 (オボン 1/2)
+    const ripen = defItem && /berry$/.test(defItem) && tgt && defaultAbilityResolver(b, tgt.side, tgt.mon) === 'ripen' ? 2 : 1;
+    const heal = defItem === 'sitrusberry' ? 25 * ripen + cheek : defItem === 'oranberry' ? null : cheek;
     let hp = input.hpAfter;
     // ばけのかわ: ダメージを受けず HP が 1/8 減るだけ。推定には使わない
     const disguiseHit = !failed && tgt && mvd && mvd.c !== 'Z' && disguiseIntact(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon)) && !['moldbreaker', 'teravolt', 'turboblaze', 'myceliummight'].includes(res(b, side, mon));
@@ -301,6 +344,17 @@ export function addAct(b, input, usage) {
     }
     if (!failed && bounced) applyMoveEffects(b, {...a, side: tgt.side, mon: tgt.mon, target: {side, mon}}, {log, resolveAbility: res});
     else if (!failed) applyMoveEffects(b, {...a, target: tgt}, {log, resolveAbility: res});
+    // 特性を変える技: なやみのタネ・シンプルビーム・なかまづくり・スキルスワップ・いえき
+    if (!failed && tgt && !bounced && ABILITY_MOVES[a.move]) {
+      const tc4 = condOf(b, tgt.side, tgt.mon), uc4 = condOf(b, side, mon);
+      const tName = `${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}`;
+      const mine = res(b, side, mon), theirs = res(b, tgt.side, tgt.mon);
+      if (a.move === 'skillswap') { if (mine && theirs) { uc4.abilityChanged = theirs; tc4.abilityChanged = mine; log.push(`特性を入れ替えた (${abilityName(mine)} ⇔ ${abilityName(theirs)})`); } }
+      else {
+        const na = a.move === 'entrainment' ? mine : ABILITY_MOVES[a.move];
+        if (na != null) { tc4.abilityChanged = na; log.push(`${tName}の特性が${na ? abilityName(na) : '消された'}`); }
+      }
+    }
     if (!failed && tgt && (a.move === 'trick' || a.move === 'switcheroo')) {
       // 持ち物が入れ替わると、以後の持ち物は確定できない
       condOf(b, side, mon).tricked = true; condOf(b, tgt.side, tgt.mon).tricked = true;
@@ -313,13 +367,28 @@ export function addAct(b, input, usage) {
       for (const e of input.secFx) {
         if (e.bo && !tc3.fainted) applyBoosts(b, tgt.side, tgt.mon, e.bo, {log, fromOpp: true, resolveAbility: res});
         if (e.sb) applyBoosts(b, side, mon, e.sb, {log, resolveAbility: res});
-        if (e.st && !tc3.fainted && !tc3.status) { tc3.status = e.st; tc3.toxicCounter = 1; log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は${STATUS_JA[e.st]}になった`); }
-        if (e.vo === 'flinch') log.push('ひるんだ');
+        if (e.st && !tc3.fainted && !tc3.status) { tc3.status = e.st; tc3.toxicCounter = 1; log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は${STATUS_JA[e.st]}になった`); syncStatus(b, tgt, {side, mon}, e.st, log); }
+        if (e.vo === 'flinch') { log.push('ひるんだ'); if (defaultAbilityResolver(b, tgt.side, tgt.mon) === 'steadfast') applyBoosts(b, tgt.side, tgt.mon, {spe: 1}, {log, resolveAbility: () => ''}); }
         if (e.vo === 'confusion') log.push('こんらんした');
       }
     }
     const hpBeforeHit = tgt ? condOf(b, tgt.side, tgt.mon).hp : null;
     if (a.hpAfter != null && tgt) setHP(b, tgt.side, tgt.mon, a.hpAfter);
+    // 技の結果を覚えておく (じだんだ・やけっぱち・ふんどのこぶし・ゆきなだれ・ダメおし・カウンター等の威力/ダメージ計算に使う)
+    if (mvd && mvd.c !== 'Z' && tgt) {
+      const immune = !failed && typeEffect(mvd.t, typesOf(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon))) === 0;
+      if (!failed && !immune && hpBeforeHit != null && a.hpAfter != null) {
+        a.dmgPct = Math.max(0, hpBeforeHit - a.hpAfter);
+        if (tgt.side !== side) { const tcx = condOf(b, tgt.side, tgt.mon); tcx.timesAttacked = (tcx.timesAttacked || 0) + (input.hits || defaultHits(a.move, res(b, side, mon))); }
+      }
+      if (!a.flags.cant) condOf(b, side, mon).lastResult = {n: t.n, failed: !!(failed || immune)};
+      const tcd = condOf(b, tgt.side, tgt.mon);
+      if (!failed && !immune && tcd.fainted && hpBeforeHit > 0 && tgt.side !== side) {
+        // とどめばり: 倒すとこうげき+3 / みちづれ: 倒した側も倒れる
+        if (a.move === 'fellstinger') applyBoosts(b, side, mon, {atk: 3}, {log, resolveAbility: res});
+        if (tcd.destinyBond) { setHP(b, side, mon, 0); log.push(`みちづれ: ${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}も倒れた`); }
+      }
+    } else if (mvd && !a.flags.cant) condOf(b, side, mon).lastResult = {n: t.n, failed: !!failed};
     // 被弾時の特性は「判明している特性」だけで反映する (使用率からの推測で能力ランクを動かさない)
     if (!failed && tgt && tgt.side !== side) onHitEffects(b, {side, mon, move: a.move, crit: a.flags.crit, tgt, before: hpBeforeHit, defItem}, defaultAbilityResolver, log);
     // 攻撃した側のHPの変化 (いのちのたま・反動・ゴツゴツメット・さめはだ・吸収)
@@ -329,6 +398,7 @@ export function addAct(b, input, usage) {
       const tc2 = condOf(b, tgt.side, tgt.mon);
       tc2.status = input.inflict; tc2.toxicCounter = 1; a.inflict = input.inflict;
       log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は${STATUS_JA[input.inflict]}になった`);
+      syncStatus(b, tgt, {side, mon}, input.inflict, log);
     }
     if (!failed && defItem && input.defItem.consumed !== false && tgt) condOf(b, tgt.side, tgt.mon).itemGone = true;
     if (atkItem && input.atkItem.consumed) condOf(b, side, mon).itemGone = true;
@@ -342,6 +412,15 @@ export function addAct(b, input, usage) {
         if (passed && Object.values(passed).some(Boolean)) { condOf(b, side, a.to).boosts = passed; log.push('バトンタッチ: ランク変化を引き継ぎ'); }
       }
     }
+  }
+  // ニードルガード (接触で1/8)・トーチカ (接触でどく)・キングシールド (接触でこうげき-1): まもられた技が接触技なら
+  if (a.type === 'move' && a.flags.protect && dex.moves[a.move]?.fl?.includes('contact')) {
+    const pt = a.target || (() => { const f = b.state.sides[other(side)].active.filter(i => i != null); return f.length ? {side: other(side), mon: f[0]} : null; })();
+    const pm = pt ? [...t.acts].reverse().find(x => x.type === 'move' && x.side === pt.side && x.mon === pt.mon && !x.flags?.cant)?.move : null;
+    const uc = condOf(b, side, mon), who = `${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}`;
+    if (pm === 'spikyshield' && res(b, side, mon) !== 'magicguard') { setHP(b, side, mon, uc.hp - 12.5); log.push(`ニードルガード: ${who}はダメージを受けた`); }
+    if (pm === 'banefulbunker' && !uc.status && !typesOf(build, uc).some(x => x === 'Poison' || x === 'Steel')) { uc.status = 'psn'; log.push(`トーチカ: ${who}はどくになった`); }
+    if (pm === 'kingsshield') applyBoosts(b, side, mon, {atk: -1}, {log, fromOpp: true, resolveAbility: res});
   }
   // PP: プレッシャーの相手に使うと 2 減る
   if (a.type === 'move' && dex.moves[a.move] && !a.flags.cant) {
@@ -417,6 +496,7 @@ export function addAct(b, input, usage) {
     if (input.contactAbility && tg?.side === 'opp' && tg.mon != null && !buildOf(b, 'opp', tg.mon).ability) buildOf(b, 'opp', tg.mon).ability = input.contactAbility;
     if (uc && !uc.fainted && !uc.status) { uc.status = input.contactStatus; uc.toxicCounter = 1; log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}は${STATUS_JA[input.contactStatus]}になった (相手の特性)`); }
   }
+  autoCureBerries(b, log);
   if (input.hpUnknown) a.hpUnknown = true;
   a.auto = log;
   a.in = inputCopy(input);
@@ -454,11 +534,16 @@ export function addEvent(b, ev, usage) {
     if (side === 'opp' && ev.item) build.item = ev.item;
     if (ev.consumed) cond.itemGone = true;
     let hp = ev.hpAfter;
-    if (hp == null && ev.consumed && ev.item === 'sitrusberry') hp = Math.min(100, cond.hp + 25);
+    if (hp == null && ev.consumed && ev.item === 'sitrusberry') hp = Math.min(100, cond.hp + 25 + (defaultAbilityResolver(b, side, mon) === 'cheekpouch' ? 100 / 3 : 0));
     if (hp != null) setHP(b, side, mon, hp);
     text = `${itemName(ev.item) || '持ち物'} ${ev.consumed ? '発動・消費' : '判明'}${hp != null ? ` → HP ${Math.round(hp)}%` : ''}`;
   } else if (ev.kind === 'hp') { setHP(b, side, mon, ev.hpAfter); text = `HP → ${Math.round(ev.hpAfter)}%${ev.note ? ` (${ev.note})` : ''}`; }
   else if (ev.kind === 'faint') { setHP(b, side, mon, 0); text = 'ひんし'; }
+  else if (ev.kind === 'residual' && STATUS_RESIDUAL.has(ev.key)) {
+    if (ev.key === 'harvest') cond.itemGone = false; else { cond.status = ''; cond.statusKey = ''; }
+    if (side === 'opp' && !build.ability) build.ability = ev.key;
+    text = RESIDUAL_JA[ev.key];
+  }
   else if (ev.kind === 'residual') {
     const r = residualDelta(b, side, mon, ev.key);
     if (!r) return [];
@@ -508,6 +593,7 @@ export function addEvent(b, ev, usage) {
   } else if (ev.kind === 'side') { setSideFlag(b, side, ev.key, !!ev.value); text = `${FLAG_JA[ev.key]} ${ev.value ? '' : '終了'}`.trim(); }
   else if (ev.kind === 'spikes') { b.state.sides[side].spikes = Math.max(0, Math.min(3, ev.value)); text = `まきびし ${b.state.sides[side].spikes}層`; }
   else return [];
+  if (ev.kind !== 'item') autoCureBerries(b, log);
   t.acts.push({side, mon: needMon ? mon : null, type: 'event', kind: ev.kind, text, sp: needMon ? build.species : null, auto: log, flags: {}, in: inputCopy({...ev, mon: needMon ? mon : ev.mon})});
   b.updatedAt = Date.now();
   return [text, ...log];
@@ -671,7 +757,7 @@ export function reopenLastTurn(b, usage) {
 
 // ---- ターン終了時の処理 (たべのこし・定数ダメージなど) ----
 const RESIDUAL_JA = {sand: 'すなあらしのダメージ', grassy: 'グラスフィールドで回復', leftovers: 'たべのこしで回復', blacksludge: 'くろいヘドロ', psn: 'どくのダメージ', tox: 'もうどくのダメージ',
-  brn: 'やけどのダメージ', leechseed: 'やどりぎのタネ', saltcure: 'しおづけのダメージ', leechheal: 'やどりぎのタネで回復', poisonheal: 'ポイズンヒールで回復', raindish: 'あめうけざらで回復', dryskin: 'かんそうはだ', solarpower: 'サンパワーのダメージ', icebody: 'アイスボディで回復'};
+  brn: 'やけどのダメージ', leechseed: 'やどりぎのタネ', saltcure: 'しおづけのダメージ', bind: 'しめつけ系のダメージ', aquaring: 'アクアリングで回復', ingrain: 'ねをはるで回復', wish: 'ねがいごとで回復', hydration: 'うるおいボディで状態異常が治った', shedskin: 'だっぴで状態異常が治った', harvest: 'しゅうかくできのみが戻った', leechheal: 'やどりぎのタネで回復', poisonheal: 'ポイズンヒールで回復', raindish: 'あめうけざらで回復', dryskin: 'かんそうはだ', solarpower: 'サンパワーのダメージ', icebody: 'アイスボディで回復'};
 const RESIDUAL_ITEM = {leftovers: 'leftovers', blacksludge: 'blacksludge'};
 export {RESIDUAL_JA};
 
@@ -688,6 +774,9 @@ function residualFrac(b, side, mon, key) {
     case 'brn': return -1 / 16;
     case 'leechseed': return -1 / 8;
     case 'saltcure': return types.some(x => x === 'Water' || x === 'Steel') ? -1 / 8 : -1 / 16;
+    case 'bind': return cond.bound?.band ? -1 / 6 : -1 / 8;
+    case 'aquaring': case 'ingrain': return ((!cond.itemGone && build.item === 'bigroot') ? 1.3 : 1) / 16;
+    case 'wish': { const w0 = b.state.sides[side].wish; if (!w0) return 0; const fb = buildOf(b, side, w0.from), fc = condOf(b, side, w0.from); const fmax = statsOf(currentSpecies(fb, fc), side === 'me' ? fb.sp : [16, 0, 0, 0, 0, 0], side === 'me' ? fb.nature : 'Serious')[0]; return Math.floor(fmax / 2) / maxHPOf(b, side, mon); }
     case 'poisonheal': return 1 / 8;
     case 'dryskin': return w === 'Rain' ? 1 / 8 : -1 / 8;
     case 'solarpower': return -1 / 8;
@@ -746,8 +835,8 @@ export function residualCandidates(b, usage) {
       const sure = ab => known === ab;
       const maybe = ab => abs.includes(ab);
       if (maybe('magicguard') && sure('magicguard')) { /* 定数ダメージを受けない */ }
-      const itemKnown = side === 'me' || !!build.item;
-      const item = cond.itemGone ? '' : side === 'me' ? build.item : build.item;
+      const itemKnown = side === 'me' || !!build.item || sure('klutz');
+      const item = cond.itemGone || sure('klutz') ? '' : build.item; // ぶきよう: 持ち物の効果なし
       const itemRates = side === 'opp' && !build.item ? Object.fromEntries(ctx.views[mon]?.items || []) : {};
       const already = new Set((openTurn(b)?.acts || []).filter(x => x.target?.side === side && x.target?.mon === mon).flatMap(x => x.healedBy || []));
       // 処理は順番に起きる (例: すなあらしで減ってから たべのこしで回復) ので、確実なものはHPを進めながら候補を作る
@@ -779,11 +868,20 @@ export function residualCandidates(b, usage) {
       if (cond.status === 'brn' && !noIndirect) push('brn', !maybe('magicguard'));
       if (cond.seeded && !noIndirect) push('leechseed', !maybe('magicguard'));
       if (cond.salted && !noIndirect) push('saltcure', !maybe('magicguard'));
+      { const tn = openTurn(b)?.n ?? turnNumber(b); if (cond.bound && !noIndirect && tn - cond.bound.turn <= 4) push('bind', tn - cond.bound.turn < 4 && !maybe('magicguard')); }
+      if (cond.aquaRing) push('aquaring', true);
+      if (cond.ingrain) push('ingrain', true);
+      { const tn = openTurn(b)?.n ?? turnNumber(b); if (b.state.sides[side].wish?.turn === tn) push('wish', true); }
       { const fs = other(side); if (b.state.sides[fs].active.some(i => i != null && condOf(b, fs, i)?.seeded && !condOf(b, fs, i)?.fainted)) push('leechheal', true); }
       if (w === 'Rain' && maybe('raindish')) push('raindish', sure('raindish'));
       if ((w === 'Rain' || w === 'Sun') && maybe('dryskin')) push('dryskin', sure('dryskin'));
       if (w === 'Sun' && maybe('solarpower')) push('solarpower', sure('solarpower'));
       if (w === 'Snow' && maybe('icebody')) push('icebody', sure('icebody'));
+      // HPが変わらないもの: うるおいボディ (あめで状態異常が治る)・だっぴ (30%)・しゅうかく (きのみが戻る)
+      const other1 = (key, checked) => out.push({side, mon, key, label: RESIDUAL_JA[key], pct: 0, hp: 0, checked: checked || already.has(key), unknown: false});
+      if (cond.status && w === 'Rain' && maybe('hydration')) other1('hydration', sure('hydration'));
+      if (cond.status && maybe('shedskin')) other1('shedskin', false);
+      if (cond.itemGone && maybe('harvest') && /berry$/.test(build.item || '')) other1('harvest', sure('harvest') && w === 'Sun');
     }
   }
   return out;
@@ -900,9 +998,22 @@ function onHitEffects(b, {side, mon, move, crit, tgt, before, defItem}, res, log
     if (ko) { const l = []; applyBoosts(b, side, mon, ko, {log: l, resolveAbility: () => ''}); if (l.length) log.push(`${abilityName(ab)}: ${l.join('、')}`); }
     return;
   }
+  // マジシャン (攻撃側) / わるいてぐせ (接触された側): 持ち物がないとき相手の持ち物を奪う
+  //   奪った持ち物は以後の推定から外す (持ち物が入れ替わった扱い)
+  const steal = (thief, victim, why) => {
+    const thb = buildOf(b, thief.side, thief.mon), thc = condOf(b, thief.side, thief.mon);
+    const vb = buildOf(b, victim.side, victim.mon), vc = condOf(b, victim.side, victim.mon);
+    const thiefEmpty = thc.itemGone || (thief.side === 'me' && !thb.item);
+    const vHas = !vc.itemGone && (victim.side === 'me' ? !!vb.item : true);
+    if (!thiefEmpty || !vHas || dex.items[vb.item]?.ms) return;
+    vc.itemGone = true; thc.tricked = true; vc.tricked = true;
+    log.push(`${why}: ${victim.side === 'me' ? '自分' : '相手'}の${speciesName(vb.species)}の${vb.item ? itemName(vb.item) : '持ち物'}を奪った`);
+  };
+  if (res(b, side, mon) === 'magician' && mv.c !== 'Z') steal({side, mon}, tgt, 'マジシャン');
   const ab = res(b, tgt.side, tgt.mon);
   if (!ab) return;
   const name = `${who}の${abilityName(ab)}`;
+  if (ab === 'pickpocket' && mv.fl?.includes('contact')) steal(tgt, {side, mon}, name);
   const t = mv.t;
   if (ab === 'stamina') boost({def: 1}, name);
   else if (ab === 'weakarmor' && mv.c === 'P') boost({def: -1, spe: 2}, name);
@@ -916,12 +1027,22 @@ function onHitEffects(b, {side, mon, move, crit, tgt, before, defItem}, res, log
   else if (ab === 'seedsower' && setTerrain(b, 'Grassy')) log.push(`${name}: グラスフィールドに`);
   else if (ab === 'sandspit' && setWeather(b, 'Sand')) log.push(`${name}: 天候がすなあらしに`);
   else if ((ab === 'gooey' || ab === 'tanglinghair') && mv.fl?.includes('contact')) { const l = []; applyBoosts(b, side, mon, {spe: -1}, {log: l, fromOpp: true, resolveAbility: res}); if (l.length) log.push(`${name}: ${l.join('、')}`); }
+  // 技を吸収する特性: ひらいしん/そうしょく/でんきエンジン は能力が上がる
+  else if (ab === 'lightningrod' && t === 'Electric') boost({spa: 1}, name);
+  else if (ab === 'motordrive' && t === 'Electric') boost({spe: 1}, name);
+  else if (ab === 'sapsipper' && t === 'Grass') boost({atk: 1}, name);
   else if (ab === 'flashfire' && t === 'Fire') { tc.abilityOn = true; log.push(`${name}: ほのお技の威力が上がる`); }
-  else if (ab === 'toxicdebris' && mv.c === 'P') log.push(`${name}: どくびしが撒かれた (どくびしのダメージ・状態異常は手入力)`);
+  else if (ab === 'toxicdebris' && mv.c === 'P') { const sd = b.state.sides[side]; if ((sd.tspikes || 0) < 2) { sd.tspikes = (sd.tspikes || 0) + 1; log.push(`${name}: どくびしが撒かれた (${sd.tspikes}層)`); } }
   else if (ab === 'spicyspray') {
     // スパイシースプレー (メガスコヴィラン): 攻撃してきた相手をやけどにする
     const ac = condOf(b, side, mon), aT = typesOf(buildOf(b, side, mon), ac);
     if (ac && !ac.fainted && !ac.status && !aT.includes('Fire')) { ac.status = 'brn'; log.push(`${name}: やけどにした`); }
+  }
+  else if ((ab === 'mummy' || ab === 'wanderingspirit') && mv.fl?.includes('contact') && !condOf(b, side, mon).fainted) {
+    // ミイラ: 触れた相手の特性をミイラに / さまようたましい: 特性を入れ替える
+    const ac = condOf(b, side, mon), mine = res(b, side, mon);
+    if (ab === 'mummy') { ac.abilityChanged = 'mummy'; log.push(`${name}: 攻撃した側の特性がミイラになった`); }
+    else if (mine) { ac.abilityChanged = 'wanderingspirit'; tc.abilityChanged = mine; log.push(`${name}: 特性を入れ替えた (${abilityName(mine)})`); }
   }
   else if (ab === 'cottondown') { const l = []; applyBoosts(b, side, mon, {spe: -1}, {log: l, fromOpp: true, resolveAbility: res}); if (l.length) log.push(`${name}: ${l.join('、')}`); }
 }
@@ -1053,6 +1174,8 @@ function stepOf(b, side, mon, key) {
   if (key === 'blacksludge') st.poison = types.includes('Poison');
   if (key === 'dryskin') st.rain = b.state.field.weather === 'Rain';
   if (key === 'saltcure') return {k: 'frac', f: types.some(x => x === 'Water' || x === 'Steel') ? 1 / 8 : 1 / 16};
+  if (key === 'bind') return {k: 'frac', f: c.bound?.band ? 1 / 6 : 1 / 8};
+  if (key === 'aquaring' || key === 'ingrain' || key === 'wish' || STATUS_RESIDUAL.has(key)) return null; // 表示からの最大HPの推定には使わない
   if (key === 'leechheal') {
     const fs = other(side), fm = b.state.sides[fs].active.find(i => i != null && condOf(b, fs, i)?.seeded);
     if (fs === 'me' && fm != null) st.amount = Math.max(1, Math.floor(maxHPOf(b, 'me', fm) / 8));
@@ -1066,7 +1189,7 @@ function stepOf(b, side, mon, key) {
 export const RECOIL = {bravebird: [33, 100], doubleedge: [33, 100], flareblitz: [33, 100], headsmash: [1, 2], lightofruin: [1, 2], volttackle: [33, 100], wavecrash: [33, 100], wildcharge: [1, 4], woodhammer: [33, 100], takedown: [1, 4], submission: [1, 4], headcharge: [1, 4]};
 export const HALF_RECOIL = new Set(['steelbeam', 'mindblown', 'chloroblast']);
 export const DRAIN = {bitterblade: [1, 2], drainpunch: [1, 2], drainingkiss: [3, 4], gigadrain: [1, 2], hornleech: [1, 2], leechlife: [1, 2], matchagotcha: [1, 2], paraboliccharge: [1, 2]};
-export const SELF_FX_JA = {lifeorb: 'いのちのたまの反動', recoil: '反動ダメージ', drain: '吸収で回復', helmet: 'ゴツゴツメット', roughskin: 'さめはだ・てつのトゲ', shellbell: 'かいがらのすず'};
+export const SELF_FX_JA = {lifeorb: 'いのちのたまの反動', recoil: '反動ダメージ', drain: '吸収で回復', ooze: 'ヘドロえきでダメージ', helmet: 'ゴツゴツメット', roughskin: 'さめはだ・てつのトゲ', shellbell: 'かいがらのすず', aftermath: 'ゆうばく', innards: 'とびだすなかみ'};
 
 function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a}, log) {
   const ab = condOf(b, side, mon), abd = buildOf(b, side, mon);
@@ -1074,11 +1197,22 @@ function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a},
   // 判明したこと
   if (side === 'opp' && fx.includes('lifeorb') && !abd.item) abd.item = 'lifeorb';
   if (tgt.side === 'opp' && fx.includes('helmet') && !tb.item) tb.item = 'rockyhelmet';
+  if (side === 'opp' && fx.includes('shellbell') && !abd.item) abd.item = 'shellbell';
   if (tgt.side === 'opp' && fx.includes('roughskin') && !tb.ability) { const s0 = dex.species[tb.species]?.ab || []; tb.ability = s0.includes('roughskin') ? 'roughskin' : s0.includes('ironbarbs') ? 'ironbarbs' : tb.ability; }
   // 与えたダメージの実数 (受けたのが自分なら正確に分かる)
-  const dealtReal = tgt.side === 'me' && tgtBefore != null ? Math.round(((tgtBefore - tc.hp) / 100) * maxHPOf(b, 'me', tgt.mon)) : null;
+  //  (受けたのが相手なら、相手の最大HPの見込みで概算する)
+  const dealtReal = tgtBefore != null ? Math.round(((tgtBefore - tc.hp) / 100) * maxHPOf(b, tgt.side, tgt.mon)) : null;
   const steps = [];
-  if (fx.includes('drain') && DRAIN[move]) steps.push(dealtReal != null ? {k: 'fixed', amount: Math.round((dealtReal * DRAIN[move][0]) / DRAIN[move][1])} : null);
+  // おおきなねっこ: 吸収量1.3倍
+  const root = !ab.itemGone && abd.item === 'bigroot' ? 1.3 : 1;
+  if (fx.includes('drain') && DRAIN[move]) steps.push(dealtReal != null ? {k: 'fixed', amount: Math.round(((dealtReal * DRAIN[move][0]) / DRAIN[move][1]) * root)} : null);
+  // ヘドロえき: 吸収するはずの分だけダメージ
+  if (fx.includes('ooze') && DRAIN[move]) steps.push(dealtReal != null ? {k: 'fixed', amount: -Math.max(1, Math.round((dealtReal * DRAIN[move][0]) / DRAIN[move][1]))} : null);
+  // かいがらのすず: 与えたダメージの1/8回復
+  if (fx.includes('shellbell')) steps.push(dealtReal != null ? {k: 'fixed', amount: Math.max(1, Math.floor(dealtReal / 8))} : null);
+  // ゆうばく: 接触技で倒すと最大HPの1/4 / とびだすなかみ: 倒した相手の残りHPぶん
+  if (fx.includes('aftermath')) steps.push({k: 'frac', f: 1 / 4});
+  if (fx.includes('innards')) steps.push(dealtReal != null ? {k: 'fixed', amount: -Math.max(1, dealtReal)} : null);
   if (fx.includes('helmet')) steps.push({k: 'frac', f: 1 / 6});
   if (fx.includes('roughskin')) steps.push({k: 'frac', f: 1 / 8});
   if (fx.includes('recoil')) steps.push(HALF_RECOIL.has(move) ? {k: 'halfround'} : RECOIL[move] && dealtReal != null ? {k: 'fixed', amount: -Math.max(1, Math.round((dealtReal * RECOIL[move][0]) / RECOIL[move][1]))} : null);
@@ -1089,7 +1223,7 @@ function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a},
     if (side === 'opp' && steps.every(Boolean) && Number.isInteger(before)) { const m = inferHpFromDisplay(b, mon, before, Math.round(hpAfter), steps); if (m) log.push(m); }
     // 自分が攻撃した: 反動・吸収の実数から、相手に与えたダメージの実数 → 相手の最大HPを絞り込む
     // (満タンまで回復した・倒れた場合は量が頭打ちになるので使わない)
-    if (side === 'me' && tgt.side === 'opp' && hpAfter < 100 - 1e-9 && hpAfter > 0 && (fx.includes('recoil') || fx.includes('drain')) && Number.isInteger(tgtBefore) && Number.isInteger(tc.hp)) {
+    if (side === 'me' && tgt.side === 'opp' && hpAfter < 100 - 1e-9 && hpAfter > 0 && (fx.includes('recoil') || fx.includes('drain')) && fx.every(k => ['recoil', 'drain', 'lifeorb', 'helmet', 'roughskin'].includes(k)) && Number.isInteger(tgtBefore) && Number.isInteger(tc.hp)) {
       const max = maxHPOf(b, 'me', mon);
       let change = Math.round((hpAfter / 100) * max) - Math.round((before / 100) * max);
       if (fx.includes('lifeorb')) change += Math.max(1, Math.floor(max / 10));

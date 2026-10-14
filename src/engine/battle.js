@@ -1,7 +1,7 @@
 // 対戦データの生成と、盤面 (仮想のゲーム状況) の状態遷移。
 // UI から独立した純粋なロジックで、tests/ から直接検証する。
 import {TYPE_JA} from './dex.js';
-import {dex, megaFormeFor, speciesName, moveName, abilityName} from './dex.js';
+import {dex, megaFormeFor, speciesName, moveName, abilityName, statsOf} from './dex.js';
 import {newCond, emptyBoosts, currentSpecies, typesOf, BOOST_KEYS} from './calc.js';
 
 export const UNDO_DEPTH = 6;
@@ -67,12 +67,15 @@ export const faintedCount = (b, side) => b.state.mons[side].filter(c => c.fainte
 
 // 特性が確定していないポケモンの「たぶんこの特性」を返す resolver を差し込める
 // resolver(side, index) -> abilityId ('' なら不明)
+const NO_TRACE = new Set(['trace', 'imposter', 'illusion', 'disguise', 'stancechange', 'zerotohero', 'commander', 'protosynthesis', 'quarkdrive', 'multitype', 'rkssystem', 'schooling', 'shieldsdown', 'battlebond', 'powerconstruct', 'iceface', 'hungerswitch', 'gulpmissile', 'receiver', 'powerofalchemy', 'flowergift', 'forecast', 'neutralizinggas', 'wonderguard', 'comatose', 'zenmode']);
 const defaultAbilityResolver = (b, side, i) => {
   const build = buildOf(b, side, i);
   if (!build) return '';
   const cond = condOf(b, side, i);
   // へんしん中は相手の特性になる
   if (cond?.transformed) { const t = cond.transformed; const tc = condOf(b, t.side, t.mon); if (tc && !tc.transformed) return defaultAbilityResolver(b, t.side, t.mon); }
+  // トレース・ミイラ・なやみのタネ・スキルスワップ等で変わった特性 ('' = 消された)
+  if (cond?.abilityChanged != null) return cond.abilityChanged;
   const sid = currentSpecies(build, cond);
   const s = dex.species[sid];
   if (!s) return '';
@@ -128,7 +131,7 @@ export function setFieldFlag(b, key, val) {
  * ランク変化を適用する。fromOpp=true のとき相手由来 (クリアボディ・まけんき等が関係する)。
  * 変化内容を日本語で log に積む。
  */
-export function applyBoosts(b, side, i, changes, {fromOpp = false, log = [], resolveAbility} = {}) {
+export function applyBoosts(b, side, i, changes, {fromOpp = false, log = [], resolveAbility, opportunist = false} = {}) {
   const cond = condOf(b, side, i);
   const build = buildOf(b, side, i);
   if (!cond || !build || cond.fainted) return;
@@ -150,6 +153,12 @@ export function applyBoosts(b, side, i, changes, {fromOpp = false, log = [], res
     log.push(`${who}の${STAT_JA[k]} ${after - before > 0 ? '+' : ''}${after - before} (→${after > 0 ? '+' : ''}${after})`);
   }
   if (dropped && ab === 'defiant') applyBoosts(b, side, i, {atk: 2}, {log, resolveAbility: () => ''});
+  // びんじょう: 相手の能力が上がると、自分も同じだけ上がる
+  const ups = Object.fromEntries(Object.entries(changes).filter(([k, v]) => BOOST_KEYS.includes(k) && v > 0 && ab !== 'contrary'));
+  if (Object.keys(ups).length && !opportunist) {
+    const os = other(side);
+    for (const t of b.state.sides[os].active) if (t != null && !condOf(b, os, t)?.fainted && defaultAbilityResolver(b, os, t) === 'opportunist') applyBoosts(b, os, t, ups, {log, resolveAbility: () => '', opportunist: true});
+  }
   if (dropped && ab === 'competitive') applyBoosts(b, side, i, {spa: 2}, {log, resolveAbility: () => ''});
 }
 
@@ -168,6 +177,15 @@ export function applyEntryAbility(b, side, i, {log = [], resolveAbility} = {}) {
     const t = b.state.sides[os].active.find(x => x != null && !condOf(b, os, x)?.fainted);
     if (t != null) transformInto(b, side, i, {side: os, mon: t}, log);
   }
+  // トレース: 相手の特性をコピー (相手の特性が分かっているとき)
+  if (ab === 'trace') {
+    const os = other(side);
+    const t = b.state.sides[os].active.find(x => x != null && !condOf(b, os, x)?.fainted);
+    const tab = t != null ? res(b, os, t) : '';
+    if (tab && !NO_TRACE.has(tab)) { cond.abilityChanged = tab; log.push(`${who}のトレース: ${abilityName(tab)}になった`); applyEntryAbility(b, side, i, {log, resolveAbility: () => tab}); }
+  }
+  // バリアフリー: お互いの壁を消す
+  if (ab === 'screencleaner') for (const sd of ['me', 'opp']) for (const k of ['reflect', 'lightScreen', 'auroraVeil']) if (b.state.sides[sd][k]) { setSideFlag(b, sd, k, false); log.push(`${who}のバリアフリー: ${sd === 'me' ? '自分' : '相手'}の壁が消えた`); }
   if (ab === 'intimidate') {
     for (const t of b.state.sides[other(side)].active) {
       if (t == null || condOf(b, other(side), t)?.fainted) continue;
@@ -207,6 +225,12 @@ function leaveField(b, side, i, {log = [], resolveAbility} = {}) {
   cond.healBlock = 0;
   cond.seeded = false;
   cond.salted = false;
+  cond.timesAttacked = 0; // ふんどのこぶし: チャンピオンズでは交代でリセット
+  // しめつける等・たこがためは、かけた側が下がっても解ける
+  for (const t of b.state.sides[other(side)].active) { const tc = t != null ? condOf(b, other(side), t) : null; if (tc?.bound?.by?.mon === i && tc.bound.by.side === side) tc.bound = null; if (tc?.octolock?.mon === i && tc.octolock.side === side) tc.octolock = null; }
+  cond.bound = null; cond.syrup = 0; cond.octolock = null; cond.aquaRing = false; cond.ingrain = false; cond.destinyBond = false; cond.perish = null;
+  cond.abilityChanged = null; // 変わった特性は交代で戻る
+  cond.lastResult = null;
   cond.types = null; // みずびたし・へんげんじざい等のタイプ変化は交代で戻る
   cond.proteanUsed = false;
   cond.drowsy = 0; // あくびの眠気は交代で消える
@@ -237,12 +261,33 @@ export function sendOut(b, side, slot, monIdx, opts = {}) {
   if (prev != null) leaveField(b, side, prev, {log, resolveAbility: opts.resolveAbility});
   s.active[slot] = monIdx;
   if (monIdx == null) return log;
-  { const c = condOf(b, side, monIdx); if (c?.hero) c.forme = 'palafinhero'; }
+  { const c = condOf(b, side, monIdx); if (c?.hero) c.forme = 'palafinhero'; if (c) c.entryFainted = faintedCount(b, side); } // そうだいしょう: 場に出た時点の倒れた味方の数
   // 設置技がある場に出た → ダメージを確認する (ターン入力で聞く)
   { const c = condOf(b, side, monIdx); if (c) c.hazard = !!(s.sr || s.spikes) && !c.fainted; }
+  entryHazards(b, side, monIdx, log, opts.resolveAbility);
   if (!b.pick[side].includes(monIdx)) b.pick[side].push(monIdx);
   if (!opts.silent) applyEntryAbility(b, side, monIdx, {log, resolveAbility: opts.resolveAbility});
   return log;
+}
+
+export const BIND_MOVES = new Set(['bind', 'firespin', 'sandtomb', 'whirlpool', 'infestation', 'snaptrap']);
+// 場に出たとき: いやしのねがい (全回復)、ねばねばネット (素早さ-1)、どくびし (どく/もうどく、どくタイプなら回収)
+function entryHazards(b, side, i, log, resolveAbility) {
+  const s = b.state.sides[side], c = condOf(b, side, i), bd = buildOf(b, side, i);
+  if (!c || c.fainted) return;
+  const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(currentSpecies(bd, c))}`;
+  if (s.healingWish) { s.healingWish = false; c.hp = 100; c.status = ''; log.push(`いやしのねがい: ${who}は全回復した`); }
+  const res = resolveAbility || defaultAbilityResolver;
+  const ab = res(b, side, i), item = c.itemGone ? '' : bd.item;
+  if (item === 'heavydutyboots') return;
+  const types = typesOf(bd, c);
+  const grounded = b.state.field.gravity || (!types.includes('Flying') && ab !== 'levitate' && ab !== 'eelevate' && item !== 'airballoon');
+  if (!grounded) return;
+  if (s.stickyWeb) applyBoosts(b, side, i, {spe: -1}, {log, fromOpp: true, resolveAbility: res});
+  if (s.tspikes) {
+    if (types.includes('Poison')) { s.tspikes = 0; log.push(`${who}がどくびしを回収した`); }
+    else if (!types.includes('Steel') && !c.status && !['immunity', 'pastelveil', 'purifyingsalt', 'comatose'].includes(ab)) { c.status = s.tspikes >= 2 ? 'tox' : 'psn'; c.toxicCounter = 1; log.push(`${who}はどくびしで${s.tspikes >= 2 ? 'もうどく' : 'どく'}になった`); }
+  }
 }
 
 // メガシンカ先 (できないなら null)。相手で持ち物不明なら種族のメガ先候補の先頭。
@@ -367,8 +412,13 @@ export function applyMoveEffects(b, act, opts = {}) {
   if (move === 'trickroom') { setFieldFlag(b, 'trickRoom', !st.field.trickRoom); log.push(`トリックルーム${st.field.trickRoom ? '発動' : '解除'}`); }
   if (move === 'gravity' && setFieldFlag(b, 'gravity', true)) log.push('じゅうりょく発動');
   if ((move === 'stealthrock' || move === 'stoneaxe') && setSideFlag(b, foe, 'sr', true)) log.push(`${foe === 'me' ? '自分' : '相手'}の場にステルスロック`);
+  if (move === 'toxicspikes' && (st.sides[foe].tspikes || 0) < 2) { st.sides[foe].tspikes = (st.sides[foe].tspikes || 0) + 1; log.push(`${foe === 'me' ? '自分' : '相手'}の場にどくびし (${st.sides[foe].tspikes}層)`); }
+  if (move === 'stickyweb' && !st.sides[foe].stickyWeb) { st.sides[foe].stickyWeb = true; log.push(`${foe === 'me' ? '自分' : '相手'}の場にねばねばネット`); }
+  if (move === 'magicroom' || move === 'wonderroom') { const k = move === 'magicroom' ? 'magicRoom' : 'wonderRoom'; setFieldFlag(b, k, !st.field[k]); log.push(`${moveName(move)}${st.field[k] ? '発動' : '解除'}`); }
+  if (move === 'healingwish') st.sides[side].healingWish = true;
+  if (move === 'wish') st.sides[side].wish = {turn: turnNumber(b) + 1, from: mon};
   if ((move === 'spikes' || move === 'ceaselessedge') && st.sides[foe].spikes < 3) { st.sides[foe].spikes++; log.push(`${foe === 'me' ? '自分' : '相手'}の場にまきびし (${st.sides[foe].spikes}層)`); }
-  const clearHazards = s => { const had = st.sides[s].sr || st.sides[s].spikes; st.sides[s].sr = false; st.sides[s].spikes = 0; return had; };
+  const clearHazards = s => { const had = st.sides[s].sr || st.sides[s].spikes || st.sides[s].tspikes || st.sides[s].stickyWeb; st.sides[s].sr = false; st.sides[s].spikes = 0; st.sides[s].tspikes = 0; st.sides[s].stickyWeb = false; return had; };
   const clearScreens = s => { const sd = st.sides[s]; const had = sd.reflect || sd.lightScreen || sd.auroraVeil; sd.reflect = sd.lightScreen = sd.auroraVeil = false; return had; };
   if (move === 'defog') {
     const h = clearHazards('me') | clearHazards('opp');
@@ -381,7 +431,7 @@ export function applyMoveEffects(b, act, opts = {}) {
   if (['brickbreak', 'psychicfangs', 'ragingbull'].includes(move) && clearScreens(foe)) log.push(`${moveName(move)}: 壁を破壊`);
   if (['icespinner', 'steelroller'].includes(move) && setTerrain(b, '')) log.push(`${moveName(move)}: フィールドを解除`);
   if (move === 'courtchange') {
-    for (const k of ['reflect', 'lightScreen', 'auroraVeil', 'tailwind', 'sr', 'spikes']) {
+    for (const k of ['reflect', 'lightScreen', 'auroraVeil', 'tailwind', 'sr', 'spikes', 'tspikes', 'stickyWeb']) {
       const t = st.sides.me[k]; st.sides.me[k] = st.sides.opp[k]; st.sides.opp[k] = t;
       const ts = st.sides.me.since[k]; st.sides.me.since[k] = st.sides.opp.since[k]; st.sides.opp.since[k] = ts;
     }
@@ -419,6 +469,43 @@ export function applyMoveEffects(b, act, opts = {}) {
     const types = typesOf(buildOf(b, side, mon), condOf(b, side, mon)) || [];
     if (!types.includes('Ghost')) applyBoosts(b, side, mon, {atk: 1, def: 1, spe: -1}, {log, resolveAbility: res});
   }
+  // ランク変化をいじる技
+  const uc = condOf(b, side, mon);
+  if (move === 'haze') { for (const sd of ['me', 'opp']) for (const i of st.sides[sd].active) if (i != null) condOf(b, sd, i).boosts = emptyBoosts(); log.push('くろいきり: 全員のランク変化が元に戻った'); }
+  for (const t of targets) {
+    const tc = condOf(b, t.side, t.mon);
+    if (!tc || t.side === side) continue;
+    const tn = `${t.side === 'me' ? '自分' : '相手'}の${speciesName(currentSpecies(buildOf(b, t.side, t.mon), tc))}`;
+    if (move === 'clearsmog' && !tc.fainted) { tc.boosts = emptyBoosts(); log.push(`クリアスモッグ: ${tn}のランク変化が元に戻った`); }
+    if (move === 'psychup') { uc.boosts = {...emptyBoosts(), ...tc.boosts}; log.push(`じこあんじ: ${tn}のランク変化をコピー`); }
+    if (move === 'topsyturvy') { for (const k of BOOST_KEYS) tc.boosts[k] = -(tc.boosts[k] || 0); log.push(`ひっくりかえす: ${tn}のランク変化が逆になった`); }
+    if (move === 'guardswap' || move === 'powerswap') {
+      for (const k of move === 'guardswap' ? ['def', 'spd'] : ['atk', 'spa']) { const x = uc.boosts[k] || 0; uc.boosts[k] = tc.boosts[k] || 0; tc.boosts[k] = x; }
+      log.push(`${moveName(move)}: ランク変化を入れ替えた`);
+    }
+    if (move === 'painsplit' && !tc.fainted) {
+      // いたみわけ: お互いのHPの実数を足して半分ずつ (相手の最大HPは見込み)
+      const mx = (sd, i) => { const bb = buildOf(b, sd, i), cc = condOf(b, sd, i); return statsOf(currentSpecies(bb, cc), sd === 'me' ? bb.sp : [16, 0, 0, 0, 0, 0], sd === 'me' ? bb.nature : 'Serious')[0]; };
+      const ma = mx(side, mon), mt = mx(t.side, t.mon);
+      const avg = Math.floor((Math.round((uc.hp * ma) / 100) + Math.round((tc.hp * mt) / 100)) / 2);
+      uc.hp = Math.min(100, (avg / ma) * 100); tc.hp = Math.min(100, (avg / mt) * 100);
+      log.push(`いたみわけ: HP ${Math.round(uc.hp)}% / ${Math.round(tc.hp)}%`);
+    }
+    if (move === 'roleplay') { const ta = res(b, t.side, t.mon); if (ta) { uc.abilityChanged = ta; log.push(`なりきり: ${abilityName(ta)}になった`); } }
+    if (move === 'corrosivegas' && !tc.itemGone) { tc.itemGone = true; log.push(`ふしょくガス: ${tn}の持ち物が使えなくなった`); }
+    if ((move === 'bugbite' || move === 'pluck') && !tc.itemGone && /berry$/.test(buildOf(b, t.side, t.mon).item || '')) { tc.itemGone = true; log.push(`${moveName(move)}: ${tn}のきのみを食べた`); }
+    if (move === 'sparklingaria' && tc.status === 'brn') { tc.status = ''; log.push(`うたかたのアリア: ${tn}のやけどが治った`); }
+    if ((move === 'scald' || move === 'scorchingsands' || mv.t === 'Fire') && tc.status === 'frz' && mv.c !== 'Z') { tc.status = ''; log.push(`${tn}のこおりが溶けた`); }
+    if (BIND_MOVES.has(move) && !tc.fainted && !tc.bound) { tc.bound = {turn: turnNumber(b), by: {side, mon}, band: !uc.itemGone && buildOf(b, side, mon).item === 'bindingband'}; log.push(`${tn}はしめつけられた (4〜5ターン)`); }
+    if (move === 'syrupbomb' && !tc.fainted) tc.syrup = turnNumber(b) + 2;
+    if (move === 'octolock' && !tc.fainted) { tc.octolock = {side, mon}; log.push(`${tn}はたこがためで逃げられない`); }
+  }
+  if (move === 'healbell') { for (const c of st.mons[side]) if (c && !c.fainted) c.status = ''; log.push('いやしのすず: 味方全員の状態異常が治った'); }
+  if (move === 'recycle' && uc.itemGone) { uc.itemGone = false; log.push('リサイクル: 持ち物が戻った'); }
+  if (move === 'aquaring') uc.aquaRing = true;
+  if (move === 'ingrain') uc.ingrain = true;
+  if (move === 'destinybond') uc.destinyBond = true;
+  if (move === 'perishsong') { for (const sd of ['me', 'opp']) for (const i of st.sides[sd].active) if (i != null && !condOf(b, sd, i).fainted && condOf(b, sd, i).perish == null) condOf(b, sd, i).perish = 4; log.push('ほろびのうた: 3ターン後の終わりに倒れる'); }
   if (move === 'knockoff') {
     for (const t of targets) {
       const tb = buildOf(b, t.side, t.mon), tc = condOf(b, t.side, t.mon);

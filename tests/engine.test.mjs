@@ -85,6 +85,8 @@ test('ダメージ: ライブラリを直接呼んだ結果と、変換を通し
     const learn = dex.learn[a].filter(m => dex.moves[m].c !== 'Z');
     if (!learn.length) continue;
     const mv = learn[rnd(learn.length)];
+    // 決まった量のダメージ (いかりのまえば・がむしゃら・一撃必殺・カウンター等) は自前で計算するので外す
+    if (['superfang', 'endeavor', 'counter', 'mirrorcoat', 'metalburst', 'comeuppance', 'fissure', 'horndrill', 'guillotine', 'sheercold'].includes(mv)) { rnd(25); rnd(25); for (let k = 0; k < 8; k++) rnd(33); continue; }
     const an = natures[rnd(25)], dn = natures[rnd(25)];
     const asp = [rnd(33), rnd(33), 0, rnd(33), 0, rnd(33)], dsp = [rnd(33), 0, rnd(33), 0, rnd(33), 0];
     const r = calcDamage(mon(a, {build: {nature: an, sp: asp}}), mon(d, {build: {nature: dn, sp: dsp}}), mv, {});

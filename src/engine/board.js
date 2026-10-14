@@ -2,7 +2,7 @@
 import {dex} from './dex.js';
 import {calcDamage, finalSpeed, currentSpecies, currentAbility, defaultHits, newCond, movePriority} from './calc.js';
 import {oppView, oppCond, speedOutlook} from './assume.js';
-import {condOf, other, faintedCount, defaultAbilityResolver} from './battle.js';
+import {condOf, buildOf, other, faintedCount, defaultAbilityResolver} from './battle.js';
 import {fitBuild} from './estimate.js';
 
 const WEATHER_ABILITY = {drizzle: 'Rain', drought: 'Sun', sandstream: 'Sand', snowwarning: 'Snow'};
@@ -41,7 +41,15 @@ export function boardContext(b, usage) {
     return {...tb, species: sid, item: own.item, hpBase: dex.species[own.species]?.bs[0], sp: [own.sp?.[0] || 0, ...(tb.sp || [0, 0, 0, 0, 0, 0]).slice(1)],
       ability: currentAbility(tb, tc), moves: tb.moves || [], transformedFrom: own.species};
   };
-  const cond = (side, i) => (side === 'me' ? b.state.mons.me[i] : oppCond(b.state.mons.opp[i], views[i]));
+  const cond0 = (side, i) => (side === 'me' ? b.state.mons.me[i] : oppCond(b.state.mons.opp[i], views[i]));
+  // ぎたい: フィールドに合わせてタイプが変わる
+  const MIMIC = {Electric: 'Electric', Grassy: 'Grass', Misty: 'Fairy', Psychic: 'Psychic'};
+  const cond = (side, i) => {
+    const c = cond0(side, i);
+    const tr = b.state.field.terrain;
+    if (!c || !tr || !MIMIC[tr] || defaultAbilityResolver(b, side, i) !== 'mimicry') return c;
+    return {...c, types: [MIMIC[tr]]};
+  };
   // 計算用: 相手の未判明の特性は推定値を使う
   const ability = (side, i) => {
     const bd = build(side, i);
@@ -57,6 +65,44 @@ export function boardContext(b, usage) {
     return top && top[1] >= 0.6 ? top[0] : '';
   };
   return {b, usage, views, build, cond, ability, strictAbility, megaBlocked};
+}
+
+/**
+ * 対戦の流れで威力・ダメージが変わる技 (計算機が盤面の履歴を知らないもの) の補正。
+ * 戻り値: {bp: 威力の上書き, hits, takenPct: 攻撃側が受けたダメージ (HP割合)・mult: 倍率 (カウンター等), note}
+ */
+export function moveState(b, atkSide, atkIdx, defSide, defIdx, moveId) {
+  const t = b.turns?.[b.turns.length - 1]?.open ? b.turns[b.turns.length - 1] : null;
+  const n = t ? t.n : (b.turns?.length || 0) + 1;
+  const ac = condOf(b, atkSide, atkIdx) || {}, dc = condOf(b, defSide, defIdx) || {};
+  const acts = t ? t.acts.filter(a => a.type === 'move') : [];
+  const hitBy = (from, to) => acts.filter(a => a.side === from.side && a.mon === from.mon && a.dmgPct > 0 && (a.target ? a.target.side === to.side && a.target.mon === to.mon : true));
+  const me = {side: atkSide, mon: atkIdx}, foe = {side: defSide, mon: defIdx};
+  switch (moveId) {
+    case 'lastrespects': { const k = faintedCount(b, atkSide); return k ? {bp: 50 + 50 * k, note: `倒れた味方${k}体`} : null; }
+    case 'ragefist': { const k = ac.timesAttacked || 0; return k ? {bp: Math.min(350, 50 + 50 * k), note: `攻撃を受けた回数${k}`} : null; }
+    case 'stompingtantrum': case 'temperflare': return ac.lastResult && ac.lastResult.n === n - 1 && ac.lastResult.failed ? {bp: 150, note: '前のターンに失敗'} : null;
+    case 'avalanche': return hitBy(foe, me).length ? {bp: 120, note: '先に攻撃を受けた'} : null;
+    case 'assurance': return acts.some(a => a.dmgPct > 0 && a.target?.side === defSide && a.target?.mon === defIdx) ? {bp: 120, note: 'このターンにダメージを受けた相手'} : null;
+    case 'payback': {
+      if (!t) return null;
+      const entered = t.acts.some(a => (a.side === defSide && (a.to === defIdx || (a.kind === 'send' && a.mon === defIdx))) || (a.forceTo === defIdx && a.side !== defSide));
+      const moved = acts.some(a => a.side === defSide && a.mon === defIdx);
+      return {bp: moved && !entered ? 100 : 50, note: moved && !entered ? '相手が先に動いた' : ''};
+    }
+    case 'beatup': {
+      const list = (atkSide === 'me' ? (b.pick.me.length ? b.pick.me : b.my.map((_, i) => i)) : b.pick.opp.length ? b.pick.opp : [atkIdx]);
+      const ok = list.filter(i => { const c = condOf(b, atkSide, i); return c && !c.fainted && (!c.status || i === atkIdx); });
+      const bps = ok.map(i => 5 + Math.floor(dex.species[buildOf(b, atkSide, i).species].bs[1] / 10));
+      return bps.length ? {bp: Math.round(bps.reduce((x, y) => x + y, 0) / bps.length), hits: bps.length, note: `${bps.length}回`} : null;
+    }
+    case 'counter': case 'mirrorcoat': case 'metalburst': case 'comeuppance': {
+      const cat = moveId === 'counter' ? 'P' : moveId === 'mirrorcoat' ? 'S' : null;
+      const h = hitBy(foe, me).filter(a => !cat || dex.moves[a.move]?.c === cat).pop();
+      return {takenPct: h ? h.dmgPct : 0, mult: moveId === 'counter' || moveId === 'mirrorcoat' ? 2 : 1.5, note: h ? '受けたダメージから' : '先に攻撃を受けていないので失敗'};
+    }
+    default: return null;
+  }
 }
 
 const aliveActives = (b, side) => b.state.sides[side].active.filter(i => i != null && !condOf(b, side, i)?.fainted);
@@ -114,6 +160,12 @@ export function attackTable(ctx, atkSide, atkIdx, opts = {}) {
     let aCond = aCond0;
     let field = st.field;
     const notes = [];
+    // はりこみ: このターンに交代で出てきた相手 (控えへの計算は「交代で出てくる」想定) には威力2倍
+    if (aAbility === 'stakeout') {
+      const tt = b.turns?.[b.turns.length - 1];
+      const enteredNow = tt?.open && tt.acts.some(a => a.side === defSide && a.type !== 'event' && a.to === di); // 死に出しは対象外
+      if (!active || enteredNow) aCond = {...aCond, abilityOn: true};
+    }
     if (!active) {
       // 交代で出てくる相手: 登場時の特性を加味する
       if (dAbility === 'intimidate' && atkActive) {
@@ -131,18 +183,22 @@ export function attackTable(ctx, atkSide, atkIdx, opts = {}) {
     for (const m of moves) {
       const mv = dex.moves[m.id];
       const targetCount = mv.tg === 'allAdjacent' ? foeCount + allies.length : foeCount;
+      const ms = moveState(b, atkSide, atkIdx, defSide, di, m.id);
       results[m.id] = calcDamage({build: aBuild, cond: aCond}, {build: dBuild, cond: dCond}, m.id, {
+        bp: ms?.bp, takenPct: ms?.takenPct, takenMult: ms?.mult, stateNote: ms?.note,
         format: b.format, field,
         atkSide: st.sides[atkSide], defSide: st.sides[defSide],
         hazards: !active,
         crit: !!opts.crit,
-        hits: opts.hits?.[m.id],
+        hits: opts.hits?.[m.id] ?? ms?.hits,
         singleTarget: b.format === 'double' && targetCount <= 1,
         helpingHand: !!opts.helpingHand && b.format === 'double',
         friendGuard: defAllies.some(i => ctx.ability(defSide, i) === 'friendguard'),
         battery: allyAb.includes('battery'), powerSpot: allyAb.includes('powerspot'), steelySpirit: allyAb.includes('steelyspirit'),
         fairyAura: anyActiveAb.includes('fairyaura') || aAbility === 'fairyaura' || dAbility === 'fairyaura',
-        atkAlliesFainted: faintedCount(b, atkSide), defAlliesFainted: faintedCount(b, defSide),
+        // そうだいしょう: 場に出た時点の倒れた味方の数 (控えは今の数)
+        atkAlliesFainted: atkActive && aCond0.entryFainted != null ? aCond0.entryFainted : faintedCount(b, atkSide),
+        defAlliesFainted: active && dCond.entryFainted != null ? dCond.entryFainted : faintedCount(b, defSide),
       });
     }
     let best = null;
