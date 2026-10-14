@@ -7,7 +7,7 @@ import {spreadLabel, PRESETS, SPE_COMBOS, speFromCombo} from '../engine/assume.j
 import {useApp, Sheet, Picker, Seg, TypeChip, Empty, Confirm, cx, rate} from './common.jsx';
 import {MonEditor} from './teams.jsx';
 import {SelectTab} from './select.jsx';
-import {Arena} from './arena.jsx';
+import {Arena, OppStatTable} from './arena.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
 import {DamageTab} from './analysis.jsx';
 
@@ -106,32 +106,41 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
   return (
     <Sheet title={`相手の${speciesName(o.species)}`} onClose={onClose} wide>
       <div class="editor">
-        <p class="hint">判明したことだけ入力してください。未入力の部分は使用率データから推定します (「?」付きが推定)。</p>
-        <div class="form">
-          <div class="field grow"><span>持ち物 {v?.itemGuess && <em class="guess">推定: {itemName(v.build.item) || 'なし'}</em>}</span>
+        <div class="os-info">
+          <div class="os-row"><span class="os-lb">持ち物</span>
             <button class="input as-btn" onClick={() => setPick('item')}>{o.item ? itemName(o.item) : <span class="muted">不明</span>}</button>
           </div>
-          <div class="field grow"><span>特性 {v?.abilityGuess && <em class="guess">推定: {abilityName(v.build.ability)}</em>}</span>
-            <Seg wrap value={o.ability || ''} options={[['', '不明'], ...s.ab.map(a => [a, abilityName(a)])]} onChange={val => set(x => { x.ability = val; })} />
+          <div class="os-row"><span class="os-lb">特性</span>
+            {dex.species[battle.state.mons.opp[idx]?.forme]?.mega
+              ? <b>{abilityName(dex.species[battle.state.mons.opp[idx].forme].ab[0])}</b>
+              : <Seg wrap value={o.ability || ''} options={[['', '不明'], ...s.ab.map(a => [a, abilityName(a)])]} onChange={val => set(x => { x.ability = val; })} />}
           </div>
         </div>
-        {megas.length > 0 && <p class="hint">メガシンカ: {battle.state.mons.opp[idx]?.forme ? 'メガシンカ済み (メガの種族値で計算)' : `まだしていないので通常の姿で計算${ctx.megaBlocked ? ' (相手は別のポケモンがメガシンカ済み)' : v ? ` ・ 使用率上のメガ率 ${rate(v.megaP)}` : ''}`}。メガシンカしたら、盤面の名前の横の「メガ」ボタンを押してください。</p>}
-
-        <div class="field"><span>判明した技 ({o.moves.length}/4)</span>
-          <div class="chips">
-            {o.moves.map(m => <button class="chip del" onClick={() => set(x => { x.moves = x.moves.filter(y => y !== m); })}><TypeChip type={dex.moves[m]?.t} small />{moveName(m)} ×</button>)}
-            {o.moves.length < 4 && <button class="chip add" onClick={() => setPick('move')}>＋ 技を追加</button>}
+        <div class="scroll-x"><OppStatTable battle={battle} idx={idx} /></div>
+        <div class="field"><span>技</span>
+          <div class="moves4">
+            {[0, 1, 2, 3].map(i => {
+              const m = o.moves[i];
+              return m
+                ? <button class="chip" onClick={() => set(x => { x.moves = x.moves.filter(y => y !== m); })} title="押すと外します"><TypeChip type={dex.moves[m]?.t} small /><span class="mv-nm">{moveName(m)}</span><span class="muted"> ×</span></button>
+                : <button class="chip empty" onClick={() => setPick('move')}>—</button>;
+            })}
           </div>
-          {v && o.moves.length < 4 && (
-            <div class="chips">
-              {v.moves.filter(m => !m.known).slice(0, 10).map(m => (
-                <button class="chip ghost" onClick={() => set(x => { if (x.moves.length < 4) x.moves.push(m.id); })}>{moveName(m.id)} <span class="rate">{rate(m.rate)}</span></button>
+        </div>
+        {v && (
+          <div class="field"><span>技の採用率 (押すと判明した技に入れます)</span>
+            <div class="os-rates">
+              {v.moves.slice(0, 12).map(m => (
+                <button class={cx('os-rate', m.known && 'known')} disabled={m.known || o.moves.length >= 4} onClick={() => set(x => { if (x.moves.length < 4 && !x.moves.includes(m.id)) x.moves.push(m.id); })}>
+                  <span class={cx('mv-bar', `t-${dex.moves[m.id]?.t}`)} /><span class="mv-nm">{moveName(m.id)}</span><b class="num">{m.rate != null ? rate(m.rate) : ''}</b>
+                </button>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
+        {megas.length > 0 && <p class="hint">メガシンカ: {battle.state.mons.opp[idx]?.forme ? 'メガシンカ済み (メガの種族値で計算)' : `まだしていないので通常の姿で計算${ctx.megaBlocked ? ' (相手は別のポケモンがメガシンカ済み)' : v ? ` ・ 使用率上のメガ率 ${rate(v.megaP)}` : ''}`}。メガシンカしたら、盤面の名前の横の「メガ」ボタンを押してください。</p>}
 
-        <div class="field"><span>観測のない能力に使う初期の想定 (ダメージや行動順で絞れた能力は、その結果を優先します) <em class="guess">{v ? `${spreadLabel(v.build.nature, v.build.sp)} (${v.spreadSource}${v.spreadRate != null ? ` ${rate(v.spreadRate, 1)}` : ''})` : ''}</em></span>
+        <div class="field"><span>能力振りの採用率 (参考。ダメージ計算で、まだ絞り込めていない能力の仮の値に使います。上の能力表の絞り込みには使いません) <em class="guess">{v ? `${spreadLabel(v.build.nature, v.build.sp)} (${v.spreadSource}${v.spreadRate != null ? ` ${rate(v.spreadRate, 1)}` : ''})` : ''}</em></span>
           <div class="chips">
             {(v?.spreads || []).slice(0, 6).map((sp, i) => (
               <button class={cx('chip', as.kind === 'usage' && (as.idx || 0) === i && 'on')} onClick={() => set(x => { x.assume = {kind: 'usage', idx: i}; })}>

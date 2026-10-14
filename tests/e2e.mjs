@@ -298,6 +298,12 @@ await ipad.goto(`${url}#/battle/${bid}`);
 await ipad.waitForSelector('.arena.wide');
 check(await ipad.locator('.arena.wide > .ar-left').count() === 1 && await ipad.locator('.arena.wide > .ar-center').count() === 1 && await ipad.locator('.arena.wide > .ar-right').count() === 1, 'iPad横は3列で表示');
 await shot(ipad, 'ipad-arena');
+await ipad.locator('.mon-panel.opp .mp-name').first().click();
+await ipad.waitForSelector('.os-info');
+check(await ipad.locator('.sheet .mp-table').count() === 1 && await ipad.locator('.sheet .moves4 > *').count() === 4, '相手の詳細: 能力表と技4枠');
+await shot(ipad, 'ipad-opp-sheet');
+await ipad.keyboard.press('Escape');
+await ipad.locator('.sheet button', {hasText: '閉じる'}).first().click().catch(() => {});
 const over = await ipad.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 check(over <= 0, `iPad横で横にはみ出さない (${over}px)`);
 // 入力欄を開いた状態の見た目

@@ -4,7 +4,7 @@
 import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engine/calc.js';
-import {megaTarget, buildOf, condOf, other, PIVOT_MOVES} from '../engine/battle.js';
+import {megaTarget, buildOf, condOf, other, PIVOT_MOVES, faintedCount, pickCount} from '../engine/battle.js';
 import {RECOIL, HALF_RECOIL, DRAIN, SELF_FX_JA} from '../engine/flow.js';
 import {addAct, addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, residualCandidates, finishTurn, replay, expiryCandidates, hazardDamage, dispOf} from '../engine/flow.js';
 import {Picker, Sheet, Seg, Toggle, Sprite, cx} from './common.jsx';
@@ -45,7 +45,8 @@ function MonBtn({battle, side, mon, on, onClick}) {
     <button class={cx('mon-btn', side, on && 'on')} onClick={onClick} title={speciesName(sid)}>
       <Sprite id={sid} size={44} />
       <span class="mb-nm">{speciesName(sid)}</span>
-      {hp < 100 && <span class="mb-hp"><i style={{width: `${hp}%`}} /></span>}
+      <span class="mb-hp"><i class={cx(hp <= 25 ? 'red' : hp <= 50 && 'yellow')} style={{width: `${Math.max(0, hp)}%`}} /></span>
+      <span class="mb-pct num">{Math.round(hp)}%</span>
     </button>
   );
 }
@@ -217,6 +218,25 @@ function Composer({battle, ctx, mut, usage, toast}) {
     if (next < myTodo.length) setPlanIdx(next); else { setPlanIdx(0); go('who'); }
   };
 
+  // 片方の選出 (シングル3体) が全員倒れたら終了
+  const lostSide = ['opp', 'me'].find(side => faintedCount(battle, side) >= pickCount(battle.format));
+  const [keepGoing, setKeepGoing] = useState(false);
+  const autoRes = lostSide === 'opp' ? 'win' : 'lose';
+  useEffect(() => { if (lostSide && !battle.result && battle.kind !== 'sim') mut(b => { b.result = autoRes; }); }, [lostSide]);
+  if (lostSide && !keepGoing) {
+    const hasOpen = !!open?.acts.length;
+    return (
+      <div class="composer">
+        <div class={cx('tc-box', 'game-over', autoRes)}>
+          <div class="go-title">{lostSide === 'opp' ? `相手を${pickCount(battle.format)}体倒しました。勝ち！` : `自分の${pickCount(battle.format)}体が倒れました。負け`}</div>
+          {hasOpen
+            ? <button class="btn primary" onClick={() => { mut(b => { finishTurn(b, usage); if (b.kind !== 'sim') b.result = autoRes; }); toast('対戦を終了しました'); }}>最後のターンを確定して終了</button>
+            : <p class="muted">対戦の記録は保存されています。結果は右上で変えられます。</p>}
+          <button class="btn ghost sm" onClick={() => setKeepGoing(true)}>記録を続ける・直す</button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div class="composer">
       <div class="cp-head">
@@ -225,8 +245,8 @@ function Composer({battle, ctx, mut, usage, toast}) {
       </div>
 
       {needSend.map(side => (
-        <div class="tc-box warn">
-          <div class="tc-h">{SIDE_JA[side]}が場に出すポケモン</div>
+        <div class="tc-box warn send-ask">
+          <div class="tc-h">{(() => { const f = battle.state.sides[side].active.find(x => x != null && condOf(battle, side, x)?.fainted); return f != null ? `${SIDE_JA[side]}の${speciesName(buildOf(battle, side, f).species)}が倒れました。` : ''; })()}<b>{side === 'me' ? '次に出すポケモンを選んでください' : '相手が次に出したポケモンを選んでください'}</b></div>
           <div class="chips">
             {benchOf(battle, side).map(i => <MonBtn battle={battle} side={side} mon={i} onClick={() => { mut(b => addEvent(b, {kind: 'send', side, to: i}, usage)); }} />)}
           </div>

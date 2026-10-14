@@ -370,3 +370,48 @@ function DamagePane({battle, ctx}) {
     </div>
   );
 }
+
+/** 相手の能力表 (中央の盤面と同じもの)。相手の詳細シートでも使う */
+export function OppStatTable({battle, idx}) {
+  const opp = battle.opp[idx];
+  const raw = condOf(battle, 'opp', idx) || {boosts: {}};
+  const sid = currentSpecies(opp, raw);
+  const s = dex.species[sid];
+  const est = useMemo(() => estimateStats(opp, sid), [opp, sid]);
+  if (!s || !est) return null;
+  const rg = e => (e[0] === e[1] ? `${e[0]}` : `${e[0]}〜${e[1]}`);
+  const mods = new Set();
+  for (const r of est.rows) if (r.known && r.byMod) for (const m of Object.keys(r.byMod)) mods.add(Number(m));
+  const all = [[1, '能力Pt 補正なし'], [1.1, '能力Pt 補正↑'], [0.9, '能力Pt 補正↓']].filter(([m]) => mods.has(m));
+  const estRows = all.length ? all : [[1, '能力Pt']];
+  const fmtVal = r => (r.valLo === r.valHi ? `${r.valLo}` : `${r.valLo}〜${r.valHi}`);
+  return (
+    <table class="mp-table">
+      <thead><tr><th></th>{STAT_JA.map(l => <th>{l}</th>)}</tr></thead>
+      <tbody>
+        <tr><th>種族値</th>{s.bs.map(v => <td class="num">{v}</td>)}</tr>
+        {estRows.map(([mod, label]) => (
+          <tr class="est" key={mod}><th>{label}</th>
+            {est.rows.map(r => {
+              if (!r.known) return <td></td>;
+              if (r.key === 'hp') return <td class="num known">{mod === estRows[0][0] ? rg([r.spLo, r.spHi]) : ''}</td>;
+              const e = r.byMod?.[mod];
+              return <td class={cx('num', e && 'known')}>{e ? rg(e) : '×'}</td>;
+            })}
+          </tr>
+        ))}
+        <tr><th>能力上昇</th><td></td>{BOOST_KEYS.map(k => { const v = raw.boosts?.[k] || 0; return <td class={cx('num rankv', v > 0 && 'pos', v < 0 && 'neg')}>{v > 0 ? `+${v}` : v}</td>; })}</tr>
+        <tr class="real"><th>実数値</th>
+          {STAT_KEYS.map((k, i) => {
+            const st = raw.boosts?.[k] || 0;
+            const r = est.rows[i];
+            const base = fmtVal(r);
+            if (!st) return <td class={cx('num', r.known && 'known')}>{base}</td>;
+            const up = v => Math.floor(st > 0 ? (v * (2 + st)) / 2 : (v * 2) / (2 - st));
+            return <td class={cx('num', r.known && 'known', st > 0 ? 'pos' : 'neg')}>{fmtVal({valLo: up(r.valLo), valHi: up(r.valHi)})}<small>({base})</small></td>;
+          })}
+        </tr>
+      </tbody>
+    </table>
+  );
+}
