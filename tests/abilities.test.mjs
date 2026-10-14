@@ -69,3 +69,21 @@ test('おうごんのからだ: 変化技 (あくび) は効かない。マジ�
   addAct(b2, {side: 'me', type: 'move', move: 'stealthrock'}, usage);
   assert.ok(b2.state.sides.me.sr && !b2.state.sides.opp.sr);
 });
+
+test('バトルスイッチ: 攻撃技でブレード (計算もブレードのA)、キングシールドでシールド、交代でシールドに戻る', () => {
+  const b = battle([B('aegislashshield', {nature: 'Adamant', sp: [2, 32, 0, 0, 0, 32], moves: ['shadowsneak', 'kingsshield']}), B('garchomp')], ['garchomp']);
+  const shield = calcDamage(mon(b, 'opp', 0), mon(b, 'me', 0), 'earthquake');
+  const hit = calcDamage(mon(b, 'me', 0), mon(b, 'opp', 0), 'shadowsneak');
+  assert.ok(hit.max > 0);
+  addAct(b, {side: 'me', type: 'move', move: 'shadowsneak', hpAfter: 80}, usage);
+  assert.equal(condOf(b, 'me', 0).forme, 'aegislashblade');
+  const hit2 = calcDamage(mon(b, 'me', 0), mon(b, 'opp', 0), 'shadowsneak');
+  assert.equal(hit2.max, hit.max, '待機中もブレードで計算している');
+  const blade = calcDamage(mon(b, 'opp', 0), mon(b, 'me', 0), 'earthquake');
+  assert.ok(blade.max > shield.max * 1.8, 'ブレード中は受けるダメージが増える');
+  addAct(b, {side: 'me', type: 'move', move: 'kingsshield', sameTurn: false}, usage);
+  assert.equal(condOf(b, 'me', 0).forme, null);
+  addAct(b, {side: 'me', type: 'move', move: 'shadowsneak', hpAfter: 60, sameTurn: false}, usage);
+  addAct(b, {side: 'me', type: 'switch', to: 1, sameTurn: false}, usage);
+  assert.equal(condOf(b, 'me', 0).forme, null);
+});

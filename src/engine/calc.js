@@ -140,6 +140,10 @@ export function calcDamage(attacker, defender, moveId, opts = {}) {
   const mv = dex.moves[moveId];
   if (!mv) return {ok: false, moveId, error: 'unknown move'};
   if (mv.c === 'Z') return {ok: true, moveId, status: true, min: 0, max: 0, minPct: 0, maxPct: 0, koText: '', n: 0};
+  // バトルスイッチ (ギルガルド): 攻撃技を出すときはブレードフォルムで殴る
+  if (/^aegislash/.test(attacker.build.species) && currentAbility(attacker.build, attacker.cond) === 'stancechange' && attacker.cond?.forme !== 'aegislashblade' && !attacker.build.hpBase) {
+    attacker = {...attacker, cond: {...(attacker.cond || newCond()), forme: 'aegislashblade'}};
+  }
   try {
     const atk = toCalcPokemon(attacker.build, attacker.cond, {alliesFainted: opts.atkAlliesFainted});
     const def = toCalcPokemon(defender.build, defender.cond, {alliesFainted: opts.defAlliesFainted});

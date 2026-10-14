@@ -81,6 +81,7 @@ test('ダメージ: ライブラリを直接呼んだ結果と、変換を通し
   const natures = Object.keys(dex.natures);
   for (let t = 0; t < 1500; t++) {
     const a = ids[rnd(ids.length)], d = ids[rnd(ids.length)];
+    if (a === 'aegislashshield') continue; // バトルスイッチでブレードとして計算するため直接の比較から外す
     const learn = dex.learn[a].filter(m => dex.moves[m].c !== 'Z');
     if (!learn.length) continue;
     const mv = learn[rnd(learn.length)];

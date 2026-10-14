@@ -142,6 +142,14 @@ export function addAct(b, input, usage) {
     const tgt = a.target || (() => { const f = b.state.sides[foe].active.filter(i => i != null && !condOf(b, foe, i)?.fainted); return f.length === 1 ? {side: foe, mon: f[0]} : null; })();
     let failed = a.flags.miss || a.flags.protect || a.flags.cant;
     const mvd = dex.moves[a.move];
+    // バトルスイッチ (ギルガルド): 攻撃技でブレード、キングシールドでシールドに
+    {
+      const uc = condOf(b, side, mon);
+      if (/^aegislash/.test(build.species) && res(b, side, mon) === 'stancechange' && mvd && !a.flags.cant && !uc.transformed) {
+        const to = mvd.c !== 'Z' ? 'aegislashblade' : a.move === 'kingsshield' ? null : undefined;
+        if (to !== undefined && (uc.forme || null) !== to) { uc.forme = to; log.push(`${side === 'me' ? '自分' : '相手'}のギルガルドのバトルスイッチ: ${to ? 'ブレード' : 'シールド'}フォルムに`); }
+      }
+    }
     // へんげんじざい・リベロ: 技を出す前にその技のタイプになる (場に出ている間に1回だけ)
     {
       const uc = condOf(b, side, mon), uab = res(b, side, mon);
