@@ -206,6 +206,7 @@ function leaveField(b, side, i, {log = [], resolveAbility} = {}) {
   cond.transformed = null;
   cond.healBlock = 0;
   cond.seeded = false;
+  cond.salted = false;
   cond.types = null; // みずびたし・へんげんじざい等のタイプ変化は交代で戻る
   cond.proteanUsed = false;
   cond.drowsy = 0; // あくびの眠気は交代で消える

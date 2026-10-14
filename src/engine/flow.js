@@ -3,6 +3,11 @@ import {dex, speciesName, moveName, statsOf, itemName, abilityName, TYPE_JA} fro
 import {currentSpecies, typesOf, currentAbility, finalSpeed, disguiseIntact} from './calc.js';
 
 export const FORCE_MOVES = new Set(['dragontail', 'circlethrow', 'roar', 'whirlwind']);
+const failed0 = a => a.flags.miss || a.flags.protect || a.flags.cant;
+export const EJECT_JA = {ejectbutton: 'だっしゅつボタン', redcard: 'レッドカード', ejectpack: 'だっしゅつパック', emergencyexit: 'ききかいひ', wimpout: 'にげごし'};
+// 変化技で自分のHPが変わる割合 (+回復 / −消費)
+const SELF_HP = {recover: 1 / 2, roost: 1 / 2, slackoff: 1 / 2, softboiled: 1 / 2, milkdrink: 1 / 2, healorder: 1 / 2, junglehealing: 1 / 4, lifedew: 1 / 4,
+  bellydrum: -1 / 2, filletaway: -1 / 2, clangoroussoul: -1 / 3, substitute: -1 / 4, shedtail: -1 / 2, curse: -1 / 2};
 export const SELF_KO = new Set(['explosion', 'selfdestruct', 'mistyexplosion', 'memento', 'finalgambit', 'healingwish', 'lunardance']);
 // 眠らない (ふみん・やるき・スイートベール・きよめのしお・ぜったいねむり、エレキ/ミストフィールドで接地)
 const NO_SLEEP = new Set(['insomnia', 'vitalspirit', 'sweetveil', 'purifyingsalt', 'comatose']);
@@ -174,6 +179,18 @@ export function addAct(b, input, usage) {
     const tgt = a.target || (() => { const f = b.state.sides[foe].active.filter(i => i != null && !condOf(b, foe, i)?.fainted); return f.length === 1 ? {side: foe, mon: f[0]} : null; })();
     let failed = a.flags.miss || a.flags.protect || a.flags.cant;
     const mvd = dex.moves[a.move];
+    // ねむり・こおり: 行動できなかった回数を数える。技を出せた = 目を覚ました / 溶けた (ねごと・いびきは眠ったまま)
+    {
+      const uc = condOf(b, side, mon);
+      if (uc.status === 'slp' || uc.status === 'frz') {
+        if (!String(uc.statusKey || '').startsWith(uc.status)) { uc.statusKey = uc.status; uc.statusCant = 0; }
+        if (a.flags.cant) uc.statusCant = (uc.statusCant || 0) + 1;
+        else if (!(uc.status === 'slp' && (a.move === 'sleeptalk' || a.move === 'snore'))) {
+          log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}は${uc.status === 'slp' ? '目を覚ました' : 'こおりが溶けた'}`);
+          uc.status = ''; uc.statusKey = ''; uc.statusCant = 0;
+        }
+      }
+    }
     // バトルスイッチ (ギルガルド): 攻撃技でブレード、キングシールドでシールドに
     {
       const uc = condOf(b, side, mon);
@@ -244,7 +261,7 @@ export function addAct(b, input, usage) {
       if (heal && tgt.side === 'me') { const tb0 = buildOf(b, 'me', tgt.mon); const mx = statsOf(currentSpecies(tb0, tc), tb0.sp, tb0.nature)[0]; healPct = (Math.floor(mx / 4) / mx) * 100; }
       const hitAfter = heal ? Math.max(0.1, a.hpAfter - healPct) : a.hpAfter;
       if (heal === null) log.push('オレンのみの回復量は割合に直せないため、このダメージからの推定は見送り');
-      const unsafe = disguiseHit ? 'ばけのかわ' : tgt.side !== side ? unsafeForInference(b, t, side, mon, tgt, a.move, res, a.flags.crit) : '';
+      const unsafe = disguiseHit ? 'ばけのかわ' : input.pierce ? 'まもるを貫いた (1/4) ' : tgt.side !== side ? unsafeForInference(b, t, side, mon, tgt, a.move, res, a.flags.crit) : '';
       if (unsafe && tgt.side !== side && inferable(a.move) && a.hpAfter > 0) log.push(`${unsafe}ため、このダメージからの推定は見送り`);
       if (!unsafe && tgt.side !== side && inferable(a.move) && heal !== null && a.hpAfter > 0 && (sash || before > hitAfter)) {
         try {
@@ -272,6 +289,8 @@ export function addAct(b, input, usage) {
     condOf(b, side, mon).glaive = !failed && a.move === 'glaiverush';
     // やどりぎのタネ: くさタイプ以外に当たると、交代するまで毎ターン 1/8 減る
     if (!failed && tgt && a.move === 'leechseed' && !typesOf(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon)).includes('Grass')) condOf(b, tgt.side, tgt.mon).seeded = true;
+    // しおづけ: 当たった相手は交代するまで毎ターン 1/16 (みず・はがねは 1/8) 減る (チャンピオンズでは本家の半分)
+    if (!failed && tgt && a.move === 'saltcure' && !condOf(b, tgt.side, tgt.mon).fainted) condOf(b, tgt.side, tgt.mon).salted = true;
     // サイコノイズ: 当たった相手は2ターンの間 回復できない (たべのこし等も発動しない)
     if (!failed && tgt && a.move === 'psychicnoise' && !condOf(b, tgt.side, tgt.mon).fainted) { condOf(b, tgt.side, tgt.mon).healBlock = t.n + 1; log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は2ターン回復できない`); }
     // あくび: 状態異常がなく、まだ眠気がなければ眠気をつける
@@ -324,6 +343,37 @@ export function addAct(b, input, usage) {
       }
     }
   }
+  // PP: プレッシャーの相手に使うと 2 減る
+  if (a.type === 'move' && dex.moves[a.move] && !a.flags.cant) {
+    const ft = a.target || (() => { const f = b.state.sides[other(side)].active.filter(i => i != null); return f.length ? {side: other(side), mon: f[0]} : null; })();
+    a.pp = ft && ft.side !== side && defaultAbilityResolver(b, ft.side, ft.mon) === 'pressure' ? 2 : 1;
+  }
+  // 自分のHPが変わる変化技 (回復技・はらだいこ・みがわり等)。失敗・行動できずのときは何もしない
+  if (a.type === 'move' && dex.moves[a.move]?.c === 'Z' && !(a.flags.cant || a.flags.miss || a.flags.protect)) {
+    const uc = condOf(b, side, mon);
+    const w = b.state.field.weather;
+    const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}`;
+    let d = SELF_HP[a.move];
+    if (a.move === 'moonlight' || a.move === 'morningsun' || a.move === 'synthesis') d = w === 'Sun' ? 2 / 3 : w ? 1 / 4 : 1 / 2;
+    if (a.move === 'shoreup') d = w === 'Sand' ? 2 / 3 : 1 / 2;
+    if (a.move === 'curse' && !typesOf(build, uc).includes('Ghost')) d = 0;
+    if (uc && !uc.fainted && d) {
+      const before = uc.hp;
+      if (d < 0 && uc.hp <= -d * 100 && a.move !== 'curse') log.push(`${who}の${moveName(a.move)}: HPが足りないので失敗`);
+      else { setHP(b, side, mon, uc.hp + d * 100); if (uc.hp !== before) log.push(`${who}: HP ${Math.round(before)}% → ${Math.round(uc.hp)}%`); }
+    }
+    // ねむる: HP全快して2ターン眠る
+    if (a.move === 'rest' && uc && !uc.fainted && uc.hp < 100 && !sleepBlocked(b, side, mon, res)) { setHP(b, side, mon, 100); uc.status = 'slp'; uc.statusKey = 'slpRest'; uc.statusCant = 0; uc.toxicCounter = 1; log.push(`${who}はねむって全回復`); }
+  }
+  // さいきのいのり: ひんしの控えを1体、HP半分で復活させる
+  if (a.type === 'move' && a.move === 'revivalblessing' && input.revive != null && !(a.flags.cant || a.flags.miss)) {
+    const rc = condOf(b, side, input.revive);
+    if (rc && rc.fainted && !b.state.sides[side].active.includes(input.revive)) {
+      rc.fainted = false; rc.hp = 50; rc.status = ''; rc.toxicCounter = 1;
+      a.revive = input.revive;
+      log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, side, input.revive).species)}が復活した (HP半分)`);
+    }
+  }
   // だいばくはつ・じばく・おきみやげ・いのちがけ・いやしのねがい等: 使ったポケモンは倒れる (外れても・守られても)
   if (a.type === 'move' && SELF_KO.has(a.move) && !a.flags.cant) {
     const uc = condOf(b, side, mon);
@@ -341,10 +391,31 @@ export function addAct(b, input, usage) {
       sendOut(b, fside, fslot, input.forceTo, {log, resolveAbility: res});
     }
   }
-  // PP: プレッシャーの相手に使うと 2 減る
-  if (a.type === 'move' && dex.moves[a.move] && !a.flags.cant) {
-    const ft = a.target || (() => { const f = b.state.sides[other(side)].active.filter(i => i != null); return f.length ? {side: other(side), mon: f[0]} : null; })();
-    a.pp = ft && ft.side !== side && defaultAbilityResolver(b, ft.side, ft.mon) === 'pressure' ? 2 : 1;
+  // だっしゅつボタン・ききかいひ・にげごし (当たった側が交代) / レッドカード (攻撃した側が交代させられる)
+  if (a.type === 'move' && input.eject && input.eject.to != null && !failed0(a)) {
+    const e = input.eject;
+    const tg = a.target || (() => { const f = b.state.sides[other(side)].active.filter(i => i != null && !condOf(b, other(side), i)?.fainted); return f.length ? {side: other(side), mon: f[0]} : null; })();
+    const who = e.who === 'atk' ? {side, mon} : tg;
+    const holder = e.who === 'atk' ? tg : who;
+    const wslot = who ? b.state.sides[who.side].active.indexOf(who.mon) : -1;
+    if (who && wslot >= 0 && !condOf(b, who.side, who.mon)?.fainted && e.to !== who.mon && !condOf(b, who.side, e.to)?.fainted) {
+      if (e.reason === 'ejectbutton' || e.reason === 'redcard' || e.reason === 'ejectpack') {
+        const hb = buildOf(b, holder.side, holder.mon);
+        if (holder.side === 'opp' && !hb.item) hb.item = e.reason;
+        condOf(b, holder.side, holder.mon).itemGone = true;
+      }
+      a.eject = {...e, side: who.side};
+      if ((e.reason === 'emergencyexit' || e.reason === 'wimpout') && who.side === 'opp' && !buildOf(b, 'opp', who.mon).ability) buildOf(b, 'opp', who.mon).ability = e.reason;
+      log.push(`${EJECT_JA[e.reason] || '交代'}: ${who.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, who.side, e.to).species)}が出てきた`);
+      sendOut(b, who.side, wslot, e.to, {log, resolveAbility: res});
+    }
+  }
+  // せいでんき・ほのおのからだ・どくのトゲ・ほうし (接触で攻撃した側が状態異常に。どれかは入力)
+  if (a.type === 'move' && input.contactStatus && !failed0(a)) {
+    const uc = condOf(b, side, mon);
+    const tg = a.target || {side: other(side), mon: b.state.sides[other(side)].active.find(i => i != null)};
+    if (input.contactAbility && tg?.side === 'opp' && tg.mon != null && !buildOf(b, 'opp', tg.mon).ability) buildOf(b, 'opp', tg.mon).ability = input.contactAbility;
+    if (uc && !uc.fainted && !uc.status) { uc.status = input.contactStatus; uc.toxicCounter = 1; log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}は${STATUS_JA[input.contactStatus]}になった (相手の特性)`); }
   }
   if (input.hpUnknown) a.hpUnknown = true;
   a.auto = log;
@@ -600,7 +671,7 @@ export function reopenLastTurn(b, usage) {
 
 // ---- ターン終了時の処理 (たべのこし・定数ダメージなど) ----
 const RESIDUAL_JA = {sand: 'すなあらしのダメージ', grassy: 'グラスフィールドで回復', leftovers: 'たべのこしで回復', blacksludge: 'くろいヘドロ', psn: 'どくのダメージ', tox: 'もうどくのダメージ',
-  brn: 'やけどのダメージ', leechseed: 'やどりぎのタネ', leechheal: 'やどりぎのタネで回復', poisonheal: 'ポイズンヒールで回復', raindish: 'あめうけざらで回復', dryskin: 'かんそうはだ', solarpower: 'サンパワーのダメージ', icebody: 'アイスボディで回復'};
+  brn: 'やけどのダメージ', leechseed: 'やどりぎのタネ', saltcure: 'しおづけのダメージ', leechheal: 'やどりぎのタネで回復', poisonheal: 'ポイズンヒールで回復', raindish: 'あめうけざらで回復', dryskin: 'かんそうはだ', solarpower: 'サンパワーのダメージ', icebody: 'アイスボディで回復'};
 const RESIDUAL_ITEM = {leftovers: 'leftovers', blacksludge: 'blacksludge'};
 export {RESIDUAL_JA};
 
@@ -616,6 +687,7 @@ function residualFrac(b, side, mon, key) {
     case 'tox': return -Math.min(15, cond.toxicCounter || 1) / 16;
     case 'brn': return -1 / 16;
     case 'leechseed': return -1 / 8;
+    case 'saltcure': return types.some(x => x === 'Water' || x === 'Steel') ? -1 / 8 : -1 / 16;
     case 'poisonheal': return 1 / 8;
     case 'dryskin': return w === 'Rain' ? 1 / 8 : -1 / 8;
     case 'solarpower': return -1 / 8;
@@ -706,6 +778,7 @@ export function residualCandidates(b, usage) {
       if (cond.status === 'tox' && !noIndirect && !sure('poisonheal')) push('tox', !maybe('poisonheal') && !maybe('magicguard'));
       if (cond.status === 'brn' && !noIndirect) push('brn', !maybe('magicguard'));
       if (cond.seeded && !noIndirect) push('leechseed', !maybe('magicguard'));
+      if (cond.salted && !noIndirect) push('saltcure', !maybe('magicguard'));
       { const fs = other(side); if (b.state.sides[fs].active.some(i => i != null && condOf(b, fs, i)?.seeded && !condOf(b, fs, i)?.fainted)) push('leechheal', true); }
       if (w === 'Rain' && maybe('raindish')) push('raindish', sure('raindish'));
       if ((w === 'Rain' || w === 'Sun') && maybe('dryskin')) push('dryskin', sure('dryskin'));
@@ -979,6 +1052,7 @@ function stepOf(b, side, mon, key) {
   if (key === 'tox') st.n = Math.min(15, c.toxicCounter || 1);
   if (key === 'blacksludge') st.poison = types.includes('Poison');
   if (key === 'dryskin') st.rain = b.state.field.weather === 'Rain';
+  if (key === 'saltcure') return {k: 'frac', f: types.some(x => x === 'Water' || x === 'Steel') ? 1 / 8 : 1 / 16};
   if (key === 'leechheal') {
     const fs = other(side), fm = b.state.sides[fs].active.find(i => i != null && condOf(b, fs, i)?.seeded);
     if (fs === 'me' && fm != null) st.amount = Math.max(1, Math.floor(maxHPOf(b, 'me', fm) / 8));
@@ -1072,6 +1146,8 @@ export function sideDone(b, side) {
   // 行動のあとに倒れて出てきた (ターン途中の交代) なら、このターンはもう動かない
   const firstAct = t.acts.findIndex(a => a.type !== 'event');
   if (firstAct >= 0 && t.acts.some((a, i) => i > firstAct && a.type === 'event' && a.kind === 'send' && a.side === side)) return true;
+  // ドラゴンテール等で引きずり出された・だっしゅつボタン等で出てきたポケモンは、このターンは動かない
+  if (t.acts.some(a => (a.forceTo != null && a.side !== side) || a.eject?.side === side)) return true;
   const act = b.state.sides[side].active.filter(i => i != null);
   return !act.length || act.every(i => condOf(b, side, i)?.fainted);
 }

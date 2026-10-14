@@ -9,7 +9,7 @@ import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility
 import {condOf, buildOf, other, turnNumber, PIVOT_MOVES, faintedCount, pickCount} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {scenarioBuild} from '../engine/estimate.js';
-import {revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, editAct, reopenLastTurn, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
+import {revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, editAct, reopenLastTurn, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
 import {speedOutlook} from '../engine/assume.js';
 import {finalSpeed} from '../engine/calc.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, Confirm, cx, fmtPct, rate} from './common.jsx';
@@ -317,10 +317,19 @@ function SpeedBox({battle, ctx, usage, mon, raw}) {
   );
 }
 
+// ねむり・こおりの残り (チャンピオンズ: ねむりは2回目の行動で1/3・3回目で必ず起きる、ねむるは3回目、こおりは毎回25%・3回目で必ず溶ける)
+function statusNote(c) {
+  if (c.status !== 'slp' && c.status !== 'frz') return '';
+  const n = String(c.statusKey || '').startsWith(c.status) ? c.statusCant || 0 : 0;
+  if (c.status === 'frz') return n >= 2 ? ' (次は必ず溶ける)' : ' (25%で溶ける)';
+  if (c.statusKey === 'slpRest') return n >= 2 ? ' (次は起きる)' : ` (あと${2 - n}回眠る)`;
+  return n === 0 ? ' (次は眠ったまま)' : n === 1 ? ' (次は1/3で起きる)' : ' (次は必ず起きる)';
+}
+
 function SideState({battle, side, raw, isMega}) {
   const sd = battle.state.sides[side];
   const tags = [];
-  if (raw.status) tags.push(<span class="tag bad">{ST_JA[raw.status]}</span>);
+  if (raw.status) tags.push(<span class="tag bad">{ST_JA[raw.status]}{statusNote(raw)}</span>);
   for (const [k, l] of FLAGS) if (sd[k]) tags.push(<span class="tag accent">{l}</span>);
   if (sd.spikes > 0) tags.push(<span class="tag accent">まきびし×{sd.spikes}</span>);
   if (raw.seeded) tags.push(<span class="tag">やどりぎ</span>);
@@ -406,12 +415,12 @@ function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, n
       </div>
     );
   }
-  if (act?.kind === 'move') return <MoveAction side={side} mon={mon} battle={battle} usage={usage} act={act} setAct={setAct} commit={commit} r={pred} preds={preds} />;
+  if (act?.kind === 'move') return <MoveAction side={side} mon={mon} battle={battle} ctx={ctx} usage={usage} act={act} setAct={setAct} commit={commit} r={pred} preds={preds} />;
   if (mon == null) return null;
   return done ? <div class="pl-act hint-box done">行動済み</div> : null;
 }
 
-function MoveAction({side, mon, battle, usage, act, setAct, commit, r, preds}) {
+function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, preds}) {
   const mv = dex.moves[act.move];
   const tgt = act.tgt;
   const damaging = mv && mv.c !== 'Z';
@@ -422,30 +431,50 @@ function MoveAction({side, mon, battle, usage, act, setAct, commit, r, preds}) {
   const set = patch => setAct(a => ({...a, ...patch}));
   const base = {side, mon, type: 'move', move: act.move, crit: act.crit, sameTurn: true, target: battle.format === 'double' ? tgt : null};
   const record = extra => commit(b => addAct(b, {...base, ...extra}, usage));
-  const fail = k => record({[k]: true});
+  // ふかしのこぶし・かんつうドリル: 接触技はまもるを貫いて 1/4 のダメージ (チャンピオンズ)
+  const pierceable = damaging && tgt && mv.fl?.includes('contact') && ['unseenfist', 'piercingdrill'].includes(currentAbility(buildOf(battle, side, mon), condOf(battle, side, mon)));
+  const fail = k => {
+    if (k === 'protect' && pierceable) { const q = r?.ok && !r.status ? (r.minPct + r.maxPct) / 8 : 0; set({stage: 'hp', pierce: true, hp: Math.max(0, tgtHp - q)}); return; }
+    record({[k]: true});
+  };
   // 確定: ダメージ技はHPを合わせる段階へ、変化技はそのまま記録
   const confirm = () => {
-    if (!damaging || !tgt) { record({inflict: act.inflict || '', to: PIVOT_MOVES.has(act.move) ? act.to : null}); return; }
+    if (!damaging || !tgt) { record({inflict: act.inflict || '', to: PIVOT_MOVES.has(act.move) ? act.to : null, revive: act.move === 'revivalblessing' ? act.revive : undefined}); return; }
     set({stage: 'hp', hp: mid});
   };
   const tb = tgt ? buildOf(battle, tgt.side, tgt.mon) : null, tc = tgt ? condOf(battle, tgt.side, tgt.mon) : null;
   const tItem = tc && !tc.itemGone ? tb.item : '';
   const save = () => {
     const hp = Math.max(0, Math.min(100, act.hp ?? mid));
-    const extra = {hpAfter: hp, secFx: act.secFx.length ? act.secFx : undefined, inflict: act.inflict || '', selfFx: sureSelfFx(battle, side, mon, tgt, act.move), exact: tgt.side === 'me'};
+    const extra = {hpAfter: hp, pierce: act.pierce || undefined, secFx: act.secFx.length ? act.secFx : undefined, inflict: act.inflict || '', selfFx: sureSelfFx(battle, side, mon, tgt, act.move), exact: tgt.side === 'me'};
     if (act.defItem) extra.defItem = {item: act.defItem, consumed: consumable(act.defItem)};
     if (act.defItem === 'focussash') { extra.endured = true; delete extra.hpAfter; }
     if (PIVOT_MOVES.has(act.move)) extra.to = act.to;
     if (FORCE_MOVES.has(act.move)) extra.forceTo = act.forceTo;
+    if (act.eject?.to != null) extra.eject = act.eject;
+    if (act.cst) { extra.contactStatus = act.cst.st; extra.contactAbility = act.cst.ab; }
     record(extra);
   };
+  // 当たったあとの交代 (だっしゅつボタン・ききかいひ・にげごし / レッドカード) と、接触で受ける状態異常
+  const tAbs = tgt ? (tgt.side === 'me' || tb.ability ? [currentAbility(tb, tc)] : dex.species[currentSpecies(tb, tc)]?.ab || []) : [];
+  // 相手の持ち物が分からないときは、使用率に出てくる持ち物だけ候補にする
+  const tItemMaybe = it => tgt && !tc.itemGone && (tb.item === it || (tgt.side === 'opp' && !tb.item && (ctx.views[tgt.mon]?.items || []).some(([id]) => id === it)));
+  const ejects = damaging && tgt ? [
+    tItemMaybe('ejectbutton') && ['ejectbutton', 'tgt'], tAbs.includes('emergencyexit') && ['emergencyexit', 'tgt'], tAbs.includes('wimpout') && ['wimpout', 'tgt'],
+    tItemMaybe('redcard') && ['redcard', 'atk'],
+  ].filter(Boolean) : [];
+  const ejSide = act.eject ? (act.eject.who === 'atk' ? side : tgt.side) : null;
+  const ejBench = ejSide ? benchOf(battle, ejSide).filter(i => !condOf(battle, ejSide, i)?.fainted) : [];
+  const CONTACT_ST = {static: [['par', 'まひ']], flamebody: [['brn', 'やけど']], poisonpoint: [['psn', 'どく']], effectspore: [['psn', 'どく'], ['par', 'まひ'], ['slp', 'ねむり']]};
+  const cst = damaging && tgt && mv.fl?.includes('contact') && !condOf(battle, side, mon).status ? tAbs.flatMap(ab => (CONTACT_ST[ab] || []).map(([st, l]) => ({ab, st, l}))) : [];
   const fbench = FORCE_MOVES.has(act.move) && tgt ? benchOf(battle, tgt.side).filter(i => !condOf(battle, tgt.side, i)?.fainted) : [];
   // とんぼがえり等で交代先、ドラゴンテール等で出てきたポケモンが必要なら、選ぶまで記録しない
   const pivotBench = PIVOT_MOVES.has(act.move) ? benchOf(battle, side).filter(i => !condOf(battle, side, i)?.fainted) : [];
   const willFaint = (act.hp ?? mid) <= 0;
+  const dead = act.move === 'revivalblessing' ? benchOf(battle, side).filter(i => condOf(battle, side, i)?.fainted) : [];
   const needTo = pivotBench.length > 0 && act.to == null;
   const needForce = FORCE_MOVES.has(act.move) && !willFaint && fbench.length > 0 && act.forceTo == null;
-  const blocked = act.stage === 'hp' && (needTo || needForce);
+  const blocked = act.stage === 'hp' && (needTo || needForce || (act.eject && act.eject.to == null));
   saveRef.current = act.stage === 'hp' && !blocked ? save : null;
   const sec = (mv?.sec || []).flatMap(e => {
     const out = [];
@@ -487,17 +516,24 @@ function MoveAction({side, mon, battle, usage, act, setAct, commit, r, preds}) {
           <button class="chip sm" onClick={() => fail('protect')}>まもられた</button>
           <button class="chip sm" onClick={() => fail('cant')}>行動できず</button>
         </div>
+        {act.move === 'revivalblessing' && (dead.length
+          ? <div class="chips"><span class="muted">復活:</span>{dead.map(i => <button class={cx('chip sm', act.revive === i && 'on')} onClick={() => set({revive: act.revive === i ? null : i})}>{nameOf(battle, side, i)}</button>)}</div>
+          : <p class="muted">ひんしのポケモンがいません</p>)}
         {!damaging && PIVOT_MOVES.has(act.move) && <p class="hint">交代先: {act.to != null ? nameOf(battle, side, act.to) : '上から選択'}</p>}
-        <div class="btnrow"><button class="btn ghost" onClick={() => setAct(null)}>やめる</button><button class="btn primary grow" disabled={!damaging && needTo} onClick={confirm}>確定</button></div>
+        <div class="btnrow"><button class="btn ghost" onClick={() => setAct(null)}>やめる</button><button class="btn primary grow" disabled={(!damaging && needTo) || (act.move === 'revivalblessing' && dead.length > 0 && act.revive == null)} onClick={confirm}>確定</button></div>
       </>}
       {act.stage === 'hp' && <>
+        {act.pierce && <p class="hint">まもるを貫通 (1/4)</p>}
         {sec.length > 0 && <div class="chips"><span class="muted">追加効果:</span>{sec.map(x => <button class={cx('chip sm', secOn(x) && 'on')} onClick={() => set({secFx: secOn(x) ? act.secFx.filter(y => JSON.stringify(y) !== JSON.stringify(x.e)) : [...act.secFx, x.e]})}>{x.label}</button>)}</div>}
         {tItem && consumable(tItem) && <div class="chips"><button class={cx('chip sm', act.defItem === tItem && 'on')} onClick={() => set({defItem: act.defItem === tItem ? '' : tItem})}>{itemName(tItem)}が発動</button></div>}
         {tgt.side === 'opp' && !tb.item && <div class="chips"><span class="muted">発動:</span>{['focussash', 'sitrusberry'].map(it => <button class={cx('chip sm', act.defItem === it && 'on')} onClick={() => set({defItem: act.defItem === it ? '' : it})}>{itemName(it)}</button>)}</div>}
         {PIVOT_MOVES.has(act.move) && <p class="hint">交代先: {act.to != null ? nameOf(battle, side, act.to) : '上から選択'}</p>}
         {fbench.length > 0 && <div class="chips"><span class="muted">引きずり出された:</span>{fbench.map(i => <button class={cx('chip sm', act.forceTo === i && 'on')} onClick={() => set({forceTo: act.forceTo === i ? null : i})}>{nameOf(battle, tgt.side, i)}</button>)}</div>}
+        {ejects.length > 0 && <div class="chips"><span class="muted">交代:</span>{ejects.map(([k, who]) => <button class={cx('chip sm', act.eject?.reason === k && 'on')} onClick={() => set({eject: act.eject?.reason === k ? null : {reason: k, who, to: null}})}>{EJECT_JA[k]}</button>)}</div>}
+        {act.eject && <div class="chips"><span class="muted">出てきた:</span>{ejBench.map(i => <button class={cx('chip sm', act.eject.to === i && 'on')} onClick={() => set({eject: {...act.eject, to: i}})}>{nameOf(battle, ejSide, i)}</button>)}</div>}
+        {cst.length > 0 && <div class="chips"><span class="muted">接触:</span>{cst.map(x => <button class={cx('chip sm', act.cst?.st === x.st && act.cst?.ab === x.ab && 'on')} onClick={() => set({cst: act.cst?.st === x.st && act.cst?.ab === x.ab ? null : x})}>{abilityName(x.ab)}で{x.l}</button>)}</div>}
         {blocked && <p class="hint warn">{needTo ? '交代先を選択' : '出てきたポケモンを選択'}</p>}
-        <div class="btnrow"><button class="btn ghost" onClick={() => set({stage: 'pick'})}>戻る</button><button class="btn primary grow" disabled={blocked} onClick={save}>記録</button></div>
+        <div class="btnrow"><button class="btn ghost" onClick={() => set({stage: 'pick', pierce: false})}>戻る</button><button class="btn primary grow" disabled={blocked} onClick={save}>記録</button></div>
       </>}
     </div>
   );

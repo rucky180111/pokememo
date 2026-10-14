@@ -166,3 +166,53 @@ test('能力ごとの性格補正 (natureMods): ▲を複数つけると両方�
   assert.ok(plain.max > 0);
   assert.ok(up.max < plain.max);
 });
+
+test('さいきのいのり・しおづけ・回復技・はらだいこ', async () => {
+  const {residualCandidates, finishTurn} = await import('../src/engine/flow.js');
+  const {faintedCount} = await import('../src/engine/battle.js');
+  const b = battle([B('garchomp'), B('hippowdon'), B('corviknight')], ['pawmot', 'garganacl']);
+  condOf(b, 'opp', 1).hp = 0; condOf(b, 'opp', 1).fainted = true;
+  assert.equal(faintedCount(b, 'opp'), 1);
+  addAct(b, {side: 'opp', type: 'move', move: 'revivalblessing', revive: 1}, usage);
+  assert.ok(!condOf(b, 'opp', 1).fainted);
+  assert.equal(condOf(b, 'opp', 1).hp, 50);
+  assert.equal(faintedCount(b, 'opp'), 0);
+  // しおづけ: はがね (アーマーガア) は 1/8、それ以外は 1/16
+  const b2 = battle([B('corviknight'), B('garchomp')], ['garganacl']);
+  addAct(b2, {side: 'opp', type: 'move', move: 'saltcure', hpAfter: 80}, usage);
+  addAct(b2, {side: 'me', type: 'move', move: 'roost'}, usage);
+  assert.ok(condOf(b2, 'me', 0).hp > 80, 'はねやすめで回復');
+  const c = residualCandidates(b2, usage).find(x => x.key === 'saltcure');
+  assert.ok(c && c.checked && Math.abs(c.pct + 12.5) < 1);
+  addAct(b2, {side: 'me', type: 'switch', to: 1}, usage);
+  assert.ok(!condOf(b2, 'me', 0).salted, '交代で消える');
+  // はらだいこ
+  const b3 = battle([B('azumarill')], ['garchomp']);
+  addAct(b3, {side: 'me', type: 'move', move: 'bellydrum'}, usage);
+  assert.equal(condOf(b3, 'me', 0).hp, 50);
+  assert.equal(condOf(b3, 'me', 0).boosts.atk, 6);
+});
+
+test('だっしゅつボタン・せいでんき・ねむりから目覚める・ふかしのこぶし', async () => {
+  const {sideDone} = await import('../src/engine/flow.js');
+  const b = battle([B('garchomp', {moves: ['earthquake', 'dragonclaw']})], ['corviknight', 'pawmot', 'hippowdon']);
+  addAct(b, {side: 'me', type: 'move', move: 'dragonclaw', hpAfter: 70, eject: {reason: 'ejectbutton', who: 'tgt', to: 2}}, usage);
+  assert.deepEqual(b.state.sides.opp.active, [2]);
+  assert.equal(b.opp[0].item, 'ejectbutton');
+  assert.ok(condOf(b, 'opp', 0).itemGone);
+  assert.ok(sideDone(b, 'opp'), '出てきたポケモンはこのターン動かない');
+  const b2 = battle([B('garchomp', {moves: ['dragonclaw']})], ['pawmot']);
+  addAct(b2, {side: 'me', type: 'move', move: 'dragonclaw', hpAfter: 60, contactStatus: 'par', contactAbility: 'static'}, usage);
+  assert.equal(condOf(b2, 'me', 0).status, 'par');
+  assert.equal(b2.opp[0].ability, 'static');
+  const b3 = battle([B('garchomp', {moves: ['dragonclaw']})], ['pawmot']);
+  condOf(b3, 'me', 0).status = 'slp';
+  addAct(b3, {side: 'me', type: 'move', move: 'dragonclaw', cant: true}, usage);
+  assert.equal(condOf(b3, 'me', 0).statusCant, 1);
+  addAct(b3, {side: 'me', type: 'move', move: 'dragonclaw', hpAfter: 50, sameTurn: false}, usage);
+  assert.equal(condOf(b3, 'me', 0).status, '', '技を出せた = 起きた');
+  const b4 = battle([B('excadrill', {moves: ['ironhead']})], ['corviknight']);
+  const log = addAct(b4, {side: 'me', type: 'move', move: 'ironhead', hpAfter: 92, pierce: true}, usage);
+  assert.equal(condOf(b4, 'opp', 0).hp, 92);
+  assert.ok(log.some(l => /推定は見送り/.test(l)));
+});
