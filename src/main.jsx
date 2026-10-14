@@ -19,6 +19,8 @@ async function pickBackend() {
 }
 
 async function boot() {
+  if (window.__pmRescue) return; // 立て直しの画面を出している
+  const safe = /[?&]safe\b/.test(location.search);
   const store = createStore(await pickBackend());
   const syncer = createSyncer(store);
   const cloud = createCloud(store);
@@ -26,7 +28,8 @@ async function boot() {
   try { render(<App store={store} syncer={syncer} cloud={cloud} />, document.getElementById('app')); }
   catch (e) { window.__pmBootFail?.(`画面の表示でエラー: ${e?.message || e}`); throw e; }
   await store.load();
-  if (store.state.settings.cloud?.config) cloud.start();
+  if (safe) { window.__pmSafe = true; return void (window.__pokememo = {store, syncer, cloud}); } // 同期を止めた起動
+  if (store.state.settings.cloud?.config || store.state.settings.cloud?.provider === 'server') cloud.start();
   loadBundledUsage(store);
   if (store.state.settings.sync.token && store.state.settings.sync.auto) syncer.run();
   // 別の端末での変更を拾うため、画面に戻ってきたときにも同期する

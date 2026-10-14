@@ -60,6 +60,42 @@ function step(label, p, ms) {
       r.onblocked = function () { line(null, '保存領域', 'ほかの画面が開いたままのため待っています'); };
     });
   }, 10000);
+  await step('保存しているデータの量', function () {
+    return new Promise(function (res, rej) {
+      var r = indexedDB.open('pokememo', 1);
+      r.onsuccess = function () {
+        var db = r.result, kinds = {}, big = '', bigN = 0;
+        var c = db.transaction('kv', 'readonly').objectStore('kv').openCursor();
+        c.onsuccess = function () {
+          var cur = c.result;
+          if (!cur) {
+            db.close();
+            res(Object.keys(kinds).map(function (k) { return k + ' ' + kinds[k].n + '件 ' + Math.round(kinds[k].b / 1024) + 'KB'; }).join(' / ') + (big ? ' / 最大: ' + big + ' ' + Math.round(bigN / 1024) + 'KB' : ''));
+            return;
+          }
+          var key = String(cur.key), kind = key.split(':')[0], n = 0;
+          try { n = JSON.stringify(cur.value).length; } catch (e) {}
+          (kinds[kind] = kinds[kind] || {n: 0, b: 0}).n++; kinds[kind].b += n;
+          if (n > bigN) { bigN = n; big = key; }
+          cur.continue();
+        };
+        c.onerror = function () { rej(c.error); };
+      };
+      r.onerror = function () { rej(r.error); };
+    });
+  }, 15000);
+  await step('同期の設定', function () {
+    return new Promise(function (res, rej) {
+      var r = indexedDB.open('pokememo', 1);
+      r.onsuccess = function () {
+        var db = r.result, g = db.transaction('kv', 'readonly').objectStore('kv').get('settings');
+        g.onsuccess = function () { db.close(); var c = (g.result && g.result.cloud) || {}; res(c.provider ? c.provider + (c.url ? ' ' + c.url.replace(/^https:\/\//, '') : '') : (c.config ? 'firebase' : 'なし')); };
+        g.onerror = function () { rej(g.error); };
+      };
+      r.onerror = function () { rej(r.error); };
+    });
+  }, 8000);
+  await step('前回までの起動', function () { try { return '完了しなかった回数 ' + (localStorage.getItem('pm:bootTry') || 0); } catch (e) { return '不明'; } }, 2000);
   await step('アプリ本体 (app.js) の読み込みと実行', function () {
     return new Promise(function (res, rej) {
       var f = document.createElement('iframe');
