@@ -115,7 +115,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
       </div>
       {battle.opp.length > 0 && battle.my.length > 0 && (
         <p class="hint sel-legend">
-          各マス: 自分の技で弱点を突ける相手のタイプ。選出率・勝率 = 自分の過去の対戦 (同じルール) で、その相手がいたときに自分がそのポケモンを選出した率と、選出したときの勝率。
+          マス: 弱点を突けるタイプ / 選出率・勝率は過去の対戦から
         </p>
       )}
       <div class="scroll-x">

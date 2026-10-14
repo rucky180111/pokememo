@@ -115,7 +115,7 @@ export function DamageTab({battle, ctx, mut, toast}) {
       )}
       <p class="legend">
         <span class="lg ko1">確定1発</span><span class="lg ko1r">乱数1発</span><span class="lg ko2">2発圏内</span><span class="lg ko3">3発圏内</span>
-        <span class="muted">割合は最大HP比、確定数は現在HP基準。控えは「交代で出てきた場合」で、設置技・いかく・天候変化を加味します。マスをタップで内訳。</span>
+
       </p>
       {detail && <DamageDetail battle={battle} ctx={ctx} mut={mut} toast={toast} d={detail} opts={{crit, helpingHand: hh, hits}} onClose={() => setDetail(null)} />}
     </div>
@@ -162,7 +162,7 @@ function DamageDetail({battle, ctx, d, opts, onClose, mut, toast}) {
         {target.active && inferable(d.move) && !r.immune && mut && (
           <div class="box">
             <h4>実際のダメージから相手の配分を絞り込む</h4>
-            <p class="hint">{d.dir === 'me' ? `この技を当てたあとの相手の残りHP (%) を入れてください。いまの盤面は ${Math.round(curHP)}% です。` : `この技で自分が受けたダメージ (HPの数値) を入れてください。`}急所や壁、ランクは盤面とこの画面の設定どおりで計算します。</p>
+            <p class="hint">{d.dir === 'me' ? `相手の残りHP (%)・いま ${Math.round(curHP)}%` : `受けたダメージ (HP)`}</p>
             <div class="btnrow">
               <input class="input num obs-in" type="number" inputMode="decimal" min={0} value={obs} placeholder={d.dir === 'me' ? '残り %' : 'ダメージ'} onInput={e => setObs(e.currentTarget.value)} />
               <button class="btn primary" disabled={obs === ''} onClick={() => {
@@ -260,7 +260,6 @@ export function PredictTab({battle, ctx}) {
           <Bars title="特性" entries={(v.abilities || []).slice(0, 3)} total={1} name={abilityName} />
           <Bars title="配分" entries={(v.spreads || []).slice(0, 5).map(s => [spreadLabel(s.nature, s.sp), s.rate])} total={1} name={k => k} />
         </>}
-        <p class="hint">Showdown の対戦から集計された値で、ゲーム内ランクバトルの使用率とは母集団が違います。目安として使ってください。</p>
       </div>
     </div>
   );

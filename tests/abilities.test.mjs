@@ -157,3 +157,12 @@ test('1つ戻す: ターン終了を取り消すと、次の記録は戻った�
   assert.equal(b.turns[0].acts.length, 2);
   assert.equal(condOf(b, 'me', 0).hp, 70);
 });
+
+test('能力ごとの性格補正 (natureMods): ▲を複数つけると両方の実数値が上がる', () => {
+  const b = battle([B('garchomp', {moves: ['earthquake']})], ['corviknight']);
+  const d = {build: {...b.opp[0], species: 'corviknight', sp: [0, 0, 0, 0, 0, 0], nature: 'Serious', ability: 'pressure', item: ''}, cond: condOf(b, 'opp', 0)};
+  const plain = calcDamage(mon(b, 'me', 0), d, 'dragonclaw');
+  const up = calcDamage(mon(b, 'me', 0), {...d, build: {...d.build, natureMods: {def: 1.1, spd: 1.1}}}, 'dragonclaw');
+  assert.ok(plain.max > 0);
+  assert.ok(up.max < plain.max);
+});

@@ -1,10 +1,12 @@
 // ダメージ計算 (右側のタブ)。盤面の予想よりくわしく、相手の配分・性格・持ち物・特性を自分で動かして試す。
 //   上: 相手6体 / 自分6体のアイコン (選んだものが光る)
 //   自分: 登録した型そのまま (壁・天候・フィールド・ランク変化も盤面どおり)
-//   相手: 能力Ptのスライダー6本 (分かっている分は最初から入っていて、動かせる)、性格補正は ▲/－/▼ を押して切り替え
+//   相手: 能力Ptのスライダー6本 (合計66まで。分かっている分は最初から入っていて、動かせる)
+//         性格補正は能力ごとに ▲/▼/なし を自由に切り替え (いくつでも)
+//   ⇄ で 自分→相手 / 相手→自分 を入れ替える
 //   技: 相手はこの対戦で使った技 (固定で上) → 使用率の高い技 TOP10 → 自分で追加した技
 import {useMemo, useState} from 'preact/hooks';
-import {dex, speciesName, itemName, abilityName, moveName, statValue, STAT_KEYS, STAT_JA, SP_MAX, SP_TOTAL, natureMod} from '../engine/dex.js';
+import {dex, speciesName, itemName, abilityName, moveName, statValue, STAT_KEYS, STAT_JA, SP_MAX, SP_TOTAL} from '../engine/dex.js';
 import {currentSpecies, currentAbility} from '../engine/calc.js';
 import {condOf} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
@@ -18,32 +20,22 @@ import {outcome} from './play.jsx';
 const memo = new Map();
 const keyOf = (battle, oi) => `${battle.id || ''}:${oi}`;
 
-/** ▲ (up) と ▼ (down) から性格を決める。片方だけなら、もう片方は影響の小さい攻撃側の能力で補う */
-function natureFrom(up, down, bs) {
-  if (!up && !down) return {nature: 'Serious', autoUp: null, autoDown: null};
-  let u = up, d = down, autoUp = null, autoDown = null;
-  const weakAtk = bs[1] <= bs[3] ? 'atk' : 'spa', strongAtk = weakAtk === 'atk' ? 'spa' : 'atk';
-  if (u && !d) { d = u === weakAtk ? strongAtk : weakAtk; autoDown = d; }
-  if (d && !u) { u = d === strongAtk ? weakAtk : strongAtk; autoUp = u; }
-  const nature = Object.keys(dex.natures).find(n => dex.natures[n].p === u && dex.natures[n].m === d) || 'Serious';
-  return {nature, autoUp, autoDown};
-}
-
 export function DamageLab({battle, ctx}) {
   const activeOpp = battle.state.sides.opp.active.find(i => i != null && !condOf(battle, 'opp', i)?.fainted);
   const activeMe = battle.state.sides.me.active.find(i => i != null && !condOf(battle, 'me', i)?.fainted);
   const [oSel, setOSel] = useState(null);
   const [mSel, setMSel] = useState(null);
   const [crit, setCrit] = useState(false);
+  const [dir, setDir] = useState('give'); // give: 自分が攻撃 / take: 相手が攻撃
   const oi = oSel ?? activeOpp ?? 0;
   const mi = mSel ?? activeMe ?? (battle.pick.me[0] ?? 0);
   const opp = battle.opp[oi];
   const myB = battle.my[mi];
   if (!opp || !myB || !dex.species[opp.species] || !dex.species[myB.species]) return <Empty>自分と相手のポケモンを登録すると表示されます。</Empty>;
-  return <LabBody battle={battle} ctx={ctx} oi={oi} mi={mi} setOSel={setOSel} setMSel={setMSel} crit={crit} setCrit={setCrit} />;
+  return <LabBody battle={battle} ctx={ctx} oi={oi} mi={mi} setOSel={setOSel} setMSel={setMSel} crit={crit} setCrit={setCrit} dir={dir} setDir={setDir} />;
 }
 
-function LabBody({battle, ctx, oi, mi, setOSel, setMSel, crit, setCrit}) {
+function LabBody({battle, ctx, oi, mi, setOSel, setMSel, crit, setCrit, dir, setDir}) {
   const opp = battle.opp[oi];
   const myB = battle.my[mi];
   const [, force] = useState(0);
@@ -59,26 +51,20 @@ function LabBody({battle, ctx, oi, mi, setOSel, setMSel, crit, setCrit}) {
   // 盤面から決まる初期値 (分かっている能力Ptと性格補正だけ)
   const init = useMemo(() => {
     const sp = est.rows.map(r => (r.known ? r.spLo : 0));
-    let up = null, down = null;
-    for (const r of est.rows) {
-      if (!r.known || r.key === 'hp') continue;
-      if (r.modLo === r.modHi && r.modLo > 1) up = r.key;
-      if (r.modLo === r.modHi && r.modLo < 1) down = r.key;
-    }
-    return {sp, up, down};
+    const mods = {};
+    for (const r of est.rows) if (r.known && r.key !== 'hp' && r.modLo === r.modHi && r.modLo !== 1) mods[r.key] = r.modLo;
+    return {sp, mods};
   }, [est]);
   const mk = keyOf(battle, oi);
   const ed = memo.get(mk) || {};
   const set = patch => { memo.set(mk, {...ed, ...patch}); force(x => x + 1); };
   const sp = ed.sp || init.sp;
-  const up = ed.up !== undefined ? ed.up : init.up;
-  const down = ed.down !== undefined ? ed.down : init.down;
+  const mods = ed.mods || init.mods;
   const item = ed.item !== undefined ? ed.item : (opp.item || view?.build.item || '');
   const ability = ed.ability !== undefined ? ed.ability : currentAbility(base, oCond);
-  const {nature, autoUp, autoDown} = natureFrom(up, down, s.bs);
   const total = sp.reduce((a, b) => a + b, 0);
 
-  const oBuild = useMemo(() => ({...base, sp, nature, item, ability, abilityOverride: ed.ability !== undefined ? ability : undefined}), [base, sp.join(), nature, item, ability, ed.ability]);
+  const oBuild = useMemo(() => ({...base, sp, nature: 'Serious', natureMods: mods, item, ability, abilityOverride: ed.ability !== undefined ? ability : undefined}), [base, sp.join(), JSON.stringify(mods), item, ability, ed.ability]);
   const lctx = useMemo(() => {
     const c = {...ctx, build: (side, i) => (side === 'opp' && i === oi ? oBuild : ctx.build(side, i))};
     c.ability = (side, i) => { const bd = c.build(side, i); return bd ? currentAbility(bd, ctx.cond(side, i)) : ''; };
@@ -116,13 +102,16 @@ function LabBody({battle, ctx, oi, mi, setOSel, setMSel, crit, setCrit}) {
     </div>
   );
 
+  // 性格補正: なし → ▲ → ▼ → なし (能力ごとに自由)
   const cycle = key => {
-    // －(補正なし) → ▲ → ▼ → －
-    if (up === key) set({up: null, down: key});
-    else if (down === key) set({down: null});
-    else set({up: key});
+    const m = {...mods};
+    const v = m[key] || 1;
+    if (v === 1) m[key] = 1.1; else if (v > 1) m[key] = 0.9; else delete m[key];
+    set({mods: m});
   };
-  const modOf = key => (key === 'hp' ? 1 : natureMod(nature, key));
+  const modOf = key => (key === 'hp' ? 1 : mods[key] || 1);
+  // 合計66を超えないようにする
+  const setSp = (i, val) => { const nsp = sp.slice(); nsp[i] = Math.max(0, Math.min(val, SP_TOTAL - (total - sp[i]))); set({sp: nsp}); };
   const row = (label, r, hp, max, sub) => {
     const o = outcome(r, hp, max);
     return (
@@ -173,18 +162,18 @@ function LabBody({battle, ctx, oi, mi, setOSel, setMSel, crit, setCrit}) {
             const r = est.rows[i];
             const mod = modOf(key);
             const v = statValue(s.bs[i], sp[i], mod, i === 0);
-            const isUp = up === key || autoUp === key, isDown = down === key || autoDown === key;
+            const isUp = mod > 1, isDown = mod < 1;
             return (
               <div class={cx('dl-st', r.known && 'known')}>
                 <span class="dl-sk">{STAT_JA[i]}</span>
                 {i === 0 ? <span class="dl-nat none" /> : (
-                  <button class={cx('dl-nat', isUp && 'up', isDown && 'down', (autoUp === key || autoDown === key) && 'auto')} onClick={() => cycle(key)} title="性格補正 (押すと ▲ → ▼ → なし)">
+                  <button class={cx('dl-nat', isUp && 'up', isDown && 'down')} onClick={() => cycle(key)}>
                     {isUp ? '▲' : isDown ? '▼' : '－'}
                   </button>
                 )}
                 <span class="dl-range">
-                  {r.known && <i class="dl-band" style={{left: `${(r.spLo / SP_MAX) * 100}%`, width: `${Math.max(2, ((r.spHi - r.spLo) / SP_MAX) * 100)}%`}} title="これまでの観測と矛盾しない範囲" />}
-                  <input type="range" min={0} max={SP_MAX} step={1} value={sp[i]} onInput={e => { const nsp = sp.slice(); nsp[i] = Number(e.currentTarget.value); set({sp: nsp}); }} aria-label={`${STAT_JA[i]}の能力Pt`} />
+                  {r.known && <i class="dl-band" style={{left: `${(r.spLo / SP_MAX) * 100}%`, width: `${Math.max(2, ((r.spHi - r.spLo) / SP_MAX) * 100)}%`}} />}
+                  <input type="range" min={0} max={SP_MAX} step={1} value={sp[i]} onInput={e => { setSp(i, Number(e.currentTarget.value)); e.currentTarget.value = String(Math.min(Number(e.currentTarget.value), SP_TOTAL - (total - sp[i]))); }} aria-label={`${STAT_JA[i]}の能力Pt`} />
                 </span>
                 <span class="dl-sp num">{sp[i]}</span>
                 <b class={cx('dl-val num', mod > 1 && 'pos', mod < 1 && 'neg')}>{v}</b>
@@ -192,19 +181,27 @@ function LabBody({battle, ctx, oi, mi, setOSel, setMSel, crit, setCrit}) {
             );
           })}
         </div>
-        <p class="hint">{est.rows.some(r => r.known) ? '色の帯は、これまでのダメージ・行動順と矛盾しない範囲です。' : 'まだ観測がないので、能力Ptは0から始まります。'}性格補正の ▲▼ は、片方だけ選ぶともう片方を攻撃側の使わない能力に自動で入れます (薄い表示)。</p>
+
       </section>
 
-      <div class="dl-opts"><Toggle small on={crit} onChange={setCrit}>急所</Toggle><span class="muted">自分は登録した型、場の状態とランク変化は盤面どおり</span></div>
+      <div class="dl-opts">
+        <button class="btn sm dl-dir" onClick={() => setDir(dir === 'give' ? 'take' : 'give')}>
+          {dir === 'give' ? <><b class="me">自分</b> → <b class="opp">相手</b></> : <><b class="opp">相手</b> → <b class="me">自分</b></>} ⇄
+        </button>
+        <Toggle small on={crit} onChange={setCrit}>急所</Toggle>
+      </div>
 
-      <h4 class="me">自分の{speciesName(myB.species)} → 相手 <span class="muted">残り{fmtPct(oHP)}% (H{oMax})</span></h4>
+      {dir === 'give' ? <>
+      <h4 class="me">{speciesName(myB.species)} → {s.j} <span class="muted">残り{fmtPct(oHP)}% (H{oMax})</span></h4>
       {give.map(m => row('', m.r, oHP, null, <><TypeChip type={dex.moves[m.id].t} small />{moveName(m.id)}</>))}
-      {!give.length && <p class="muted">技が登録されていません。</p>}
+      {!give.length && <p class="muted">技が登録されていません</p>}
+      </> : <>
 
-      <h4 class="opp">相手 → 自分の{speciesName(myB.species)} <span class="muted">残り{Math.round((myMax * mHP) / 100)}/{myMax}</span></h4>
+      <h4 class="opp">{s.j} → {speciesName(myB.species)} <span class="muted">残り{Math.round((myMax * mHP) / 100)}/{myMax}</span></h4>
       {take.map(m => row('', m.r, mHP, myMax, <><TypeChip type={dex.moves[m.id].t} small />{moveName(m.id)}
         {m.known ? <span class="tag sm accent">使用</span> : m.extra ? <button class="chip sm" onClick={() => set({extra: (ed.extra || []).filter(x => x !== m.id)})}>×</button> : <span class="rate">{rate(m.rate)}</span>}</>))}
       <button class="btn ghost sm" onClick={() => setAdding('move')}>＋ 技を追加</button>
+      </>}
 
       {adding === 'move' && <Picker kind="moves" title="計算する技を追加" rank={view ? Object.fromEntries(view.moves.map(m => [m.id, m.rate])) : null} prefer={dex.learn[opp.species]} preferLabel="覚えない技も表示" onClose={() => setAdding(false)}
         onPick={id => { setAdding(false); if (id) set({extra: [...(ed.extra || []).filter(x => x !== id), id]}); }} />}

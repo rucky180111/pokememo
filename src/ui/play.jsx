@@ -164,7 +164,7 @@ function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, co
   return (
     <section class={cx('pl', side, fainted && 'fainted', mine && 'acting')}>
       <div class="pl-main">
-        {empty ? <div class="pl-empty">{needSend ? (side === 'me' ? '先発を右上から選んでください' : '相手の先発を右上から選んでください') : '場にいません'}</div>
+        {empty ? <div class="pl-empty">{needSend ? (side === 'me' ? '先発を選択' : '相手の先発を選択') : '場にいません'}</div>
           : <MonView side={side} mon={mon} battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} act={act} setAct={setAct} targeted={targeted} done={done} setSheet={setSheet}
             megaPrev={megaPrev[`${side}${mon}`] || null} setMegaPrev={fm => setMegaPrev(m => ({...m, [`${side}${mon}`]: fm}))} />}
       </div>
@@ -386,8 +386,8 @@ function HpBar({side, mon, battle, raw, max, targeted, setAct, mut, usage}) {
 
 // ---- 右側: 行動の入力 (予想 → 確定 → HP) ----
 function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, needSend, waitEnd, done, pred, preds}) {
-  if (waitEnd) return <div class="pl-act hint-box">倒れました。次のポケモンはターン終了のあとに選びます</div>;
-  if (needSend && (!act || act.kind !== 'send')) return <div class="pl-act hint-box">{side === 'me' ? '次に出すポケモンを上から選んでください' : '相手が出したポケモンを上から選んでください'}</div>;
+  if (waitEnd) return <div class="pl-act hint-box">ターン終了後に交代</div>;
+  if (needSend && (!act || act.kind !== 'send')) return <div class="pl-act hint-box">次のポケモンを選択</div>;
   if (act?.kind === 'send') {
     return (
       <div class="pl-act">
@@ -408,7 +408,7 @@ function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, n
   }
   if (act?.kind === 'move') return <MoveAction side={side} mon={mon} battle={battle} usage={usage} act={act} setAct={setAct} commit={commit} r={pred} preds={preds} />;
   if (mon == null) return null;
-  return <div class={cx('pl-act hint-box', done && 'done')}>{done ? 'このターンは行動済み' : '技を押すとダメージの予想が出ます。交代は ⇄'}</div>;
+  return done ? <div class="pl-act hint-box done">行動済み</div> : null;
 }
 
 function MoveAction({side, mon, battle, usage, act, setAct, commit, r, preds}) {
@@ -487,17 +487,16 @@ function MoveAction({side, mon, battle, usage, act, setAct, commit, r, preds}) {
           <button class="chip sm" onClick={() => fail('protect')}>まもられた</button>
           <button class="chip sm" onClick={() => fail('cant')}>行動できず</button>
         </div>
-        {!damaging && PIVOT_MOVES.has(act.move) && <p class="hint">交代先は上のアイコンで選べます{act.to != null ? ` (${nameOf(battle, side, act.to)})` : ''}</p>}
+        {!damaging && PIVOT_MOVES.has(act.move) && <p class="hint">交代先: {act.to != null ? nameOf(battle, side, act.to) : '上から選択'}</p>}
         <div class="btnrow"><button class="btn ghost" onClick={() => setAct(null)}>やめる</button><button class="btn primary grow" disabled={!damaging && needTo} onClick={confirm}>確定</button></div>
       </>}
       {act.stage === 'hp' && <>
-        <p class="hint">{tgt.side === 'me' ? '自分' : '相手'}のHPバーを、実際の値に合わせてください。</p>
         {sec.length > 0 && <div class="chips"><span class="muted">追加効果:</span>{sec.map(x => <button class={cx('chip sm', secOn(x) && 'on')} onClick={() => set({secFx: secOn(x) ? act.secFx.filter(y => JSON.stringify(y) !== JSON.stringify(x.e)) : [...act.secFx, x.e]})}>{x.label}</button>)}</div>}
         {tItem && consumable(tItem) && <div class="chips"><button class={cx('chip sm', act.defItem === tItem && 'on')} onClick={() => set({defItem: act.defItem === tItem ? '' : tItem})}>{itemName(tItem)}が発動</button></div>}
         {tgt.side === 'opp' && !tb.item && <div class="chips"><span class="muted">発動:</span>{['focussash', 'sitrusberry'].map(it => <button class={cx('chip sm', act.defItem === it && 'on')} onClick={() => set({defItem: act.defItem === it ? '' : it})}>{itemName(it)}</button>)}</div>}
-        {PIVOT_MOVES.has(act.move) && <p class="hint">交代先は上のアイコンで選べます{act.to != null ? ` (${nameOf(battle, side, act.to)})` : ''}</p>}
+        {PIVOT_MOVES.has(act.move) && <p class="hint">交代先: {act.to != null ? nameOf(battle, side, act.to) : '上から選択'}</p>}
         {fbench.length > 0 && <div class="chips"><span class="muted">引きずり出された:</span>{fbench.map(i => <button class={cx('chip sm', act.forceTo === i && 'on')} onClick={() => set({forceTo: act.forceTo === i ? null : i})}>{nameOf(battle, tgt.side, i)}</button>)}</div>}
-        {blocked && <p class="hint warn">{needTo ? '交代先を上のアイコンから選んでください' : '引きずり出されたポケモンを選んでください'}</p>}
+        {blocked && <p class="hint warn">{needTo ? '交代先を選択' : '出てきたポケモンを選択'}</p>}
         <div class="btnrow"><button class="btn ghost" onClick={() => set({stage: 'pick'})}>戻る</button><button class="btn primary grow" disabled={blocked} onClick={save}>記録</button></div>
       </>}
     </div>

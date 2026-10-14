@@ -56,11 +56,11 @@ export function TeamDiagnosis({team}) {
             </tbody>
           </table>
         </div>
-        <p class="hint">受けるときの倍率 (空欄 = 等倍)。ふゆう・もらいび・ちょすい・あついしぼう などの特性と、ふうせん (じめん無効) を含みます。メガストーンを持つポケモンはメガシンカ後のタイプ・特性で判定しています。赤い行が「半減以下で受けられるポケモンがいない」タイプ、弱点の数が3以上はオレンジです。</p>
+        <p class="hint">受けるときの倍率 (空欄 = 等倍・特性/ふうせん/メガ後を含む)</p>
       </>}
 
       {view === 'off' && <>
-        <p class="hint">登録した攻撃技 ({off.moves}個) で、ゲームにいるタイプの組み合わせ全 {off.combos.length} 通り (単タイプを含む) に弱点を突けるかです。スカイスキン等で変わるタイプ、フリーズドライ、きもったま も考えます (相手の特性は含みません)。</p>
+        <p class="hint">攻撃技 {off.moves}個 × タイプの組み合わせ {off.combos.length}通り</p>
         {off.notHit.length > 0 && <h4>弱点を突けない組み合わせ</h4>}
         <div class="td-combos">
           {off.notHit.map(c => (
@@ -86,7 +86,7 @@ export function TeamDiagnosis({team}) {
 
       {view === 'top' && <>
         {!usage && <Empty>使用率データを読み込むと診断できます。</Empty>}
-        <p class="hint">使用率上位{TOP}位 ({usage?.month || ''}) のポケモンに、弱点を突ける技があるか。相手はいちばん多い特性と、半分以上が持つ持ち物 (ふうせん等) で判定しています。</p>
+        <p class="hint">使用率上位{TOP}位 ({usage?.month || ''}) に弱点を突けるか</p>
         <label class="td-opt"><input type="checkbox" checked={onlyMiss} onChange={e => setOnlyMiss(e.currentTarget.checked)} /> 弱点を突けないポケモンだけ表示</label>
         <div class="td-top">
           {top.filter(t => !onlyMiss || t.best.m < 2).map(t => (
@@ -136,7 +136,6 @@ function Recommend({mons, usage}) {
       </div>
       <label class="td-opt"><input type="checkbox" checked={megaOn} onChange={e => setMega(e.currentTarget.checked)} /> メガシンカするポケモンも出す{megaCount(rest) ? ` (構築にメガストーン持ちが${megaCount(rest)}体います)` : ''}</label>
     </div>
-    <p class="hint">「半減で受けられないタイプ」「弱点が3体以上重なるタイプ」「弱点を突けない組み合わせ」「使用率上位{TOP}で弱点を突けないポケモン」がどれだけ減るかで並べています。タイプはそのタイプの技を持つとして、ポケモンは使用率データでいちばん多い特性・持ち物・技4つで判定しています。</p>
     <h4>おすすめのタイプ</h4>
     <div class="td-recs">
       {rt.list.map(x => (

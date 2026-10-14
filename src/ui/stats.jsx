@@ -33,7 +33,7 @@ export function StatsScreen({initialTeam}) {
         <TeamReport teamId={teamId} />
       </>}
       {tab === 'usage' && <>
-        <p class="hint pad-s">Pokémon Showdown の対戦から集計された使用率 ({usage?.month || '—'} / {usage?.source || '—'} / {usage?.battles?.toLocaleString() || '—'}戦)。ゲーム内ランクバトルとは母集団が違うので目安です。「設定」から最新に更新できます。</p>
+        <p class="hint pad-s">Pokémon Showdown の対戦から集計された使用率 ({usage?.month || '—'} / {usage?.source || '—'} / {usage?.battles?.toLocaleString() || '—'}戦)</p>
         {!usageList.length && <Empty>使用率データを読み込めていません。</Empty>}
         <div class="scroll-x">
           <table class="mini wide">
@@ -146,7 +146,7 @@ function TeamAnalysis({battles, filter, team, sub, setSub, psort, setPsort, onOp
   return (
     <div class="ta">
       <Seg value={sub} options={[['mons', '自分のポケモン'], ['pattern', '選出パターン'], ['opp', '相手 (敵分析)']]} onChange={setSub} />
-      {A.n < battles.filter(b => !b.deleted && b.kind !== 'sim' && (!filter.teamId || b.teamId === filter.teamId)).length && <p class="hint">自分の選出を記録した {A.n}戦で集計しています (選出が未入力の対戦は含みません)。</p>}
+      {A.n < battles.filter(b => !b.deleted && b.kind !== 'sim' && (!filter.teamId || b.teamId === filter.teamId)).length && <p class="hint">選出を記録した {A.n}戦で集計</p>}
       {sub === 'mons' && (
         <div class="ta-table">
           <div class="ta-row head"><span></span><span>選出率</span><span>勝率</span><span>初手率</span><span>初手勝率</span></div>
@@ -162,7 +162,6 @@ function TeamAnalysis({battles, filter, team, sub, setSub, psort, setPsort, onOp
               </div>
             );
           })}
-          <p class="hint">選出率 = 対戦のうち選出した割合 / 勝率 = 選出した対戦の勝率 / 初手率 = 選出したうち初手だった割合 / 初手勝率 = 初手だった対戦の勝率 (勝率は勝ち負けをつけた対戦だけで計算)</p>
         </div>
       )}
       {sub === 'pattern' && <>
@@ -176,7 +175,6 @@ function TeamAnalysis({battles, filter, team, sub, setSub, psort, setPsort, onOp
             </div>
           ))}
           {!pats.length && <Empty>選出を記録した対戦がまだありません。</Empty>}
-          <p class="hint">選出した3体の組み合わせごと (順番は区別しません)。</p>
         </div>
       </>}
       {sub === 'opp' && <>
@@ -198,7 +196,7 @@ function TeamAnalysis({battles, filter, team, sub, setSub, psort, setPsort, onOp
             </div>
           ))}
           {!groups.length && <Empty>相手の選出を記録した対戦がまだありません。</Empty>}
-          <p class="hint">相手がそのポケモンを選出してきた対戦での自分の勝率 (左の大きな数字)。各ポケモンの「勝ち/勝敗のついた対戦」と、見せ合いにいたときに選出してきた率。タップで詳しい傾向。</p>
+          <p class="hint">数字 = 相手がそのポケモンを選出した対戦での自分の勝率</p>
         </div>
       </>}
     </div>

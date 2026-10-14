@@ -2,7 +2,7 @@
 // ここではアプリのデータ (構築・盤面の状態) を計算機の入力に変換し、結果を日本語表示用に整える。
 import calcPkg from '@smogon/calc';
 import utilPkg from '@smogon/calc/dist/mechanics/util.js';
-import {dex, STAT_KEYS, clampSP, typeEffect} from './dex.js';
+import {dex, STAT_KEYS, clampSP, typeEffect, statValue} from './dex.js';
 
 const {calculate, Generations, Pokemon, Move, Field} = calcPkg;
 const {getFinalSpeed} = utilPkg;
@@ -60,10 +60,17 @@ export function toCalcPokemon(build, cond = newCond(), extra = {}) {
     abilityOn: !!cond.abilityOn || (ability === 'unburden' && !!cond.itemGone && !!build.item),
     alliesFainted: extra.alliesFainted || 0,
   });
-  if (cond.types?.length) {
-    // 計算機は内部で複製するときに種族のタイプと混ぜてしまうので、複製後もタイプを上書きする
-    const types = cond.types.slice(0, 3);
-    const fix = q => { q.types = types; q.species = {...q.species, types}; const base = q.clone; q.clone = function () { return fix(base.call(this)); }; return q; };
+  // 計算機は内部で複製するので、複製後も同じ上書きをかける
+  //  types: みずびたし等のタイプ変化 (種族のタイプと混ぜられないように)
+  //  natureMods: 能力ごとの性格補正 (ダメージ計算タブで ▲▼ を自由につけたとき)
+  const types = cond.types?.length ? cond.types.slice(0, 3) : null;
+  const mods = build.natureMods;
+  if (types || mods) {
+    const fix = q => {
+      if (types) { q.types = types; q.species = {...q.species, types}; }
+      if (mods) for (const k of STAT_KEYS.slice(1)) { const v = statValue(q.species.baseStats[k], clampSP(build.sp?.[STAT_KEYS.indexOf(k)]), mods[k] || 1, false); q.rawStats[k] = v; q.stats[k] = v; }
+      const base = q.clone; q.clone = function () { return fix(base.call(this)); }; return q;
+    };
     fix(p);
   }
   const max = p.maxHP();

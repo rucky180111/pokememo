@@ -242,7 +242,14 @@ check((await natBtn.innerText()).trim() === '▼', '押すと▼');
 await natBtn.click();
 check((await natBtn.innerText()).trim() === '－', 'もう一度で補正なし');
 check(before !== afterSp, `スライダーで計算が変わる (${before} → ${afterSp})`);
-check(await page.locator('.dl h4.opp ~ .dl-row').count() >= 4, '相手の技 (使用率上位) のダメージが並ぶ');
+await natBtn.click(); // ▲
+await page.locator('.dl-st').nth(1).locator('.dl-nat').click();
+await page.locator('.dl-st').nth(3).locator('.dl-nat').click();
+check(await page.locator('.dl-nat.up').count() === 3, '性格補正の▲をいくつでもつけられる');
+for (let i = 1; i < 6; i++) await page.locator('.dl-st').nth(i).locator('input[type=range]').fill('32');
+check((await page.locator('.dl-total').innerText()).startsWith('66'), `能力Ptは合計66まで (${await page.locator('.dl-total').innerText()})`);
+await page.locator('.dl-dir').click();
+check(await page.locator('.dl h4.me').count() === 0 && await page.locator('.dl h4.opp ~ .dl-row').count() >= 4, '⇄で攻撃側を入れ替え、相手の技が並ぶ');
 await page.locator('.dl-ic.opp').nth(1).click();
 check(await page.locator('.dl-ic.opp.on').count() === 1, '相手を切り替えられる');
 await pane('盤面');

@@ -139,16 +139,16 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
             </div>
           </div>
         )}
-        {megas.length > 0 && <p class="hint">メガシンカ: {battle.state.mons.opp[idx]?.forme ? 'メガシンカ済み (メガの種族値で計算)' : `まだしていないので通常の姿で計算${ctx.megaBlocked ? ' (相手は別のポケモンがメガシンカ済み)' : v ? ` ・ 使用率上のメガ率 ${rate(v.megaP)}` : ''}`}。メガシンカしたら、盤面の名前の横の「メガ」ボタンを押してください。</p>}
+        {megas.length > 0 && <p class="hint">メガシンカ: {battle.state.mons.opp[idx]?.forme ? 'メガシンカ済み (メガの種族値で計算)' : `まだしていないので通常の姿で計算${ctx.megaBlocked ? ' (相手は別のポケモンがメガシンカ済み)' : v ? ` ・ 使用率上のメガ率 ${rate(v.megaP)}` : ''}`}</p>}
 
-        <div class="field"><span>能力振りの採用率 (参考。ダメージ計算で、まだ絞り込めていない能力の仮の値に使います。上の能力表の絞り込みには使いません) <em class="guess">{v ? `${spreadLabel(v.build.nature, v.build.sp)} (${v.spreadSource}${v.spreadRate != null ? ` ${rate(v.spreadRate, 1)}` : ''})` : ''}</em></span>
+        <div class="field"><span>能力振りの採用率 <em class="guess">{v ? `${spreadLabel(v.build.nature, v.build.sp)} (${v.spreadSource}${v.spreadRate != null ? ` ${rate(v.spreadRate, 1)}` : ''})` : ''}</em></span>
           <div class="chips">
             {(v?.spreads || []).slice(0, 6).map((sp, i) => (
               <button class={cx('chip', as.kind === 'usage' && (as.idx || 0) === i && 'on')} onClick={() => set(x => { x.assume = {kind: 'usage', idx: i}; })}>
                 {o.statOk && !spreadFits(o, sp.nature, sp.sp) ? '✕ ' : ''}{i + 1}位 {spreadLabel(sp.nature, sp.sp)} <span class="rate">{rate(sp.rate, 1)}</span>
               </button>
             ))}
-            {!(v?.spreads || []).length && <span class="muted">このポケモンの使用率データがありません。下の型から選んでください。</span>}
+            {!(v?.spreads || []).length && <span class="muted">使用率データなし</span>}
           </div>
           <div class="chips">
             {Object.entries(PRESETS).map(([k, p]) => (
@@ -168,7 +168,7 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
         )}
         {o.statOk && (
           <div class="field"><span>ダメージから絞り込んだ能力</span>
-            <p class="hint">{Object.keys(o.statOk).map(k => ({atk: 'こうげき', spa: 'とくこう', def: 'HP・ぼうぎょ', spd: 'HP・とくぼう'}[k])).join('、')} を観測から絞り込み済み。
+            <p class="hint">{Object.keys(o.statOk).map(k => ({atk: 'こうげき', spa: 'とくこう', def: 'HP・ぼうぎょ', spd: 'HP・とくぼう'}[k])).join('、')} 絞り込み済み
               <button class="btn ghost sm" onClick={() => set(x => { x.statOk = null; })}>絞り込みをリセット</button></p>
           </div>
         )}
@@ -183,7 +183,6 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
             b.state.sides.opp.active = b.state.sides.opp.active.map(i => (i == null ? null : fix(i)));
           }); onClose(); }}>パーティから外す</button>}
         </div>
-        {usedInLog && <p class="hint">対戦の記録に出てきたポケモンなのでパーティから外せません。見間違いなら「ポケモンを変更」で直せます。</p>}
       </div>
       {pick === 'item' && <Picker kind="items" title="相手の持ち物" allowClear clearLabel="不明に戻す" rank={allItemRank} onClose={() => setPick(null)}
         filter={id => !dex.items[id].ms || !!dex.items[id].ms[o.species]}
