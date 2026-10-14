@@ -7,6 +7,19 @@ import {teamRecord, realBattles} from '../engine/predict.js';
 import {TeamReport} from './stats.jsx';
 import {ShotImport} from './shot-import.jsx';
 import {TeamDiagnosis} from './teamdiag.jsx';
+
+// 調整メモの並び (優先順位)
+const spOrderOf = b => { const o = (b.spOrder || []).filter(k => STAT_KEYS.includes(k)); return [...o, ...STAT_KEYS.filter(k => !o.includes(k))]; };
+// 能力ポイントの「効率のよい点」: H は実数値が 16n-1、上昇補正の能力は 1 ポイントで実数値が 2 上がる点 (11n)
+function spMarks(species, sp, nature, i) {
+  if (!dex.species[species]) return [];
+  const at = v => { const x = sp.slice(); x[i] = v; return statsOf(species, x, nature)[i]; };
+  const out = [];
+  if (i === 0) { for (let v = 0; v <= SP_MAX; v++) if (at(v) % 16 === 15) out.push(v); return out; }
+  if (dex.natures[nature]?.p !== STAT_KEYS[i]) return out;
+  for (let v = 1; v <= SP_MAX; v++) if (at(v) - at(v - 1) >= 2) out.push(v);
+  return out;
+}
 import {useApp, Sheet, Picker, Seg, MonName, TypeChip, Sprite, Empty, Confirm, cx} from './common.jsx';
 
 export const FORMAT_OPTS = [['single', 'シングル'], ['double', 'ダブル']];
@@ -160,6 +173,7 @@ export function TeamEditor({id}) {
               <div class="muted">{abilityName(m.ability)} / {buildSummary(m)}</div>
               <div class="num dim">{statsOf(m.species, m.sp, m.nature).join('-')}</div>
               {(m.moves || []).length ? <div class="moves4">{[0, 1, 2, 3].map(i => { const mv = m.moves[i]; return mv ? <span class="chip"><TypeChip type={dex.moves[mv]?.t} small /><span class="mv-nm">{moveName(mv)}</span></span> : <span class="chip empty" />; })}</div> : <span class="muted">技が未設定</span>}
+              {spOrderOf(m).some(k => m.spNotes?.[k]) && <ol class="sp-note-list">{spOrderOf(m).filter(k => m.spNotes?.[k]).map(k => <li><b>{STAT_JA[STAT_KEYS.indexOf(k)]}</b> {m.spNotes[k]}</li>)}</ol>}
               {m.note && <div class="note">{m.note}</div>}
             </button>
             <div class="card-tools">
@@ -261,10 +275,13 @@ export function MonEditor({build, usage, onSave, onClose, isNew, title, lockSpec
                 return (
                   <div class="sp-row" key={k}>
                     <span class={cx('sp-lb', mark)}>{STAT_JA[i]}</span>
-                    <input type="range" min={0} max={SP_MAX} value={b.sp[i]} onInput={e => setSP(i, e.currentTarget.value)} aria-label={`${STAT_JA[i]} の能力ポイント`} />
+                    <div class="sp-track">
+                      <input type="range" min={0} max={SP_MAX} value={b.sp[i]} onInput={e => setSP(i, e.currentTarget.value)} aria-label={`${STAT_JA[i]} の能力ポイント`} />
+                      {spMarks(b.species, b.sp, b.nature, i).map(v => <span class={cx('sp-dot', v === b.sp[i] && 'on')} style={{left: `calc(11px + (100% - 22px) * ${v / SP_MAX})`}} onClick={() => setSP(i, v)} />)}
+                    </div>
                     <input class="input num sp-num" type="number" inputMode="numeric" min={0} max={SP_MAX} value={b.sp[i]} onInput={e => setSP(i, e.currentTarget.value)} />
                     <button class="btn ghost sm" onClick={() => setSP(i, b.sp[i] === SP_MAX ? 0 : SP_MAX)} aria-label={`${STAT_JA[i]} を${b.sp[i] === SP_MAX ? '0' : '最大'}にする`}>{b.sp[i] === SP_MAX ? '0に' : '最大'}</button>
-                    <span class="num sp-val">{stats[i]}</span>
+                    <span class={cx('num sp-val', spMarks(b.species, b.sp, b.nature, i).includes(b.sp[i]) && 'on')}>{stats[i]}</span>
                   </div>
                 );
               })}
@@ -283,7 +300,25 @@ export function MonEditor({build, usage, onSave, onClose, isNew, title, lockSpec
             </div>
           </div>
           {entry && <button class="btn" onClick={applyCommon}>使用率の高い型を入れる (配分・技{megaForme ? '' : '・持ち物・特性'})</button>}
-          <label class="field"><span>メモ (調整意図など)</span>
+          <div class="field"><span>調整メモ (上から優先順位。↑↓で入れ替え)</span>
+            <div class="sp-notes">
+              {spOrderOf(b).map((k, j, arr) => {
+                const i = STAT_KEYS.indexOf(k);
+                const move = d => { const o = arr.slice(); [o[j], o[j + d]] = [o[j + d], o[j]]; set({spOrder: o}); };
+                return (
+                  <div class="sp-note" key={k}>
+                    <span class="sp-note-n num">{j + 1}</span>
+                    <span class={cx('sp-lb', dex.natures[b.nature]?.p === k ? 'up' : dex.natures[b.nature]?.m === k ? 'down' : '')}>{STAT_JA[i]}</span>
+                    <span class="num muted sp-note-v">{b.sp[i]}<small>→{stats[i]}</small></span>
+                    <input class="input" value={b.spNotes?.[k] || ''} placeholder={['例: 16n-1', '例: 11n / ○○確定1発', '例: ○○の地震を確定耐え', '', '例: ○○の特殊技耐え', '例: アシレーヌ抜き'][i]} onInput={e => set({spNotes: {...(b.spNotes || {}), [k]: e.currentTarget.value}})} />
+                    <button class="btn ghost sm" disabled={j === 0} onClick={() => move(-1)} aria-label={`${STAT_JA[i]} を上へ`}>↑</button>
+                    <button class="btn ghost sm" disabled={j === arr.length - 1} onClick={() => move(1)} aria-label={`${STAT_JA[i]} を下へ`}>↓</button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <label class="field"><span>メモ</span>
             <textarea class="input" rows={2} value={b.note || ''} onInput={e => set({note: e.currentTarget.value})} />
           </label>
         </>}
