@@ -65,7 +65,7 @@ export function BattleLog({battle, ctx, mut, usage, toast, notes}) {
         {!battle.turns.length && <p class="muted">下のターン入力で、自分の行動を選んでから、動いた順に記録します。記録した順番は行動順として、相手の素早さの推定に使います。</p>}
         {battle.turns.map((t, ti) => (
           <div class="tl-turn" key={t.n}>
-            <div class="tl-n">— ターン {t.n}{t.open ? ' (入力中)' : ''} —</div>
+            <div class="tl-n">— ターン {t.n}{t.open ? ' (入力中)' : ''}{t.incomplete && ' (未入力あり)'} —</div>
             {t.acts.map((a, ai) => (
               <button class={cx('tl-act', a.side, a.type === 'event' && 'ev', a.kind === 'residual' && 'res')} disabled={!editable} onClick={() => setEdit({ti, ai})}>
                 <span class="tl-who">{a.sp && a.side ? <Sprite id={a.sp} size={30} /> : null}<span>{SIDE_JA[a.side] || '場'}</span></span>

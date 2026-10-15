@@ -1,0 +1,106 @@
+// 対戦中の短縮入力・画面切り替え・見逃しからの復帰を実ブラウザで確認する。
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {chromium} from 'playwright';
+import {serve} from './serve.mjs';
+import {newTeam, newBuild, newBattle, newOpp, normalizeBattle, sendOut} from '../src/engine/battle.js';
+
+const {server, url} = await serve();
+let browser;
+let checks = 0;
+const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); console.log('ok', message); checks++; };
+try {
+  browser = await chromium.launch();
+  for (const viewport of [{width:390, height:844}, {width:1180, height:820}]) {
+    const context = await browser.newContext({viewport});
+    await context.route('https://play.pokemonshowdown.com/**', r => r.fulfill({contentType:'image/png', body:fs.readFileSync(new URL('../docs/icon-192.png', import.meta.url))}));
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(url);
+    await page.waitForSelector('.bottomnav');
+    const team = newTeam();
+    team.mons = [{...newBuild('garchomp'), moves:['earthquake', 'swordsdance']}, {...newBuild('rotomwash'), moves:['voltswitch']}];
+    const b = newBattle({team});
+    b.opp = [newOpp('tyranitar'), newOpp('gengar')];
+    normalizeBattle(b);
+    sendOut(b, 'me', 0, 0);
+    sendOut(b, 'opp', 0, 0);
+    await page.evaluate(async b => { await window.__pokememo.store.saveBattle(b); }, b);
+    await page.goto(`${url}#/battle/${b.id}`);
+    const mine = page.locator('.pl.me'), opp = page.locator('.pl.opp');
+    const state = () => page.evaluate(id => window.__pokememo.store.battle(id), b.id);
+    await mine.locator('.pl-mv', {hasText:'じしん'}).click();
+    const hp = mine.getByLabel('受けたあとのHP', {exact:true});
+    check(await hp.inputValue(), '', '技を選ぶと空欄のHP入力がすぐ開く');
+    check(await mine.getByRole('button', {name:'記録', exact:true}).isDisabled(), true, '予測値を未確認のまま保存できない');
+    await hp.fill('40');
+    if (viewport.width < 980) {
+      await page.locator('.arena-tabs').getByRole('button', {name:'ダメージ・ログ', exact:true}).click();
+      await page.locator('.arena-tabs').getByRole('button', {name:'盤面', exact:true}).click();
+      check(await hp.inputValue(), '40', '盤面とダメージ・ログの切り替えでHPを保持');
+    }
+    await page.getByRole('tab', {name:'③ ダメージ計算'}).click();
+    await page.getByRole('tab', {name:'② 対戦'}).click();
+    check(await hp.inputValue(), '40', '対戦と計算タブの切り替えでHPを保持');
+    await mine.getByRole('button', {name:'記録', exact:true}).click();
+    check((await state()).state.mons.opp[0].hp, 40, '中間の確定操作なしでHPを保存');
+    const suggestion = opp.locator('.pl-suggestions button').first();
+    await suggestion.click();
+    check(await opp.getByLabel('受けたあとのHP', {exact:true}).inputValue(), '', '未判明技の候補から直接入力');
+    await opp.getByRole('button', {name:'HP不明で記録'}).click();
+    let saved = await state();
+    check(saved.turns[0].acts[1].hpUnknown, true, 'HP不明でも行動を記録');
+    check(saved.turns[0].acts[1].hpAfter, undefined, '予測HPを実測として保存しない');
+    await page.locator('.tb-end:visible').click();
+    await page.getByRole('button', {name:'未入力のまま次へ'}).click();
+    await page.getByRole('button', {name:'次のターンへ', exact:true}).click();
+    saved = await state();
+    check(saved.turns[1].incomplete, true, '行動を見逃してもターンを進められる');
+    check(saved.turns[1].end.noOrder, true, '見逃したターンで行動順を推定しない');
+    await mine.locator('.pl-mv', {hasText:'じしん'}).click();
+    await hp.fill('20');
+    await page.getByRole('button', {name:'未入力のまま次へ'}).click();
+    await page.getByRole('button', {name:'次のターンへ', exact:true}).click();
+    check(await mine.locator('.pl-act.move').count(), 0, 'ターンを飛ばすと前の入力下書きを破棄');
+    await mine.locator('.pl-mv', {hasText:'じしん'}).click();
+    check(await hp.inputValue(), '', '次のターンに古いHP入力が残らない');
+    await mine.getByRole('button', {name:'やめる', exact:true}).click();
+    await mine.getByRole('button', {name:'能力・素早さを見る'}).click();
+    check(await mine.locator('.mp-table').isVisible(), true, '能力表は必要なときに展開できる');
+    check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, '横にはみ出さない');
+    check(errors, [], 'ブラウザ例外なし');
+    await context.close();
+  }
+  // ダブルで対象を切り替えたとき、別のポケモンに入力済みHPを流用しない。
+  const context = await browser.newContext({viewport:{width:1180, height:820}});
+  await context.route('https://play.pokemonshowdown.com/**', r => r.fulfill({contentType:'image/png', body:fs.readFileSync(new URL('../docs/icon-192.png', import.meta.url))}));
+  const page = await context.newPage();
+  await page.goto(url);
+  await page.waitForSelector('.bottomnav');
+  const team = newTeam('double');
+  team.mons = [{...newBuild('garchomp'), moves:['dragonclaw']}, newBuild('rotomwash')];
+  const b = newBattle({team});
+  b.opp = [newOpp('tyranitar'), newOpp('gengar')];
+  normalizeBattle(b);
+  for (const side of ['me', 'opp']) for (let slot = 0; slot < 2; slot++) sendOut(b, side, slot, slot);
+  await page.evaluate(async b => { await window.__pokememo.store.saveBattle(b); }, b);
+  await page.goto(`${url}#/battle/${b.id}`);
+  const panel = page.locator('.pl.me').first();
+  await panel.locator('.pl-mv', {hasText:'ドラゴンクロー'}).click();
+  const hp = panel.getByLabel('受けたあとのHP', {exact:true});
+  await hp.fill('40');
+  await panel.locator('.pa-h').getByRole('button', {name:'ゲンガー', exact:true}).click();
+  check(await hp.inputValue(), '', 'ダブルの対象変更でHPをリセット');
+  check(await panel.getByRole('button', {name:'記録', exact:true}).isDisabled(), true, '別の対象のHPで記録できない');
+  await hp.fill('25');
+  await panel.locator('.pa-h').getByRole('button', {name:'ゲンガー', exact:true}).click();
+  check(await hp.inputValue(), '25', '同じ対象を押したときはHPを保持');
+  await panel.getByRole('button', {name:'記録', exact:true}).click();
+  check(await page.evaluate(id => window.__pokememo.store.battle(id).state.mons.opp.map(c => c.hp), b.id), [100,25], '選択した対象だけにHPを反映');
+  await context.close();
+  console.log(`${checks} checks passed`);
+} finally {
+  await browser?.close();
+  await new Promise(resolve => server.close(resolve));
+}

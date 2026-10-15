@@ -19,19 +19,18 @@ const alive = (battle, side) => battle.state.sides[side].active.filter(i => i !=
 
 export function Arena({battle, ctx, mut, usage, toast, wide, onDelete}) {
   const [pane, setPane] = useState('center');
+  const [rightVisited, setRightVisited] = useState(false);
   const [sheet, setSheet] = useState(null);
   const p = {battle, ctx, mut, usage, toast, setSheet, onDelete};
   return (
     <div class={cx('arena', wide && 'wide')}>
-      {!wide && <div class="arena-tabs"><Seg value={pane} options={[['center', '盤面'], ['right', 'ダメージ・ログ']]} onChange={setPane} /></div>}
-      {(wide || pane === 'center') && (
-        <div class="ar-center">
-          <PlayBoard {...p} />
-          {!wide && <TurnBar {...p} />}
-        </div>
-      )}
-      {(wide || pane === 'right') && (
-        <div class="ar-right-col">
+      {!wide && <div class="arena-tabs"><Seg value={pane} options={[['center', '盤面'], ['right', 'ダメージ・ログ']]} onChange={next => { if (next === 'right') setRightVisited(true); setPane(next); }} /></div>}
+      <div class="ar-center" hidden={!wide && pane !== 'center'}>
+        <PlayBoard {...p} />
+        {!wide && <TurnBar {...p} />}
+      </div>
+      {(wide || rightVisited) && (
+        <div class="ar-right-col" hidden={!wide && pane !== 'right'}>
           <RightPane {...p} />
           {wide && <TurnBar {...p} />}
         </div>

@@ -921,6 +921,15 @@ tr.td-miss th { background: #ffe9d6; }
 .battle-log .log-note { margin: 2px 0 6px 18px; width: calc(100% - 18px); min-height: 32px; font-size: 13px; }
 
 /* ==== 盤面で入力する対戦画面 ==== */
+[hidden] { display: none !important; }
+.pa-hp { display: flex; gap: 8px; align-items: end; }
+.pa-hp label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.pa-hp input { width: 110px; }
+.pa-predictions summary { cursor: pointer; padding: 6px 0; font-size: 13px; }
+.pa-predictions summary small { color: var(--muted); }
+.pl-details { align-self: flex-start; }
+.pl-suggestions { grid-column: 1 / -1; font-size: 12px; }
+.tb-skip { min-height: 44px; }
 .arena.wide { grid-template-columns: minmax(0, 1fr) clamp(340px, 34vw, 480px); }
 .ar-right-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
 .arena.wide .ar-right-col { height: 100%; }

@@ -31,7 +31,10 @@ export function BattleScreen({id}) {
   const {store, nav, toast} = useApp();
   const battle = store.battle(id);
   const wide = useWide();
-  const [tab, setTab] = useState(() => (battle && battle.opp.length && battle.pick.me.length ? 'board' : 'setup'));
+  const initialTab = battle && battle.opp.length && battle.pick.me.length ? 'board' : 'setup';
+  const [tab, selectTab] = useState(initialTab);
+  const [visited, setVisited] = useState(() => [initialTab]);
+  const setTab = next => { setVisited(prev => prev.includes(next) ? prev : [...prev, next]); selectTab(next); };
   const [confirm, setConfirm] = useState(false);
   const usage = battle ? store.state.usage[battle.format] : null;
   const ctx = useMemo(() => (battle ? boardContext(battle, usage) : null), [battle, usage]);
@@ -71,7 +74,7 @@ export function BattleScreen({id}) {
           <button role="tab" aria-selected={tab === k} class={cx(tab === k && 'on')} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
-      <div class="battle-body">{body(tab)}</div>
+      <div class="battle-body">{visited.map(t => <div key={t} hidden={tab !== t}>{body(t)}</div>)}</div>
       {confirm && <Confirm title="対戦を削除" message="この対戦の記録を削除します。元に戻せません。" okLabel="削除する" danger
         onOk={async () => { await store.deleteBattle(battle.id); nav('#/battles'); }} onClose={() => setConfirm(false)} />}
     </div>

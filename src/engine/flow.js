@@ -77,7 +77,7 @@ export function endTurn(b, usage, opts = {}) {
   if (!t) return [];
   const log = [];
   const res = boardContext(b, usage).strictAbility;
-  if (!opts.noOrder && !t.noOrder && t.before && t.acts.filter(a => a.type === 'move').length >= 2) {
+  if (!opts.noOrder && !opts.incomplete && !t.noOrder && t.before && t.acts.filter(a => a.type === 'move').length >= 2) {
     try {
       const sim = clone(b);
       sim.state = clone(t.before.state); sim.pick = clone(t.before.pick);
@@ -167,7 +167,13 @@ export function endTurn(b, usage, opts = {}) {
   autoCureBerries(b, log);
   for (const sd of ['me', 'opp']) for (const c of b.state.mons[sd]) if (c) c.hazard = false;
   t.open = false;
-  t.end = {noOrder: !!(opts.noOrder || t.noOrder), resFirst: opts.resFirst || undefined, hpFacts: opts.hpFacts?.length ? opts.hpFacts : undefined, expiry: opts.expiry?.length ? opts.expiry : undefined, moody: opts.moody?.length ? opts.moody : undefined};
+  if (opts.incomplete) {
+    t.incomplete = true;
+    for (const side of ['me', 'opp']) for (const i of b.state.sides[side].active) {
+      if (i != null && !condOf(b, side, i).fainted) condOf(b, side, i).hpUnknown = true;
+    }
+  } else delete t.incomplete;
+  t.end = {incomplete: !!opts.incomplete, noOrder: !!(opts.noOrder || opts.incomplete || t.noOrder), resFirst: opts.resFirst || undefined, hpFacts: opts.hpFacts?.length ? opts.hpFacts : undefined, expiry: opts.expiry?.length ? opts.expiry : undefined, moody: opts.moody?.length ? opts.moody : undefined};
   t.auto.push(...log);
   b.updatedAt = Date.now();
   return log;
@@ -314,7 +320,7 @@ export function addAct(b, input, usage) {
       if (heal === null) log.push('オレンのみの回復量は割合に直せないため、このダメージからの推定は見送り');
       const unsafe = disguiseHit ? 'ばけのかわ' : input.pierce ? 'まもるを貫いた (1/4) ' : tgt.side !== side ? unsafeForInference(b, t, side, mon, tgt, a.move, res, a.flags.crit) : '';
       if (unsafe && tgt.side !== side && inferable(a.move) && a.hpAfter > 0) log.push(`${unsafe}ため、このダメージからの推定は見送り`);
-      if (!unsafe && tgt.side !== side && inferable(a.move) && heal !== null && a.hpAfter > 0 && (sash || before > hitAfter)) {
+      if (!unsafe && !tc.hpUnknown && tgt.side !== side && inferable(a.move) && heal !== null && a.hpAfter > 0 && (sash || before > hitAfter)) {
         try {
           const oppIdx = side === 'opp' ? mon : tgt.mon, myIdx = side === 'opp' ? tgt.mon : mon;
           // 逆算は「いま盤面にある姿」で行う (メガシンカの想定は使わない)
@@ -387,15 +393,18 @@ export function addAct(b, input, usage) {
         if (e.vo === 'confusion') log.push('こんらんした');
       }
     }
-    const hpBeforeHit = tgt ? condOf(b, tgt.side, tgt.mon).hp : null;
-    if (a.hpAfter != null && tgt) setHP(b, tgt.side, tgt.mon, a.hpAfter);
+    const hpBeforeHit = tgt && !condOf(b, tgt.side, tgt.mon).hpUnknown ? condOf(b, tgt.side, tgt.mon).hp : null;
+    if (a.hpAfter != null && tgt) {
+      setHP(b, tgt.side, tgt.mon, a.hpAfter);
+      delete condOf(b, tgt.side, tgt.mon).hpUnknown;
+    } else if (input.hpUnknown && !failed && tgt) condOf(b, tgt.side, tgt.mon).hpUnknown = true;
     // 技の結果を覚えておく (じだんだ・やけっぱち・ふんどのこぶし・ゆきなだれ・ダメおし・カウンター等の威力/ダメージ計算に使う)
     if (mvd && mvd.c !== 'Z' && tgt) {
       const immune = !failed && typeEffect(mvd.t, typesOf(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon))) === 0;
       if (!failed && !immune && hpBeforeHit != null && a.hpAfter != null) {
         a.dmgPct = Math.max(0, hpBeforeHit - a.hpAfter);
-        if (tgt.side !== side) { const tcx = condOf(b, tgt.side, tgt.mon); tcx.timesAttacked = (tcx.timesAttacked || 0) + (input.hits || defaultHits(a.move, res(b, side, mon))); }
       }
+      if (!failed && !immune && tgt.side !== side && (a.hpAfter != null || input.hpUnknown)) { const tcx = condOf(b, tgt.side, tgt.mon); tcx.timesAttacked = (tcx.timesAttacked || 0) + (input.hits || defaultHits(a.move, res(b, side, mon))); }
       if (!a.flags.cant) condOf(b, side, mon).lastResult = {n: t.n, failed: !!(failed || immune)};
       const tcd = condOf(b, tgt.side, tgt.mon);
       if (!failed && !immune && tcd.fainted && hpBeforeHit > 0 && tgt.side !== side) {
@@ -514,6 +523,7 @@ export function addAct(b, input, usage) {
     if (uc && !uc.fainted && !uc.status) { uc.status = input.contactStatus; uc.toxicCounter = 1; log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}は${STATUS_JA[input.contactStatus]}になった (相手の特性)`); }
   }
   autoCureBerries(b, log);
+  if (input.selfHpUnknown) condOf(b, side, mon).hpUnknown = true;
   if (input.hpUnknown) a.hpUnknown = true;
   a.auto = log;
   a.in = inputCopy(input);
@@ -554,7 +564,7 @@ export function addEvent(b, ev, usage) {
     if (hp == null && ev.consumed && ev.item === 'sitrusberry' && !((cond.healBlock || 0) >= t.n)) hp = Math.min(100, cond.hp + 25 + (defaultAbilityResolver(b, side, mon) === 'cheekpouch' ? 100 / 3 : 0));
     if (hp != null) setHP(b, side, mon, hp);
     text = `${itemName(ev.item) || '持ち物'} ${ev.consumed ? '発動・消費' : '判明'}${hp != null ? ` → HP ${Math.round(hp)}%` : ''}`;
-  } else if (ev.kind === 'hp') { setHP(b, side, mon, ev.hpAfter); text = `HP → ${Math.round(ev.hpAfter)}%${ev.note ? ` (${ev.note})` : ''}`; }
+  } else if (ev.kind === 'hp') { setHP(b, side, mon, ev.hpAfter); delete condOf(b, side, mon).hpUnknown; text = `HP → ${Math.round(ev.hpAfter)}%${ev.note ? ` (${ev.note})` : ''}`; }
   else if (ev.kind === 'faint') { setHP(b, side, mon, 0); text = 'ひんし'; }
   else if (ev.kind === 'residual' && STATUS_RESIDUAL.has(ev.key)) {
     if (ev.key === 'harvest') cond.itemGone = false; else { cond.status = ''; cond.statusKey = ''; }
@@ -578,7 +588,7 @@ export function addEvent(b, ev, usage) {
       const d = hazardDamage(b, side, mon);
       const hp = ev.hpAfter ?? (d ? Math.max(0, cond.hp - d.pct) : cond.hp);
       // 相手: 表示の % (切り捨て) から最大HPを絞り込む
-      if (side === 'opp' && ev.hpAfter != null && d && Number.isInteger(cond.hp)) {
+      if (side === 'opp' && !cond.hpUnknown && ev.hpAfter != null && d && Number.isInteger(cond.hp)) {
         const msg = inferHpFromDisplay(b, mon, cond.hp, Math.round(ev.hpAfter), [{k: 'hazard', frac: d.pct / 100}]);
         if (msg) log.push(msg);
       }
@@ -920,7 +930,7 @@ export function residualCandidates(b, usage) {
  * residual: 選んだターン終了時の処理 / finalHp: {'me0': 割合} ターン終了後のHP (分かったもの)
  * resFirst: 先に処理されたのはどちらか / expiry: [{key, ended, n}] 5ターン目のものが終わったか
  */
-export function finishTurn(b, usage, {residual = [], noOrder = false, finalHp = {}, resFirst, expiry = [], moody = []} = {}) {
+export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete = false, finalHp = {}, resFirst, expiry = [], moody = []} = {}) {
   let t = ensureTurn(b);
   const log = [];
   // 「わからない」で飛ばした攻撃のHPを、ターン終了後のHPから逆算して入れ直す
@@ -956,7 +966,7 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, finalHp = 
     const mon = Number(k.slice(3));
     const c = condOf(b, 'opp', mon);
     const steps = residual.filter(r => r.side === 'opp' && r.mon === mon).map(r => stepOf(b, 'opp', mon, r.key));
-    if (!c || c.fainted || !steps.length || steps.some(x => !x) || !Number.isInteger(c.hp)) continue;
+    if (!c || c.fainted || c.hpUnknown || !steps.length || steps.some(x => !x) || !Number.isInteger(c.hp)) continue;
     hpFacts.push({opp: mon, d0: c.hp, d1: Math.round(val), steps});
   }
   for (const r of residual) log.push(...addEvent(b, {kind: 'residual', side: r.side, mon: r.mon, key: r.key}, usage));
@@ -966,9 +976,9 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, finalHp = 
     const side = k.startsWith('me') ? 'me' : 'opp', mon = Number(k.replace(/^(me|opp)/, ''));
     const c = condOf(b, side, mon);
     // 相手は表示 (整数%) をそのまま正とする (次の推定で表示の値が要るため)
-    if (c && !c.fainted && (side === 'me' ? Math.abs(c.hp - val) > 0.7 : Math.abs(c.hp - val) > 1e-6)) log.push(...addEvent(b, {kind: 'hp', side, mon, hpAfter: val, note: 'ターン終了後に確認'}, usage));
+    if (c && !c.fainted && (c.hpUnknown || (side === 'me' ? Math.abs(c.hp - val) > 0.7 : Math.abs(c.hp - val) > 1e-6))) log.push(...addEvent(b, {kind: 'hp', side, mon, hpAfter: val, note: 'ターン終了後に確認'}, usage));
   }
-  log.push(...endTurn(b, usage, {noOrder, resFirst, hpFacts, expiry, moody}));
+  log.push(...endTurn(b, usage, {noOrder, incomplete, resFirst, hpFacts, expiry, moody}));
   return log;
 }
 
