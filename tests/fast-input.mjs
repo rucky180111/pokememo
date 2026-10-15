@@ -11,7 +11,7 @@ let checks = 0;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); console.log('ok', message); checks++; };
 try {
   browser = await chromium.launch();
-  for (const viewport of [{width:390, height:844}, {width:1180, height:820}]) {
+  for (const viewport of [{width:390, height:844}, {width:820, height:1180}, {width:1180, height:820}]) {
     const context = await browser.newContext({viewport});
     await context.route('https://play.pokemonshowdown.com/**', r => r.fulfill({contentType:'image/png', body:fs.readFileSync(new URL('../docs/icon-192.png', import.meta.url))}));
     const page = await context.newPage();
@@ -31,12 +31,50 @@ try {
     const mine = page.locator('.pl.me'), opp = page.locator('.pl.opp');
     const state = () => page.evaluate(id => window.__pokememo.store.battle(id), b.id);
     await mine.locator('.pl-mv', {hasText:'じしん'}).click();
-    const hp = mine.getByLabel('受けたあとのHP', {exact:true});
+    const hp = mine.getByLabel('残りHP', {exact:true});
+    check(await mine.getByRole('button', {name:'外し', exact:true}).isVisible(), true, '外しを通常欄に表示');
+    check(await mine.getByRole('button', {name:'行動不能', exact:true}).isVisible(), true, '行動不能を通常欄に表示');
+    check(await mine.getByRole('button', {name:'まもられた', exact:true}).isVisible(), false, 'まもられたは通常欄を圧迫しない');
+    await mine.locator('.pa-other summary').click();
+    check(await mine.getByRole('button', {name:'まもられた', exact:true}).isVisible(), true, 'まもられたもその他から入力可能');
+    await mine.locator('.pa-other summary').click();
     check(await hp.inputValue(), '', '技を選ぶと空欄のHP入力がすぐ開く');
     check(await mine.getByRole('button', {name:'記録', exact:true}).isDisabled(), true, '予測値を未確認のまま保存できない');
+    check(await mine.locator('.mp-table').isVisible(), true, '入力中も能力表が常時見える');
+    check(await mine.getByRole('button', {name:'こうげきを1段階上げる', exact:true}).isVisible(), true, 'ランク操作が常時見える');
+    await mine.getByRole('button', {name:'こうげきを1段階上げる', exact:true}).click();
+    check((await state()).state.mons.me[0].boosts.atk, 1, 'ランクを1操作で反映');
+    await page.getByRole('button', {name:'1つ戻す', exact:true}).click();
+    check((await state()).state.mons.me[0].boosts.atk, 0, 'ランクの直接操作を取り消せる');
+    await hp.fill('0');
+    check(await mine.getByRole('button', {name:'残りHPの調整を1減らす', exact:true}).isDisabled(), true, 'HPは0未満にしない');
+    await hp.fill('100');
+    check(await mine.getByRole('button', {name:'残りHPの調整を1増やす', exact:true}).isDisabled(), true, 'HPは上限を超えない');
     await hp.fill('40');
-    if (viewport.width < 980) {
+    await mine.getByRole('button', {name:'残りHPの調整を1減らす', exact:true}).click();
+    check(await hp.inputValue(), '39', '相手の残りHPを1%減らす');
+    await mine.getByRole('button', {name:'残りHPの調整を1増やす', exact:true}).click();
+    check(await hp.inputValue(), '40', '相手の残りHPを1%増やす');
+    fs.mkdirSync('e2e-out', {recursive:true});
+    await page.evaluate(() => window.scrollTo(0, 0));
+
+    await page.screenshot({path:`e2e-out/compact-${viewport.width}.png`, fullPage:true});
+    if (viewport.width >= 980) {
+      const boxes = await page.locator('.pl').evaluateAll(els => els.map(el => { const r = el.getBoundingClientRect(); return {x:r.x,y:r.y}; }));
+      check(Math.abs(boxes[0].y - boxes[1].y) < 2 && boxes[0].x < boxes[1].x, true, '自分と相手を横並びで確認できる');
+      const record = await mine.locator('.pl-act .btnrow').boundingBox();
+      const footer = await page.locator('.arena-turnbar').boundingBox();
+      check(record.y + record.height <= footer.y, true, 'iPad横ではHPの記録ボタンまでスクロールせず表示');
+    }
+    {
       await page.locator('.arena-tabs').getByRole('button', {name:'ダメージ・ログ', exact:true}).click();
+      const h = page.locator('.dl-st').first();
+      const point = h.getByLabel('Hの能力Pt', {exact:true});
+      const initialPoint = Number(await point.inputValue());
+      await h.getByRole('button', {name:'Hの能力Ptを1増やす', exact:true}).click();
+      check(Number(await point.inputValue()), initialPoint + 1, 'ダメージ計算の能力Ptも1ずつ増やせる');
+      await h.getByRole('button', {name:'Hの能力Ptを1減らす', exact:true}).click();
+      check(Number(await point.inputValue()), initialPoint, 'ダメージ計算の能力Ptも1ずつ減らせる');
       await page.locator('.arena-tabs').getByRole('button', {name:'盤面', exact:true}).click();
       check(await hp.inputValue(), '40', '盤面とダメージ・ログの切り替えでHPを保持');
     }
@@ -47,7 +85,12 @@ try {
     check((await state()).state.mons.opp[0].hp, 40, '中間の確定操作なしでHPを保存');
     const suggestion = opp.locator('.pl-suggestions button').first();
     await suggestion.click();
-    check(await opp.getByLabel('受けたあとのHP', {exact:true}).inputValue(), '', '未判明技の候補から直接入力');
+    check(await opp.getByLabel('残りHP', {exact:true}).inputValue(), '', '未判明技の候補から直接入力');
+    await opp.getByLabel('残りHP', {exact:true}).fill('100');
+    await opp.getByRole('button', {name:'残りHPの調整を1減らす', exact:true}).click();
+    check(await opp.getByLabel('残りHP', {exact:true}).inputValue(), '99', '自分の残りHPを実数で1減らす');
+    await opp.getByRole('button', {name:'残りHPの調整を1増やす', exact:true}).click();
+    check(await opp.getByLabel('残りHP', {exact:true}).inputValue(), '100', '自分の残りHPを実数で1増やす');
     await opp.getByRole('button', {name:'HP不明で記録'}).click();
     let saved = await state();
     check(saved.turns[0].acts[1].hpUnknown, true, 'HP不明でも行動を記録');
@@ -65,10 +108,12 @@ try {
     check(await mine.locator('.pl-act.move').count(), 0, 'ターンを飛ばすと前の入力下書きを破棄');
     await mine.locator('.pl-mv', {hasText:'じしん'}).click();
     check(await hp.inputValue(), '', '次のターンに古いHP入力が残らない');
-    await mine.getByRole('button', {name:'やめる', exact:true}).click();
-    await mine.getByRole('button', {name:'能力・素早さを見る'}).click();
-    check(await mine.locator('.mp-table').isVisible(), true, '能力表は必要なときに展開できる');
+    await mine.getByRole('button', {name:'取消', exact:true}).click();
+    check(await mine.locator('.mp-table').isVisible(), true, '能力表は折りたたまず常時表示');
     check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, '横にはみ出さない');
+    await page.getByRole('button', {name:'相手の盤面へ', exact:true}).click();
+    await page.waitForFunction(() => { const r = document.querySelector('.pl.opp').getBoundingClientRect(); return r.top >= 0 && r.top < 250; });
+    check(await opp.locator('.mp-table').isVisible(), true, '下部の相手ボタンで盤面へ直接移動');
     check(errors, [], 'ブラウザ例外なし');
     await context.close();
   }
@@ -88,7 +133,7 @@ try {
   await page.goto(`${url}#/battle/${b.id}`);
   const panel = page.locator('.pl.me').first();
   await panel.locator('.pl-mv', {hasText:'ドラゴンクロー'}).click();
-  const hp = panel.getByLabel('受けたあとのHP', {exact:true});
+  const hp = panel.getByLabel('残りHP', {exact:true});
   await hp.fill('40');
   await panel.locator('.pa-h').getByRole('button', {name:'ゲンガー', exact:true}).click();
   check(await hp.inputValue(), '', 'ダブルの対象変更でHPをリセット');

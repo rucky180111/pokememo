@@ -175,7 +175,7 @@ check(await meP.locator('.hp-pred').count() === 1, '技を選ぶと、受ける�
 await oppP.locator('.pa-predictions summary').click();
 check(await oppP.locator('.pa-row').count() === 3 && /→/.test(await oppP.locator('.pa-row.on').innerText()), `今のHPから減ったあとの予想が3通り出る (${(await oppP.locator('.pa-row.on').innerText()).replace(/\n/g, ' ')})`);
 await shot(page, 'board-predict');
-await oppP.getByLabel('受けたあとのHP', {exact: true}).fill('70');
+await oppP.getByLabel('残りHP', {exact: true}).fill('70');
 await shot(page, 'board-hp');
 await oppP.getByRole('button', {name: '記録', exact: true}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
@@ -187,7 +187,7 @@ check(await oppP.locator('.hp-pred').count() === 1, '自分の技でも相手の
 await meP.locator('.pa-predictions summary').click();
 await meP.locator('.pa-row', {hasText: '耐久全振り'}).click();
 check(await meP.locator('.pa-row.on', {hasText: '耐久全振り'}).count() === 1, '振り方を切り替えられる');
-await meP.getByLabel('受けたあとのHP', {exact: true}).fill('20');
+await meP.getByLabel('残りHP', {exact: true}).fill('20');
 await meP.getByRole('button', {name: '記録', exact: true}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.mons.opp[1].hp === 20, `相手のHPが20%に (${b.state.mons.opp[1].hp})`);
@@ -215,20 +215,20 @@ b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.mons.opp[1].hp === 20 && !b.state.mons.opp[1].itemGone, `1つ戻すで盤面も戻る (${b.state.mons.opp[1].hp})`);
 await pane('盤面').catch(() => {});
 await shot(page, 'arena-center');
-await oppP.getByRole('button', {name: '能力・素早さを見る'}).click();
 check(await oppP.locator('.mp-table tbody tr').count() >= 4, '相手の表に 種族値/能力Pt/能力上昇/実数値');
 {
   const rank = () => oppP.locator('.mp-table .rankv').first().innerText();
   const before = Number((await rank()).replace('+', ''));
-  await oppP.locator('.rank-edit').click();
-  await oppP.locator('.rank-cell').first().locator('.rank-btn').first().click();
-  await oppP.locator('.rank-cell').first().locator('.rank-btn').first().click();
-  await oppP.locator('.rank-actions').getByRole('button', {name: '記録', exact: true}).click();
+  await oppP.getByRole('button', {name:'こうげきを1段階上げる', exact:true}).click();
+  await oppP.getByRole('button', {name:'こうげきを1段階上げる', exact:true}).click();
   const after = Number((await rank()).replace('+', ''));
   check(after === before + 2, `能力ランクを表から直接入力できる (${before} → ${after})`);
   await page.getByRole('button', {name: '1つ戻す'}).first().click();
-  check(Number((await rank()).replace('+', '')) === before, '1つ戻すで元に戻る');
+  check(Number((await rank()).replace('+', '')) === before + 1, '1つ戻すで直前のランク変更が戻る');
+  await page.getByRole('button', {name: '1つ戻す'}).first().click();
+  check(Number((await rank()).replace('+', '')) === before, 'もう1つ戻すと元のランクに戻る');
 }
+await oppP.locator('.pl-speed-detail summary').click();
 check(await oppP.locator('.mp-speed li').count() >= 5, '素早さ一覧に自分の位置が入る');
 // 交代: ⇄ → アイコン → 確定 (いかくが入る)
 await meP.locator('.pl-swap').click();
@@ -349,8 +349,8 @@ const {page: ipad} = await open({width: 1180, height: 820}, 'ipad');
 await ipad.evaluate(async d => { await window.__pokememo.store.importAll(d); }, dump);
 await ipad.goto(`${url}#/battle/${bid}`);
 await ipad.waitForSelector('.arena.wide');
-check(await ipad.locator('.arena.wide > .ar-center').count() === 1 && await ipad.locator('.arena.wide > .ar-right-col').count() === 1, 'iPad横は 盤面 と 右 (ダメージ・ログ・ターン終了) の2列');
-check(await ipad.locator('.ar-right-col .tb-end').count() === 1, 'iPad横: ターン終了は右下');
+check(await ipad.locator('.arena.wide .pl').evaluateAll(els => Math.abs(els[0].getBoundingClientRect().y - els[1].getBoundingClientRect().y) < 2), 'iPad横は自分と相手の盤面を横並び');
+check(await ipad.locator('.arena-turnbar .tb-end').count() === 1, 'iPad横: ターン操作は共通の固定欄');
 await shot(ipad, 'ipad-arena');
 await ipad.locator('.pl.opp .pl-name').first().click();
 await ipad.waitForSelector('.os-info');
@@ -365,7 +365,7 @@ await ipad.locator('.picker-bar input[type=search]').last().fill('れいとう�
 await ipad.locator('.picker-list .row').first().click();
 await shot(ipad, 'ipad-actform');
 await ipad.locator('.pl.opp .pl-act .chip', {hasText: 'こおり'}).click();
-await ipad.locator('.pl.opp').getByLabel('受けたあとのHP', {exact: true}).fill('150');
+await ipad.locator('.pl.opp').getByLabel('残りHP', {exact: true}).fill('150');
 await shot(ipad, 'ipad-secondary');
 await ipad.locator('.pl.opp').getByRole('button', {name: '記録', exact: true}).click();
 let b3 = await ipad.evaluate(() => window.__pokememo.store.battles().find(x => x.turns.length >= 3));

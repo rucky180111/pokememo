@@ -311,16 +311,16 @@ export function addAct(b, input, usage) {
       a.hpAfter = Math.max(0, Math.min(100, hp));
       const tc = condOf(b, tgt.side, tgt.mon);
       const before = tc.hp;
-      // ダメージから相手の能力を絞り込む (自分↔相手の技のみ)
-      if (tgt.side !== side && a.hpAfter <= 0 && dex.moves[a.move]?.c !== 'Z') log.push('倒した/倒された場合は、ダメージからの推定はできません');
+      // ひんし時は残りHPが削り切られたので、実ダメージの下限だけが分かる。
+      const knockedOut = a.hpAfter === 0;
       // 回復実が発動していたら、回復前のHPに戻してからダメージを逆算する
       let healPct = heal;
       if (heal && tgt.side === 'me') { const tb0 = buildOf(b, 'me', tgt.mon); const mx = statsOf(currentSpecies(tb0, tc), tb0.sp, tb0.nature)[0]; healPct = (Math.floor(mx / 4) / mx) * 100; }
-      const hitAfter = heal ? Math.max(0.1, a.hpAfter - healPct) : a.hpAfter;
+      const hitAfter = heal && !knockedOut ? Math.max(0.1, a.hpAfter - healPct) : a.hpAfter;
       if (heal === null) log.push('オレンのみの回復量は割合に直せないため、このダメージからの推定は見送り');
       const unsafe = disguiseHit ? 'ばけのかわ' : input.pierce ? 'まもるを貫いた (1/4) ' : tgt.side !== side ? unsafeForInference(b, t, side, mon, tgt, a.move, res, a.flags.crit) : '';
-      if (unsafe && tgt.side !== side && inferable(a.move) && a.hpAfter > 0) log.push(`${unsafe}ため、このダメージからの推定は見送り`);
-      if (!unsafe && !tc.hpUnknown && tgt.side !== side && inferable(a.move) && heal !== null && a.hpAfter > 0 && (sash || before > hitAfter)) {
+      if (unsafe && tgt.side !== side && inferable(a.move)) log.push(`${unsafe}ため、このダメージからの推定は見送り`);
+      if (!unsafe && !tc.hpUnknown && tgt.side !== side && inferable(a.move) && heal !== null && (sash || before > hitAfter)) {
         try {
           const oppIdx = side === 'opp' ? mon : tgt.mon, myIdx = side === 'opp' ? tgt.mon : mon;
           // 逆算は「いま盤面にある姿」で行う (メガシンカの想定は使わない)
@@ -328,7 +328,7 @@ export function addAct(b, input, usage) {
           ictx.ability = (sd, i) => { const bd = ictx.build(sd, i); return bd ? currentAbility(bd, ictx.cond(sd, i)) : ''; };
           // きあいのタスキで耐えた = 満タンから倒れるだけのダメージが入っていた (下限だけ分かる)
           const os = dex.species[b.opp[oppIdx].species];
-          const iopt = {crit: a.flags.crit, itemUnknown: !b.opp[oppIdx].item, abilityUnknown: !b.opp[oppIdx].ability && os.ab.length > 1, atLeast: sash, ...(heal && side === 'me' ? {tol: 2} : {}),
+          const iopt = {crit: a.flags.crit, itemUnknown: !b.opp[oppIdx].item, abilityUnknown: !b.opp[oppIdx].ability && os.ab.length > 1, atLeast: sash || knockedOut, ...(heal && !knockedOut && side === 'me' ? {tol: 2} : {}),
             hits: input.hits ? {[a.move]: input.hits} : undefined};
           let r;
           if (side === 'opp') {

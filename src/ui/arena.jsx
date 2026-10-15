@@ -1,5 +1,5 @@
-// 対戦フェーズ: 盤面 (入力もここで完結、play.jsx) と、右の ダメージ・傾向・ログ。ターン終了は右下 (スマホは盤面の下)
-import {useMemo, useState} from 'preact/hooks';
+// 対戦フェーズ: 横幅があれば自分と相手の盤面を横並びにする。ターン操作は共通。
+import {useMemo, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, abilityName, moveName, STAT_JA, STAT_KEYS} from '../engine/dex.js';
 import {BOOST_KEYS, currentSpecies, currentAbility} from '../engine/calc.js';
 import {condOf} from '../engine/battle.js';
@@ -10,7 +10,7 @@ import {OppSheet, dmgClass, LogTab} from './battle.jsx';
 import {MonEditor} from './teams.jsx';
 import {DmgBar} from './board.jsx';
 import {PredictTab} from './analysis.jsx';
-import {PlayBoard, TurnBar} from './play.jsx';
+import {PlayBoard, TurnBar, FieldBar} from './play.jsx';
 import {DamageLab} from './dmglab.jsx';
 import {BoostRow} from './boostrow.jsx';
 import {dispOf} from '../engine/flow.js';
@@ -21,20 +21,18 @@ export function Arena({battle, ctx, mut, usage, toast, wide, onDelete}) {
   const [pane, setPane] = useState('center');
   const [rightVisited, setRightVisited] = useState(false);
   const [sheet, setSheet] = useState(null);
-  const p = {battle, ctx, mut, usage, toast, setSheet, onDelete};
+  const boardRef = useRef(null);
+  const focusSide = side => {
+    setPane('center');
+    requestAnimationFrame(() => boardRef.current?.querySelector(`.pl.${side}`)?.scrollIntoView({block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'}));
+  };
+  const p = {battle, ctx, mut, usage, toast, setSheet, onDelete, focusSide};
   return (
     <div class={cx('arena', wide && 'wide')}>
-      {!wide && <div class="arena-tabs"><Seg value={pane} options={[['center', '盤面'], ['right', 'ダメージ・ログ']]} onChange={next => { if (next === 'right') setRightVisited(true); setPane(next); }} /></div>}
-      <div class="ar-center" hidden={!wide && pane !== 'center'}>
-        <PlayBoard {...p} />
-        {!wide && <TurnBar {...p} />}
-      </div>
-      {(wide || rightVisited) && (
-        <div class="ar-right-col" hidden={!wide && pane !== 'right'}>
-          <RightPane {...p} />
-          {wide && <TurnBar {...p} />}
-        </div>
-      )}
+      <div class="arena-toolbar"><div class="arena-tabs"><Seg value={pane} options={[['center', '盤面'], ['right', 'ダメージ・ログ']]} onChange={next => { if (next === 'right') setRightVisited(true); setPane(next); }} /></div><FieldBar battle={battle} /></div>
+      <div class="ar-center" ref={boardRef} hidden={pane !== 'center'}><PlayBoard {...p} /></div>
+      {rightVisited && <div class="ar-right-col" hidden={pane !== 'right'}><RightPane {...p} /></div>}
+      <div class="arena-turnbar"><TurnBar {...p} /></div>
       {sheet && sheet.side === 'opp' && battle.opp[sheet.idx] && <OppSheet battle={battle} idx={sheet.idx} ctx={ctx} mut={mut} usage={usage} onClose={() => setSheet(null)} />}
       {sheet && sheet.side === 'me' && battle.my[sheet.idx] && (
         <MonEditor title="この対戦での自分の型" usage={usage} build={battle.my[sheet.idx]}
@@ -69,7 +67,7 @@ export function OppStatTable({battle, idx, forme, onBoosts}) {
   const rg = e => (e[0] === e[1] ? `${e[0]}` : `${e[0]}〜${e[1]}`);
   const mods = new Set();
   for (const r of est.rows) if (r.known && r.byMod) for (const m of Object.keys(r.byMod)) mods.add(Number(m));
-  const all = [[1, '能力Pt 補正なし'], [1.1, '能力Pt 補正↑'], [0.9, '能力Pt 補正↓']].filter(([m]) => mods.has(m));
+  const all = [[1, 'Pt 補正なし'], [1.1, 'Pt 補正↑'], [0.9, 'Pt 補正↓']].filter(([m]) => mods.has(m));
   const estRows = all.length ? all : [[1, '能力Pt']];
   const fmtVal = r => (r.valLo === r.valHi ? `${r.valLo}` : `${r.valLo}〜${r.valHi}`);
   return (

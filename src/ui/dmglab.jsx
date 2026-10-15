@@ -15,6 +15,7 @@ import {Picker, Toggle, TypeChip, Sprite, Empty, cx, fmtPct, rate} from './commo
 import {dmgClass} from './battle.jsx';
 import {DmgBar} from './board.jsx';
 import {outcome} from './play.jsx';
+import {StepRange} from './step-range.jsx';
 
 // タブを切り替えても入力が消えないように、対戦ごと・相手ごとに覚えておく
 const memo = new Map();
@@ -171,10 +172,9 @@ function LabBody({battle, ctx, oi, mi, setOSel, setMSel, crit, setCrit, dir, set
                     {isUp ? '▲' : isDown ? '▼' : '－'}
                   </button>
                 )}
-                <span class="dl-range">
+                <StepRange value={sp[i]} max={SP_MAX} limit={Math.min(SP_MAX, SP_TOTAL - (total - sp[i]))} label={`${STAT_JA[i]}の能力Pt`} onChange={n => setSp(i, n)}>
                   {r.known && <i class="dl-band" style={{left: `${(r.spLo / SP_MAX) * 100}%`, width: `${Math.max(2, ((r.spHi - r.spLo) / SP_MAX) * 100)}%`}} />}
-                  <input type="range" min={0} max={SP_MAX} step={1} value={sp[i]} onInput={e => { setSp(i, Number(e.currentTarget.value)); e.currentTarget.value = String(Math.min(Number(e.currentTarget.value), SP_TOTAL - (total - sp[i]))); }} aria-label={`${STAT_JA[i]}の能力Pt`} />
-                </span>
+                </StepRange>
                 <span class="dl-sp num">{sp[i]}</span>
                 <b class={cx('dl-val num', mod > 1 && 'pos', mod < 1 && 'neg')}>{v}</b>
               </div>

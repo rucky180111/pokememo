@@ -1096,3 +1096,114 @@ select.pl-dd { appearance: none; -webkit-appearance: none; padding-right: 22px; 
 .rank-cell b.pos { color: var(--bad); } .rank-cell b.neg { color: var(--me); } .rank-cell b.diff { text-decoration: underline; }
 .rank-btn { display: block; width: 100%; min-height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); font-size: 13px; line-height: 1; }
 .rank-actions td { text-align: right; padding: 4px; } .rank-actions .btn { margin-left: 4px; }
+
+/* 対戦の操作をまとめ、能力表とランク操作を常時表示する。 */
+.arena, .arena.wide { display: flex; flex-direction: column; gap: 6px; height: auto; min-height: 0; padding: 6px 8px 0; }
+.arena .arena-tabs { margin: 0; }
+.arena .ar-center, .arena.wide .ar-center { height: auto; overflow: visible; padding: 0; }
+.arena .ar-right-col { height: auto; }
+.arena .ar-right, .arena.wide .ar-right { position: static; height: auto; max-height: none; overflow: visible; }
+.arena-turnbar { position: sticky; bottom: var(--nav-h); z-index: 8; }
+.arena-turnbar .turnbar { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 5px 8px; box-shadow: 0 -2px 8px rgba(0,0,0,.08); }
+.arena-turnbar .tb-status { flex: 1 1 auto; gap: 4px; }
+.arena-turnbar .tb-end, .arena-turnbar .tb-skip { min-height: 34px; font-size: 13px; padding: 4px 10px; }
+.arena-turnbar .tb-auto { flex-basis: 100%; font-size: 11px; }
+.arena-turnbar .tb-maybe, .arena-turnbar .tb-exp { flex-basis: 100%; }
+.play { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.pl-field { grid-column: 1 / -1; gap: 6px 12px; padding: 4px 8px; font-size: 12px; }
+.pl { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; }
+.pl-main { gap: 4px; }
+.pl-owner { font-size: 11px; font-weight: 700; color: var(--opp); }
+.pl.me .pl-owner { color: var(--me); }
+.pl-head { gap: 4px; }
+.pl-name { font-size: 16px; }
+.pl-info { gap: 4px 8px; font-size: 12px; }
+.pl-body { display: flex; flex-direction: column; gap: 2px; }
+.pl-body > .scroll-x { width: 100%; }
+.pl-speed-detail { font-size: 11px; width: 100%; }
+.pl-speed-detail summary { cursor: pointer; color: var(--muted); }
+.pl-speed-detail .mp-speed ol { flex-direction: row; flex-wrap: wrap; gap: 2px 8px; }
+.mp-table tbody th { white-space: normal; line-height: 1.15; }
+.mp-table th, .mp-table td { padding: 2px 1px; }
+.mp-table th:first-child, .mp-table td:first-child { width: 52px; }
+.mp-table .rank-cell { padding: 1px; }
+.rank-cell b { line-height: 1.15; font-size: 12px; }
+.rank-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin-top: 1px; }
+.rank-buttons .rank-btn { min-height: 28px; font-size: 15px; font-weight: 700; border-radius: 4px; color: var(--text); }
+.rank-cell b.pos { color: var(--ok); }
+.rank-cell b.neg { color: var(--bad); }
+.rank-btn:disabled, .step-btn:disabled { opacity: .35; }
+.pl-lower { display: flex; flex-direction: column; gap: 4px; }
+.pl-moves { gap: 4px; }
+.pl-mv { min-height: 34px; padding: 3px 6px 3px 11px; flex-direction: row; gap: 3px; font-size: 13px; }
+.pl-mv .mv-nm { flex: 1; width: auto; }
+.pl-mv .pl-pp { align-self: center; margin: 0; font-size: 10px; }
+.pl-state { border: 0; padding: 0; gap: 3px; font-size: 11px; }
+.pl-state .cap { flex-basis: auto; margin: 0; font-size: 11px; }
+.pl-state .tag { padding: 0 4px; font-size: 11px; }
+.pl-suggestions { font-size: 11px; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.pl-suggestions .chips { gap: 3px; }
+.pl-suggestions .chip { min-height: 28px; font-size: 12px; padding: 2px 6px; }
+.pl-side { gap: 5px; }
+.pl-bench { gap: 3px; }
+.pl-swap { width: 34px; height: 34px; font-size: 20px; }
+.pl-bmon { width: 38px; height: 36px; }
+.pl-bmon img { width: 30px; height: 30px; }
+.pl-act { gap: 4px; padding: 6px; border-radius: 8px; }
+.pl-act.hint-box { padding: 4px; font-size: 12px; }
+.pa-h { font-size: 13px; }
+.pa-cancel { margin-left: auto; min-height: 26px; padding: 1px 6px; font-size: 11px; }
+.pa-predictions summary { padding: 2px 0; font-size: 12px; }
+.pl-act > .chips { gap: 4px; align-items: center; }
+.pl-act .chip.sm, .pl-act .toggle.sm { min-height: 28px; padding: 2px 8px; font-size: 12px; }
+.pa-other { position: relative; margin-left: auto; font-size: 12px; }
+.pa-other summary { cursor: pointer; color: var(--muted); padding: 4px; }
+.pa-other[open] { flex-basis: 100%; }
+.pa-other small { color: var(--muted); margin-left: 6px; }
+.pa-hp { align-items: center; gap: 4px; }
+.pa-hp label { flex-direction: row; align-items: center; gap: 5px; font-size: 12px; }
+.pa-hp input { width: 72px; min-height: 30px; padding: 3px 5px; }
+.pa-hp > span { font-size: 12px; }
+.pa-hp .btn { margin-left: auto; min-height: 30px; padding: 2px 8px; }
+.pa-unknown { font-size: 11px; color: var(--muted); }
+.pl-act .btnrow { gap: 5px; }
+.pl-act .btnrow .btn { min-height: 32px; padding: 4px 10px; font-size: 13px; }
+.step-range { display: grid; grid-template-columns: 30px minmax(0, 1fr) 30px; gap: 4px; align-items: center; min-width: 0; }
+.step-btn { min-height: 30px; padding: 0; font-size: 17px; font-weight: 700; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); }
+.step-track { display: flex; align-items: center; position: relative; min-width: 0; }
+.step-track input[type=range] { width: 100%; min-width: 0; margin: 0; position: relative; z-index: 1; }
+.dl-st .step-range { grid-template-columns: 26px minmax(0, 1fr) 26px; gap: 2px; }
+.dl-st .step-btn { min-height: 28px; font-size: 14px; }
+.pl-hp.edit { display: flex; flex-wrap: wrap; }
+.pl-hp.edit .step-range { flex: 1 1 160px; }
+@media (min-width: 760px) {
+  .play { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+}
+@media (min-width: 1000px) {
+  .pl-act.move { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
+  .pl-act.move > * { grid-column: 1 / -1; }
+  .pl-act.move > .pa-h { grid-column: 1; }
+  .pl-act.move > .pa-predictions { grid-column: 2; grid-row: 1; }
+  .pl-act.move > .pa-predictions[open] { grid-column: 1 / -1; grid-row: auto; }
+  .pl-act.move > .pa-hp { grid-column: 1; }
+  .pl-act.move > .step-range { grid-column: 2; }
+}
+@media (max-width: 420px) {
+  .arena-turnbar .tb-status { flex-basis: 100%; }
+  .arena-turnbar .tb-auto { display: none; }
+  .pl-hp > b { font-size: 13px; }
+}
+.battle-head { padding: 4px 8px; }
+.battle-head > .btn { min-height: 28px; padding: 2px 8px; }
+.battle-head .seg.sm button { min-height: 26px; }
+.battle > .tabs button { padding: 7px 10px; }
+.arena-toolbar { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.arena-toolbar .arena-tabs { flex: 0 0 auto; }
+.arena-toolbar .seg button { min-height: 28px; padding: 3px 8px; font-size: 12px; }
+.arena-toolbar .pl-field { flex: 1 1 190px; gap: 3px 8px; min-height: 30px; font-size: 11px; }
+.pl-main { gap: 3px; }
+.pl-info .pl-dd { min-height: 26px; padding: 2px 8px; font-size: 12px; }
+.pl-act .chips, .pl-suggestions .chips { margin: 0; }
+.pl-mv { min-height: 32px; }
+.arena-turnbar .tb-side { border: 0; cursor: pointer; min-height: 28px; font: inherit; font-size: 12px; font-weight: 700; }
+.pl { scroll-margin-top: calc(var(--top-h) + 45px); }

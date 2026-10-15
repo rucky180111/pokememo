@@ -16,7 +16,7 @@ export const STATUS_MOVE = {willowisp: 'brn', thunderwave: 'par', glare: 'par', 
 // 発動すると無くなる持ち物
 const CONSUMED = new Set(['focussash', 'whiteherb', 'powerherb', 'airballoon', 'weaknesspolicy', 'mentalherb', 'redcard', 'ejectbutton', 'ejectpack', 'throatspray', 'boosterenergy', 'roomservice', 'adrenalineorb', 'absorbbulb', 'cellbattery', 'luminousmoss', 'snowball', 'normalgem', 'covertcloak']);
 export const consumable = id => /berry$/.test(id || '') || /gem$/.test(id || '') || CONSUMED.has(id);
-const OUTCOMES = [['hit', '当たった'], ['miss', '外れた'], ['protect', 'まもられた'], ['cant', '行動できず']];
+const OUTCOMES = [['hit', '当たった'], ['miss', '外し'], ['protect', 'まもられた'], ['cant', '行動不能']];
 
 const alive = (b, side) => b.state.sides[side].active.filter(i => i != null && !condOf(b, side, i)?.fainted);
 const maxHPOf = (b, mon) => { const bd = b.my[mon]; return statsOf(currentSpecies(bd, condOf(b, 'me', mon)), bd.sp, bd.nature)[0]; };
@@ -254,7 +254,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
         {megaFormes(battle, side, mon).map((fm, _, arr) => (
           <button class={cx('btn sm mega-btn', f.mega && (f.megaForme || arr[0]) === fm && 'on')} onClick={() => set(f.mega && (f.megaForme || arr[0]) === fm ? {mega: false, megaForme: ''} : {mega: true, megaForme: fm})}>{megaLabel(fm, arr.length > 1)}した</button>
         ))}
-        {wizard && <button class="chip" onClick={() => submit({type: 'move', move: '', outcome: 'cant'})}>行動できず (ひるみ・まひ・ねむり等)</button>}
+        {wizard && <button class="chip" onClick={() => submit({type: 'move', move: '', outcome: 'cant'})}>行動不能 (ひるみ・まひ・ねむり等)</button>}
       </div>
     </>
   );
@@ -400,7 +400,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
       )}
       {(!wizard || step === 'detail') && (
         <div class="btnrow">
-          {onCancel && <button class="btn" onClick={onCancel}>やめる</button>}
+          {onCancel && <button class="btn" onClick={onCancel}>取消</button>}
           {onDelete && <button class="btn danger" onClick={onDelete}>削除</button>}
           <button class="btn primary grow" disabled={!ready} onClick={() => (wizard ? finish() : submit())}>{wizard && (secList(f).length || selfList(f).length) ? '次へ' : submitLabel}</button>
         </div>

@@ -88,16 +88,16 @@ export function inferFromTaken(ctx, oppIdx, myIdx, moveId, damage, opts = {}) {
     }
     mask += ok ? '1' : '0';
   }
-  return summarize(ctx, oppIdx, stat, mask);
+  return {...summarize(ctx, oppIdx, stat, mask), atLeast: !!opts.atLeast};
 }
 
 function summarize(ctx, oppIdx, stat, mask) {
   const cond = ctx.cond('opp', oppIdx);
   const sid = cond.forme && dex.species[cond.forme] ? cond.forme : ctx.build('opp', oppIdx).species;
   const b = dex.species[sid].bs[STAT_KEYS.indexOf(stat)];
-  let lo = Infinity, hi = -Infinity, count = 0;
-  for (let c = 0; c < SPE_COMBOS; c++) if (mask[c] === '1') { const v = statValue(b, comboSP(c), comboMod(c), false); lo = Math.min(lo, v); hi = Math.max(hi, v); count++; }
-  return {stat, mask, count, range: count ? [lo, hi] : null};
+  let lo = Infinity, hi = -Infinity, spLo = 33, spHi = -1, count = 0;
+  for (let c = 0; c < SPE_COMBOS; c++) if (mask[c] === '1') { const v = statValue(b, comboSP(c), comboMod(c), false); lo = Math.min(lo, v); hi = Math.max(hi, v); spLo = Math.min(spLo, comboSP(c)); spHi = Math.max(spHi, comboSP(c)); count++; }
+  return {stat, mask, count, range: count ? [lo, hi] : null, spRange: count ? [spLo, spHi] : null};
 }
 
 /**
@@ -144,7 +144,7 @@ export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts =
       if (ok) { count++; hLo = Math.min(hLo, h); hHi = Math.max(hHi, h); const v = statValue(bs[si], comboSP(c), comboMod(c), false); dLo = Math.min(dLo, v); dHi = Math.max(dHi, v); }
     }
   }
-  return {stat, mask, count, hpRange: count ? [hLo, hHi] : null, defRange: count ? [dLo, dHi] : null};
+  return {stat, mask, count, atLeast: !!opts.atLeast, hpRange: count ? [hLo, hHi] : null, defRange: count ? [dLo, dHi] : null};
 }
 
 // 配分 (性格 + SP) が、これまでの絞り込みと矛盾しないか
@@ -182,7 +182,8 @@ export function applyInference(opp, view, res) {
 function applyMsg(res) {
   const names = {atk: 'こうげき', spa: 'とくこう', def: 'ぼうぎょ', spd: 'とくぼう'};
   const msg = res.range ? `${names[res.stat]}の実数値は ${res.range[0]}〜${res.range[1]}` : `HPの能力ポイント ${res.hpRange[0]}〜${res.hpRange[1]}・${names[res.stat]}の実数値 ${res.defRange[0]}〜${res.defRange[1]}`;
-  return `${msg}。`;
+  const minimum = res.spRange?.[0] > 0 ? `（能力Ptは最低${res.spRange[0]}）` : '';
+  return `${msg}${minimum}。${res.atLeast ? 'ひんし・タスキ時はダメージの下限で判定。' : ''}`;
 }
 export {parseSpread, ALL};
 

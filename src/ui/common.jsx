@@ -1,6 +1,6 @@
 // 共通の UI 部品
 import {createContext} from 'preact';
-import {createPortal} from 'preact/compat';
+import {createPortal, useSyncExternalStore} from 'preact/compat';
 import {useContext, useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {dex, search, TYPE_JA, speciesName, toID} from '../engine/dex.js';
 
@@ -11,8 +11,8 @@ const sheetStack = [];
 export const useApp = () => useContext(AppCtx);
 
 export function useStoreVersion(store) {
-  const [, setV] = useState(0);
-  useEffect(() => store.subscribe(setV), [store]);
+  // 初期ロードが購読開始より先に終わっても、更新を取りこぼさない。
+  return useSyncExternalStore(store.subscribe, () => store.version, () => store.version);
 }
 
 export const cx = (...a) => a.filter(Boolean).join(' ');
@@ -170,7 +170,7 @@ export function Confirm({title, message, okLabel = 'OK', danger, onOk, onClose})
     <Sheet title={title} onClose={onClose}>
       <p class="pad">{message}</p>
       <div class="btnrow pad">
-        <button class="btn" onClick={onClose}>やめる</button>
+        <button class="btn" onClick={onClose}>取消</button>
         <button class={cx('btn', danger ? 'danger' : 'primary')} onClick={() => { onOk(); onClose(); }}>{okLabel}</button>
       </div>
     </Sheet>
