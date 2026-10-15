@@ -11,7 +11,7 @@ export function StatsScreen({initialTeam}) {
   const [teamId, setTeamId] = useState(() => {
     if (initialTeam && store.team(initialTeam)) return initialTeam;
     // いちばん最近の対戦で使った構築を最初に出す
-    const last = store.battles().filter(b => b.teamId && !b.deleted && b.kind !== 'sim').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+    const last = store.battles().filter(b => b.format === fmt && b.teamId && !b.deleted && b.kind !== 'sim').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
     return store.team(last?.teamId)?.id || '';
   });
   const [detail, setDetail] = useState(null);
