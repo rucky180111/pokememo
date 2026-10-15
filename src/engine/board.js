@@ -2,7 +2,7 @@
 import {dex} from './dex.js';
 import {calcDamage, finalSpeed, currentSpecies, currentAbility, defaultHits, newCond, movePriority} from './calc.js';
 import {oppView, oppCond, speedOutlook} from './assume.js';
-import {condOf, buildOf, other, faintedCount, defaultAbilityResolver} from './battle.js';
+import {condOf, buildOf, other, faintedCount, totalFainted, defaultAbilityResolver} from './battle.js';
 import {fitBuild} from './estimate.js';
 
 const WEATHER_ABILITY = {drizzle: 'Rain', drought: 'Sun', sandstream: 'Sand', snowwarning: 'Snow'};
@@ -79,7 +79,7 @@ export function moveState(b, atkSide, atkIdx, defSide, defIdx, moveId) {
   const hitBy = (from, to) => acts.filter(a => a.side === from.side && a.mon === from.mon && a.dmgPct > 0 && (a.target ? a.target.side === to.side && a.target.mon === to.mon : true));
   const me = {side: atkSide, mon: atkIdx}, foe = {side: defSide, mon: defIdx};
   switch (moveId) {
-    case 'lastrespects': { const k = faintedCount(b, atkSide); return k ? {bp: 50 + 50 * k, note: `倒れた味方${k}体`} : null; }
+    case 'lastrespects': { const k = totalFainted(b, atkSide); return k ? {bp: 50 + 50 * k, note: `倒れた回数${k}`} : null; }
     case 'ragefist': { const k = ac.timesAttacked || 0; return k ? {bp: Math.min(350, 50 + 50 * k), note: `攻撃を受けた回数${k}`} : null; }
     case 'stompingtantrum': case 'temperflare': return ac.lastResult && ac.lastResult.n === n - 1 && ac.lastResult.failed ? {bp: 150, note: '前のターンに失敗'} : null;
     case 'avalanche': return hitBy(foe, me).length ? {bp: 120, note: '先に攻撃を受けた'} : null;
@@ -197,8 +197,8 @@ export function attackTable(ctx, atkSide, atkIdx, opts = {}) {
         battery: allyAb.includes('battery'), powerSpot: allyAb.includes('powerspot'), steelySpirit: allyAb.includes('steelyspirit'),
         fairyAura: anyActiveAb.includes('fairyaura') || aAbility === 'fairyaura' || dAbility === 'fairyaura',
         // そうだいしょう: 場に出た時点の倒れた味方の数 (控えは今の数)
-        atkAlliesFainted: atkActive && aCond0.entryFainted != null ? aCond0.entryFainted : faintedCount(b, atkSide),
-        defAlliesFainted: active && dCond.entryFainted != null ? dCond.entryFainted : faintedCount(b, defSide),
+        atkAlliesFainted: atkActive && aCond0.entryFainted != null ? aCond0.entryFainted : totalFainted(b, atkSide),
+        defAlliesFainted: active && dCond.entryFainted != null ? dCond.entryFainted : totalFainted(b, defSide),
       });
     }
     let best = null;

@@ -64,6 +64,8 @@ export const turnNumber = b => (b.turns.length && b.turns[b.turns.length - 1].op
 export const buildOf = (b, side, i) => (side === 'me' ? b.my[i] : b.opp[i]);
 export const condOf = (b, side, i) => b.state.mons[side][i];
 export const faintedCount = (b, side) => b.state.mons[side].filter(c => c.fainted).length;
+// これまでに倒れた回数の合計 (さいきのいのりで復活してまた倒れた分も数える)。おはかまいり・そうだいしょう用
+export const totalFainted = (b, side) => b.state.sides[side].faintTotal ?? faintedCount(b, side);
 
 // 特性が確定していないポケモンの「たぶんこの特性」を返す resolver を差し込める
 // resolver(side, index) -> abilityId ('' なら不明)
@@ -261,7 +263,7 @@ export function sendOut(b, side, slot, monIdx, opts = {}) {
   if (prev != null) leaveField(b, side, prev, {log, resolveAbility: opts.resolveAbility});
   s.active[slot] = monIdx;
   if (monIdx == null) return log;
-  { const c = condOf(b, side, monIdx); if (c?.hero) c.forme = 'palafinhero'; if (c) c.entryFainted = faintedCount(b, side); } // そうだいしょう: 場に出た時点の倒れた味方の数
+  { const c = condOf(b, side, monIdx); if (c?.hero) c.forme = 'palafinhero'; if (c) c.entryFainted = totalFainted(b, side); } // そうだいしょう: 場に出た時点の倒れた味方の数
   // 設置技がある場に出た → ダメージを確認する (ターン入力で聞く)
   { const c = condOf(b, side, monIdx); if (c) c.hazard = !!(s.sr || s.spikes) && !c.fainted; }
   entryHazards(b, side, monIdx, log, opts.resolveAbility);
@@ -600,7 +602,9 @@ export function setHP(b, side, i, hp) {
   const c = condOf(b, side, i);
   if (!c) return;
   c.hp = Math.max(0, Math.min(100, hp));
+  const was = c.fainted;
   c.fainted = c.hp <= 0;
+  if (c.fainted && !was) { const s = b.state.sides[side]; s.faintTotal = (s.faintTotal ?? faintedCount(b, side) - 1) + 1; }
   if (c.fainted) { c.status = ''; c.boosts = emptyBoosts(); }
 }
 

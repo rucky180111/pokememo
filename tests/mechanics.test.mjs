@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {dex} from '../src/engine/dex.js';
-import {newBattle, newTeam, newOpp, normalizeBattle, sendOut, condOf} from '../src/engine/battle.js';
+import {newBattle, newTeam, newOpp, normalizeBattle, sendOut, condOf, setHP} from '../src/engine/battle.js';
 import {boardContext, attackTable, moveState} from '../src/engine/board.js';
 import {addAct, finishTurn, residualCandidates} from '../src/engine/flow.js';
 
@@ -19,7 +19,7 @@ function battle(mine, opp) {
   return nb;
 }
 const dmg = (b, side, idx, move) => attackTable(boardContext(b, usage), side, idx, {only: {def: b.state.sides[side === 'me' ? 'opp' : 'me'].active[0], move}}).targets[0].results[move];
-const faint = (b, side, i) => { const c = condOf(b, side, i); c.hp = 0; c.fainted = true; };
+const faint = (b, side, i) => setHP(b, side, i, 0);
 
 test('おはかまいり: 倒れた味方1体ごとに威力+50', () => {
   const b = battle([B('houndstone', {moves: ['lastrespects']}), B('garchomp'), B('corviknight')], ['garchomp']);
@@ -145,4 +145,15 @@ test('サイコノイズ: 2ターン回復できない (回復技・たべのこ
   addAct(b3, {side: 'opp', type: 'move', move: 'psychicnoise', hpAfter: 70}, usage);
   addAct(b3, {side: 'me', type: 'switch', to: 1}, usage);
   assert.ok(!condOf(b3, 'me', 0).healBlock, '交代で解ける');
+});
+
+test('さいきのいのりで復活してまた倒れた分も、おはかまいり・そうだいしょうに数える', () => {
+  const b = battle([B('houndstone', {moves: ['lastrespects']}), B('garchomp'), B('pawmot', {moves: ['revivalblessing']})], ['hippowdon']);
+  faint(b, 'me', 1);
+  addAct(b, {side: 'me', type: 'move', move: 'revivalblessing', revive: 1}, usage);
+  assert.ok(!condOf(b, 'me', 1).fainted);
+  faint(b, 'me', 1);
+  assert.equal(moveState(b, 'me', 0, 'opp', 0, 'lastrespects').bp, 150, '倒れた回数2 → 威力150');
+  sendOut(b, 'me', 0, 2);
+  assert.equal(condOf(b, 'me', 2).entryFainted, 2, 'そうだいしょうも2体分');
 });
