@@ -99,7 +99,7 @@ test('しめつける・くろいきり・いたみわけ・みちづれ・と�
   assert.equal(condOf(b, 'me', 0).boosts.atk, 0);
   const b2 = battle([B('garchomp', {moves: ['dragonclaw']})], ['gengar']);
   condOf(b2, 'me', 0).hp = 20;
-  addAct(b2, {side: 'me', type: 'move', move: 'painsplit'}, usage);
+  addAct(b2, {side: 'me', type: 'move', move: 'painsplit', observedHp: [{side: 'me', mon: 0, hpAfter: 60}, {side: 'opp', mon: 0, hpAfter: 60}]}, usage);
   assert.ok(condOf(b2, 'me', 0).hp > 20 && condOf(b2, 'opp', 0).hp < 100);
   addAct(b2, {side: 'opp', type: 'move', move: 'destinybond', sameTurn: false}, usage);
   addAct(b2, {side: 'me', type: 'move', move: 'dragonclaw', hpAfter: 0}, usage);

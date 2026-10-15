@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {dex, statsOf} from '../src/engine/dex.js';
+import {dex} from '../src/engine/dex.js';
 import {newBattle, newTeam, newOpp, normalizeBattle, sendOut, condOf, setHP, maxHPOf, applyBoosts, setTerrain} from '../src/engine/battle.js';
 import {addAct, addEvent, endTurn, replay} from '../src/engine/flow.js';
 import effects from '../src/generated/move-effects.json' with {type: 'json'};
@@ -18,21 +18,17 @@ function battle(mine = [B('snorlax')], foes = [B('garchomp')], double = false) {
 const move = (b,id,extra={}) => addAct(b,{side:'me',mon:0,type:'move',move:id,sameTurn:true,...extra});
 const hp = (b,side='me',i=0) => Math.round(condOf(b,side,i).hp * maxHPOf(b,side,i)/100);
 
-test('ちからをすいとる: 下げる前の攻撃・ランクで回復し、やけど・ちからもち・こだわりを掛けない',()=>{
+test('ちからをすいとる: 攻撃ランクを下げ、回復量は自動計算しない',()=>{
  const b=battle([B('garchomp',{sp:[0,32,0,0,0,0],nature:'Adamant',item:'choiceband',ability:'hugepower'})],[B('snorlax')]);
- setHP(b,'opp',0,10); condOf(b,'me',0).boosts.atk=2; condOf(b,'me',0).status='brn';
- const before=condOf(b,'opp',0).hp, atk=statsOf('garchomp',b.my[0].sp,'Adamant')[1]*2;
+ setHP(b,'opp',0,10);condOf(b,'me',0).boosts.atk=2;
  move(b,'strengthsap',{side:'opp'});
- assert.equal(condOf(b,'me',0).boosts.atk,1);
- assert.ok(Math.abs(condOf(b,'opp',0).hp-Math.min(100,before+atk/maxHPOf(b,'opp',0)*100))<1e-9);
+ assert.equal(condOf(b,'me',0).boosts.atk,1);assert.equal(condOf(b,'opp',0).hp,10);assert.ok(condOf(b,'opp',0).hpUnknown);
 });
-test('ちからをすいとる: 自分の回復・見込み表示・再生・HP実測による解除',()=>{
- const b=battle(); setHP(b,'me',0,10); const before=hp(b);
- const log=move(b,'strengthsap');
- assert.equal(hp(b),before+150); assert.equal(condOf(b,'opp',0).boosts.atk,-1);
- assert.ok(condOf(b,'me',0).hpUnknown); assert.match(log.join(' '),/見込み/);
- const after=hp(b); replay(b); assert.equal(hp(b),after);
- addEvent(b,{side:'me',mon:0,kind:'hp',hpAfter:60}); assert.ok(!condOf(b,'me',0).hpUnknown);
+test('ちからをすいとる: 入力した行動後HPを採用し、再生でも維持',()=>{
+ const b=battle();setHP(b,'me',0,10);
+ move(b,'strengthsap',{observedHp:[{side:'me',mon:0,hpAfter:75}]});
+ assert.equal(condOf(b,'me',0).hp,75);assert.equal(condOf(b,'opp',0).boosts.atk,-1);assert.ok(!condOf(b,'me',0).hpUnknown);
+ replay(b);assert.equal(condOf(b,'me',0).hp,75);
 });
 for(const failure of ['miss','protect','cant','healBlock','minimum']) test(`ちからをすいとる: ${failure}で回復しない`,()=>{
  const b=battle();setHP(b,'me',0,10);const before=hp(b);
@@ -41,21 +37,21 @@ for(const failure of ['miss','protect','cant','healBlock','minimum']) test(`ち�
  move(b,'strengthsap', ['miss','protect','cant'].includes(failure)?{[failure]:true}:{});
  assert.equal(hp(b),before); assert.equal(condOf(b,'opp',0).boosts.atk,failure==='minimum'?-6:0);
 });
-for(const ability of ['contrary','defiant','hypercutter','clearbody']) test(`ちからをすいとる: ${ability}でも回復し、攻撃低下の特性を処理`,()=>{
+for(const ability of ['contrary','defiant','hypercutter','clearbody']) test(`ちからをすいとる: ${ability}で攻撃低下を処理し、回復は未確認`,()=>{
  const b=battle(undefined,[B('garchomp',{ability})]);setHP(b,'me',0,10); const before=hp(b);
- move(b,'strengthsap');assert.equal(hp(b),before+150);
+ move(b,'strengthsap');assert.equal(hp(b),before);assert.ok(condOf(b,'me',0).hpUnknown);
  assert.equal(condOf(b,'opp',0).boosts.atk,{contrary:1,defiant:1,hypercutter:0,clearbody:0}[ability]);
 });
 test('ちからをすいとる: おおきなねっこ・ヘドロえき・マジックガード',()=>{
  for(const ooze of [false,true]){
   const b=battle([B('snorlax',{item:'bigroot'})],[B('garchomp',{ability:ooze?'liquidooze':''})]);
   setHP(b,'me',0,90); const before=hp(b);move(b,'strengthsap');
-  assert.equal(hp(b),ooze?before-195:Math.min(maxHPOf(b,'me',0),before+195));
+  assert.equal(hp(b),before);assert.ok(condOf(b,'me',0).hpUnknown);
  }
  const b=battle([B('snorlax',{ability:'magicguard'})],[B('garchomp',{ability:'liquidooze'})]);setHP(b,'me',0,80);const before=hp(b);move(b,'strengthsap');assert.equal(hp(b),before);
 });
 test('ちからをすいとる: マジックミラー・そうしょく・おうごんのからだ',()=>{
- const b=battle([B('garchomp')],[B('snorlax',{ability:'magicbounce'})]);setHP(b,'opp',0,10); move(b,'strengthsap');assert.equal(condOf(b,'me',0).boosts.atk,-1);assert.ok(condOf(b,'opp',0).hp>10);
+ const b=battle([B('garchomp')],[B('snorlax',{ability:'magicbounce'})]);setHP(b,'opp',0,10); move(b,'strengthsap');assert.equal(condOf(b,'me',0).boosts.atk,-1);assert.equal(condOf(b,'opp',0).hp,10);assert.ok(condOf(b,'opp',0).hpUnknown);
  for(const ability of ['sapsipper','goodasgold']) {const b=battle(undefined,[B('garchomp',{ability})]);setHP(b,'me',0,10);const before=hp(b);move(b,'strengthsap');assert.equal(hp(b),before);assert.equal(condOf(b,'opp',0).boosts.atk,ability==='sapsipper'?1:0);}
 });
 for(const [ability,id] of [['waterabsorb','surf'],['dryskin','surf'],['voltabsorb','thunderbolt'],['eartheater','earthquake']]) test(`${ability}: 回復し、攻撃のHP入力・追加効果を適用しない`,()=>{
@@ -131,14 +127,14 @@ for(const layers of [0,1,2,3])test(`のみこむ: たくわえる${layers}回に
 for(const [id,m] of Object.entries(effects).filter(([id,m])=>m.heal&&dex.moves[id].tg==='self'))test(`${id}: データに定義された回復量・行動不能`,()=>{
  const b=battle();setHP(b,'me',0,10);const before=hp(b);move(b,id,{cant:true});assert.equal(hp(b),before);move(b,id);assert.equal(hp(b),Math.min(maxHPOf(b,'me',0),before+Math.floor(maxHPOf(b,'me',0)*m.heal[0]/m.heal[1])));
 });
-for(const [id,m] of Object.entries(effects).filter(([,m])=>m.drain||m.recoil))test(`${id}: 吸収・反動の割合を実HPへ反映`,()=>{
- const b=battle([B('snorlax')],[B('garchomp')]);setHP(b,'me',0,50);const before=hp(b), damage=Math.round(maxHPOf(b,'opp',0)/2), ratio=m.drain||m.recoil;
- const amount=Math.max(1,Math.round(damage*ratio[0]/ratio[1]));move(b,id,{hpAfter:50,selfFx:[m.drain?'drain':'recoil']});assert.equal(hp(b),Math.min(maxHPOf(b,'me',0),Math.max(0,before+(m.drain?amount:-amount))));
+for(const [id,m] of Object.entries(effects).filter(([,m])=>m.drain||m.recoil))test(`${id}: 変動する吸収・反動は入力したHPで記録`,()=>{
+ const b=battle([B('snorlax')],[B('garchomp')]);setHP(b,'me',0,50);const before=hp(b);
+ move(b,id,{hpAfter:50,selfFx:[m.drain?'drain':'recoil']});assert.equal(hp(b),before);assert.ok(condOf(b,'me',0).hpUnknown);move(b,id,{hpAfter:25,selfFx:[m.drain?'drain':'recoil'],observedHp:[{side:'me',mon:0,hpAfter:60}]});assert.equal(condOf(b,'me',0).hp,60);assert.ok(!condOf(b,'me',0).hpUnknown);
 });
-test('吸収: 相手のオボン回復を実ダメージから差し引かない',()=>{
- const b=battle();setHP(b,'me',0,20);const before=hp(b),damage=Math.round(maxHPOf(b,'opp',0)/2);
- move(b,'gigadrain',{hpAfter:75,defItem:{item:'sitrusberry',consumed:true},selfFx:['drain']});assert.equal(hp(b),before+Math.round(damage/2));
+test('吸収: 相手のオボン回復があっても入力した行動後HPをそのまま採用',()=>{
+ const b=battle();setHP(b,'me',0,20);
+ move(b,'gigadrain',{hpAfter:75,defItem:{item:'sitrusberry',consumed:true},selfFx:['drain'],observedHp:[{side:'me',mon:0,hpAfter:70}]});assert.equal(condOf(b,'me',0).hp,70);
 });
-test('吸収: ヘドロえきにもねっこの倍率、マジックガードでは減らない',()=>{
- for(const ability of ['', 'magicguard']){const b=battle([B('snorlax',{ability,item:'bigroot'})],[B('garchomp',{ability:'liquidooze'})]);setHP(b,'me',0,90);const before=hp(b),damage=Math.round(maxHPOf(b,'opp',0)/2);move(b,'gigadrain',{hpAfter:50,selfFx:['ooze']});assert.equal(hp(b),ability?before:before-Math.round(damage/2*5324/4096));}
+test('吸収: ヘドロえきの変動ダメージも未確認で保持、マジックガードでは減らない',()=>{
+ for(const ability of ['', 'magicguard']){const b=battle([B('snorlax',{ability,item:'bigroot'})],[B('garchomp',{ability:'liquidooze'})]);setHP(b,'me',0,90);const before=hp(b);move(b,'gigadrain',{hpAfter:50,selfFx:['ooze']});assert.equal(hp(b),before);assert.equal(!!condOf(b,'me',0).hpUnknown,!ability);}
 });

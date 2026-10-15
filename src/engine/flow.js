@@ -66,7 +66,7 @@ function sleepBlocked(b, side, i, res) {
 }
 // マジックミラーではね返る変化技
 const BOUNCE = new Set(['stealthrock', 'spikes', 'toxicspikes', 'stickyweb', 'yawn', 'taunt', 'encore', 'thunderwave', 'willowisp', 'toxic', 'glare', 'spore', 'sleeppowder', 'stunspore', 'hypnosis', 'leechseed', 'partingshot', 'charm', 'faketears', 'scaryface', 'screech', 'roar', 'whirlwind', 'trick', 'switcheroo', 'soak', 'magicpowder', 'trickortreat', 'forestscurse', 'nobleroar', 'tickle', 'stringshot', 'cottonspore', 'disable', 'torment', 'embargo', 'healblock', 'confuseray', 'swagger', 'sweetkiss', 'teeterdance', 'gastroacid', 'worryseed', 'simplebeam', 'entrainment', 'skillswap', 'poisonpowder', 'lovelykiss', 'sing', 'grasswhistle', 'darkvoid', 'yawn', 'defog', 'memento', 'babydolleyes', 'playnice', 'venomdrench', 'tearfullook', 'captivate', 'meanlook', 'block', 'spiderweb']);
-import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA, WEATHER_ABILITY, TERRAIN_ABILITY, maxHPOf, activeItem, healHP} from './battle.js';
+import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA, WEATHER_ABILITY, TERRAIN_ABILITY, maxHPOf, activeItem, healHP, unknownHP} from './battle.js';
 import {boardContext} from './board.js';
 import {inferFromTaken, inferFromDealt, applyInference, inferable, applyHpConstraint} from './infer-dmg.js';
 import {inferSpeeds} from './infer.js';
@@ -189,10 +189,10 @@ export function endTurn(b, usage, opts = {}) {
   if (opts.incomplete) {
     t.incomplete = true;
     for (const side of ['me', 'opp']) for (const i of b.state.sides[side].active) {
-      if (i != null && !condOf(b, side, i).fainted) condOf(b, side, i).hpUnknown = true;
+      if (i != null && !condOf(b, side, i).fainted && !opts.confirmedHP?.includes(`${side}${i}`)) condOf(b, side, i).hpUnknown = true;
     }
   } else delete t.incomplete;
-  t.end = {incomplete: !!opts.incomplete, noOrder: !!(opts.noOrder || opts.incomplete || t.noOrder), resFirst: opts.resFirst || undefined, hpFacts: opts.hpFacts?.length ? opts.hpFacts : undefined, expiry: opts.expiry?.length ? opts.expiry : undefined, moody: opts.moody?.length ? opts.moody : undefined};
+  t.end = {incomplete: !!opts.incomplete, confirmedHP: opts.confirmedHP?.length ? opts.confirmedHP : undefined, noOrder: !!(opts.noOrder || opts.incomplete || t.noOrder), resFirst: opts.resFirst || undefined, hpFacts: opts.hpFacts?.length ? opts.hpFacts : undefined, expiry: opts.expiry?.length ? opts.expiry : undefined, moody: opts.moody?.length ? opts.moody : undefined};
   t.auto.push(...log);
   b.updatedAt = Date.now();
   return log;
@@ -587,6 +587,15 @@ export function addAct(b, input, usage) {
   }
   autoCureBerries(b, log);
   if (input.selfHpUnknown) condOf(b, side, mon).hpUnknown = true;
+  // 行動後に観測したHPをそのまま採用する。回復量・反動を重ねて足し引きしない。
+  for (const h of input.observedHp || []) {
+    if (!['me', 'opp'].includes(h.side) || !condOf(b, h.side, h.mon) || !Number.isFinite(h.hpAfter)) continue;
+    setHP(b, h.side, h.mon, h.hpAfter);
+    delete condOf(b, h.side, h.mon).hpUnknown;
+    const pending = log.indexOf(`${speciesName(buildOf(b, h.side, h.mon).species)}の行動後HPは未確認`);
+    if (pending >= 0) log.splice(pending, 1);
+    log.push(`${speciesName(buildOf(b, h.side, h.mon).species)}: 行動後HP ${Math.round(h.hpAfter)}%`);
+  }
   if (input.hpUnknown) a.hpUnknown = true;
   a.auto = log;
   a.in = inputCopy(input);
@@ -686,6 +695,10 @@ export function addEvent(b, ev, usage) {
     if (ev.key === 'harvest') cond.itemGone = false; else { cond.status = ''; cond.statusKey = ''; }
     if (side === 'opp' && !build.ability) build.ability = ev.key;
     text = RESIDUAL_JA[ev.key];
+  }
+  else if (ev.kind === 'residual' && residualNeedsHP(b, side, mon, ev.key)) {
+    unknownHP(b, side, mon, log);
+    text = `${RESIDUAL_JA[ev.key]}: ターン終了後HPを確認`;
   }
   else if (ev.kind === 'residual') {
     const r = residualDelta(b, side, mon, ev.key);
@@ -863,6 +876,7 @@ export function revealIllusion(b, usage, zIdx) {
     if (a.side === 'opp' && inp.mon === x) { inp.mon = zIdx; n++; }
     if (a.side === 'opp' && a.type !== 'event' && inp.mon == null && a.mon === x) { inp.mon = zIdx; n++; }
     for (const change of inp.changes || []) if (change.side === 'opp' && change.mon === x) { change.mon = zIdx; n++; }
+    for (const h of inp.observedHp || []) if (h.side === 'opp' && h.mon === x) { h.mon = zIdx; n++; }
     if (inp.target?.side === 'opp' && inp.target.mon === x) { inp.target = {...inp.target, mon: zIdx}; n++; }
   };
   if (!from) {
@@ -928,19 +942,14 @@ function residualFrac(b, side, mon, key) {
 }
 
 // 1回分の変化量 {pct: HP割合の変化, hp: 自分なら実数の変化}。満タンで回復しないときは null
+function residualNeedsHP(b, side, mon, key) {
+  return key === 'leechheal' || (key === 'wish' && b.state.sides[side].wish?.from !== mon);
+}
 function residualDelta(b, side, mon, key, hpNow) {
   const cond = condOf(b, side, mon), build = buildOf(b, side, mon);
   const cur = hpNow ?? cond?.hp;
   if (!cond || cond.fainted || cur <= 0) return null;
-  if (key === 'leechheal') {
-    // やどりぎのタネを植えた相手から吸い取った分だけ回復する
-    const fs = other(side), fm = b.state.sides[fs].active.find(i => i != null && condOf(b, fs, i)?.seeded && !condOf(b, fs, i)?.fainted);
-    if (fm == null || cur >= 100) return null;
-    const drain = Math.max(1, Math.floor(maxHPOf(b, fs, fm) / 8));
-    const myMax = maxHPOf(b, side, mon);
-    if (side === 'me') { const now = Math.round((cur * myMax) / 100); const d = Math.min(myMax - now, drain); return {pct: (d / myMax) * 100, hp: d}; }
-    return {pct: Math.min(100 - cur, (drain / myMax) * 100)};
-  }
+  if (residualNeedsHP(b, side, mon, key)) return null;
   const f = residualFrac(b, side, mon, key);
   if (!f || (f > 0 && cur >= 100)) return null;
   if (side === 'me') {
@@ -983,6 +992,10 @@ export function residualCandidates(b, usage) {
       let simHp = unknownHit ? 50 : cond.hp;
       const blocked = (cond.healBlock || 0) >= (openTurn(b)?.n ?? turnNumber(b));
       const push = (key, checked) => {
+        if (residualNeedsHP(b, side, mon, key)) {
+          if (!blocked && (simHp < 100 || cond.hpUnknown)) out.push({side, mon, key, label: `${RESIDUAL_JA[key]} (HP入力)`, pct: 0, hp: 0, checked, manualHP: true});
+          return;
+        }
         const r = residualDelta(b, side, mon, key, simHp);
         if (!r || (blocked && r.pct > 0)) return;
         const ch = checked || already.has(key);
@@ -1039,6 +1052,7 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete
   for (const [k, val] of Object.entries(finalHp)) {
     if (val == null || !Number.isFinite(val)) continue;
     const side = k.startsWith('me') ? 'me' : 'opp', mon = Number(k.replace(/^(me|opp)/, ''));
+    if (residual.some(r => r.side === side && r.mon === mon && residualNeedsHP(b, side, mon, r.key))) continue;
     const act = [...t.acts].reverse().find(a => a.type === 'move' && a.in?.hpUnknown && a.target?.side === side && a.target?.mon === mon);
     if (!act) continue;
     let h = val;
@@ -1051,7 +1065,7 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete
   // やどりぎのタネの回復量 (自分が回復した実数) を控える
   const hpFacts = [];
   const leech = residual.find(r => r.side === 'me' && r.key === 'leechheal');
-  if (leech && finalHp[`me${leech.mon}`] != null) {
+  if (leech && finalHp[`me${leech.mon}`] != null && !condOf(b, 'me', leech.mon)?.hpUnknown && activeItem(b, 'me', leech.mon) !== 'bigroot') {
     const bd = buildOf(b, 'me', leech.mon), c = condOf(b, 'me', leech.mon);
     const max = statsOf(currentSpecies(bd, c), bd.sp, bd.nature)[0];
     let hpReal = Math.round((c.hp * max) / 100);
@@ -1079,7 +1093,8 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete
     // 相手は表示 (整数%) をそのまま正とする (次の推定で表示の値が要るため)
     if (c && !c.fainted && (c.hpUnknown || (side === 'me' ? Math.abs(c.hp - val) > 0.7 : Math.abs(c.hp - val) > 1e-6))) log.push(...addEvent(b, {kind: 'hp', side, mon, hpAfter: val, note: 'ターン終了後に確認'}, usage));
   }
-  log.push(...endTurn(b, usage, {noOrder, incomplete, resFirst, hpFacts, expiry, moody}));
+  const confirmedHP = Object.entries(finalHp).filter(([, value]) => Number.isFinite(value)).map(([key]) => key);
+  log.push(...endTurn(b, usage, {noOrder, incomplete, confirmedHP, resFirst, hpFacts, expiry, moody}));
   return log;
 }
 
@@ -1395,8 +1410,15 @@ function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a},
       }
     }
     setHP(b, side, mon, hpAfter);
+    delete condOf(b, side, mon).hpUnknown;
   } else {
-    // HPを入れなかった: 分かる範囲で計算する (相手の最大HPは見込み)
+    // ダメージ依存の変化は観測値で記録する。未入力なら以前のHPを保ち、未確認にする。
+    const variable = fx.some(k => ['drain', 'ooze', 'shellbell', 'innards'].includes(k) || (k === 'recoil' && !HALF_RECOIL.has(move)));
+    if (variable) {
+      unknownHP(b, side, mon, log);
+      a.selfFx = fx;
+      return;
+    }
     const max = maxHPOf(b, side, mon);
     let h = Math.round((before / 100) * max);
     for (const st of steps) if (st) h = Math.max(0, stepHp(st, h, max));

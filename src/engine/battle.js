@@ -86,6 +86,12 @@ export function healHP(b, side, i, amount, {log = [], label = '回復'} = {}) {
   if (c.hp !== before) log.push(`${label}: ${speciesName(buildOf(b, side, i).species)} HP ${Math.round(before)}% → ${Math.round(c.hp)}%`);
   return c.hp !== before;
 }
+export function unknownHP(b, side, i, log = []) {
+  const c = condOf(b, side, i);
+  if (!c || c.fainted) return;
+  c.hpUnknown = true;
+  log.push(`${speciesName(buildOf(b, side, i).species)}の行動後HPは未確認`);
+}
 
 // 特性が確定していないポケモンの「たぶんこの特性」を返す resolver を差し込める
 // resolver(side, index) -> abilityId ('' なら不明)
@@ -498,20 +504,10 @@ export function applyMoveEffects(b, act, opts = {}) {
     if (foes.length === 1) targets = [{side: foe, mon: foes[0]}];
   }
 
-  // ちからをすいとる: ランクを下げる前の攻撃実数値で回復。やけど・持ち物・特性の攻撃倍率は含まない。
+  // 相手の攻撃で変わる回復量は計算せず、観測した行動後HPを入力する。
   if (move === 'strengthsap' && tcond && !tcond.fainted) {
     if ((tcond.boosts.atk || 0) <= -6) { log.push('ちからをすいとる: 相手のこうげきが最低なので失敗'); return log; }
-    const tb = opts.build?.(tgtRef.side, tgtRef.mon) || buildOf(b, tgtRef.side, tgtRef.mon);
-    const stage = tcond.boosts.atk || 0;
-    const raw = statsOf(currentSpecies(tb, tcond), tb.sp, tb.nature)[1];
-    const attack = Math.floor(raw * (stage >= 0 ? (2 + stage) / 2 : 2 / (2 - stage)));
-    const root = activeItem(b, side, mon) === 'bigroot' ? 5324 / 4096 : 1;
-    const amount = Math.max(1, Math.ceil(attack * root - 0.5));
-    if (res(b, tgtRef.side, tgtRef.mon) === 'liquidooze') {
-      if (userAb !== 'magicguard') setHP(b, side, mon, condOf(b, side, mon).hp - amount / maxHPOf(b, side, mon) * 100);
-      log.push('ヘドロえき: ちからをすいとるの回復量がダメージになった');
-    } else healHP(b, side, mon, amount, {log, label: 'ちからをすいとる'});
-    if (tgtRef.side === 'opp') { condOf(b, side, mon).hpUnknown = true; log.push('回復量は相手のこうげきの見込みから計算。実際のHPはHP欄で修正できます'); }
+    if (!(res(b, tgtRef.side, tgtRef.mon) === 'liquidooze' && userAb === 'magicguard')) unknownHP(b, side, mon, log);
   }
   const data = moveEffects[move];
   const eff = MOVE_BOOSTS[move] || (data?.boosts ? (mv.tg === 'self' ? B(data.boosts) : B(null, data.boosts)) : data?.selfBoosts ? B(data.selfBoosts) : null);
@@ -571,12 +567,8 @@ export function applyMoveEffects(b, act, opts = {}) {
       log.push(`${moveName(move)}: ランク変化を入れ替えた`);
     }
     if (move === 'painsplit' && !tc.fainted) {
-      // いたみわけ: お互いのHPの実数を足して半分ずつ (相手の最大HPは見込み)
-      const mx = (sd, i) => { const bb = buildOf(b, sd, i), cc = condOf(b, sd, i); return statsOf(currentSpecies(bb, cc), sd === 'me' ? bb.sp : [16, 0, 0, 0, 0, 0], sd === 'me' ? bb.nature : 'Serious')[0]; };
-      const ma = mx(side, mon), mt = mx(t.side, t.mon);
-      const avg = Math.floor((Math.round((uc.hp * ma) / 100) + Math.round((tc.hp * mt) / 100)) / 2);
-      uc.hp = Math.min(100, (avg / ma) * 100); tc.hp = Math.min(100, (avg / mt) * 100);
-      log.push(`いたみわけ: HP ${Math.round(uc.hp)}% / ${Math.round(tc.hp)}%`);
+      unknownHP(b, side, mon, log);
+      unknownHP(b, t.side, t.mon, log);
     }
     if (move === 'roleplay') { const ta = res(b, t.side, t.mon); if (ta) { uc.abilityChanged = ta; log.push(`なりきり: ${abilityName(ta)}になった`); } }
     if (move === 'corrosivegas' && !tc.itemGone) { tc.itemGone = true; log.push(`ふしょくガス: ${tn}の持ち物が使えなくなった`); }

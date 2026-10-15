@@ -8046,7 +8046,6 @@
           "onTryHeal"
         ],
         "engineReferences": [
-          "src/engine/battle.js",
           "src/engine/flow.js"
         ]
       },

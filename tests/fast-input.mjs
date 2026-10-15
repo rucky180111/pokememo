@@ -110,6 +110,7 @@ try {
     check(await opp.getByLabel('残りHP', {exact:true}).inputValue(), '99', '自分の残りHPを実数で1減らす');
     await opp.getByRole('button', {name:'残りHPの調整を1増やす', exact:true}).click();
     check(await opp.getByLabel('残りHP', {exact:true}).inputValue(), '100', '自分の残りHPを実数で1増やす');
+    await opp.getByLabel('残りHP', {exact:true}).fill('');
     await opp.getByRole('button', {name:'HP不明で記録'}).click();
     let saved = await state();
     check(saved.turns[0].acts[1].hpUnknown, true, 'HP不明でも行動を記録');
