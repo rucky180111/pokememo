@@ -12,6 +12,7 @@ import {DmgBar} from './board.jsx';
 import {PredictTab} from './analysis.jsx';
 import {PlayBoard, TurnBar} from './play.jsx';
 import {DamageLab} from './dmglab.jsx';
+import {BoostRow} from './boostrow.jsx';
 import {dispOf} from '../engine/flow.js';
 
 const alive = (battle, side) => battle.state.sides[side].active.filter(i => i != null && !condOf(battle, side, i)?.fainted);
@@ -58,7 +59,7 @@ function RightPane(props) {
 }
 
 /** 相手の能力表 (中央の盤面と同じもの)。相手の詳細シートでも使う */
-export function OppStatTable({battle, idx, forme}) {
+export function OppStatTable({battle, idx, forme, onBoosts}) {
   const opp = battle.opp[idx];
   const raw0 = condOf(battle, 'opp', idx) || {boosts: {}};
   const raw = forme ? {...raw0, forme} : raw0;
@@ -87,7 +88,7 @@ export function OppStatTable({battle, idx, forme}) {
             })}
           </tr>
         ))}
-        <tr><th>能力上昇</th><td></td>{BOOST_KEYS.map(k => { const v = raw.boosts?.[k] || 0; return <td class={cx('num rankv', v > 0 && 'pos', v < 0 && 'neg')}>{v > 0 ? `+${v}` : v}</td>; })}</tr>
+        <BoostRow boosts={raw.boosts} onSave={onBoosts} />
         <tr class="real"><th>実数値</th>
           {STAT_KEYS.map((k, i) => {
             const st = raw.boosts?.[k] || 0;

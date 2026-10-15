@@ -545,7 +545,7 @@ export function addEvent(b, ev, usage) {
   const res = boardContext(b, usage).strictAbility;
   const log = [];
   let text = '';
-  const needMon = ['item', 'hp', 'status', 'boost', 'ability', 'mega', 'faint', 'residual', 'hazard'].includes(ev.kind);
+  const needMon = ['item', 'hp', 'status', 'boost', 'boosts', 'ability', 'mega', 'faint', 'residual', 'hazard'].includes(ev.kind);
   if (needMon && !cond) return ['場にポケモンがいません'];
   if (ev.kind === 'item') {
     if (side === 'opp' && ev.item) build.item = ev.item;
@@ -600,6 +600,16 @@ export function addEvent(b, ev, usage) {
     return [text, ...log];
   }
   else if (ev.kind === 'status') { cond.status = ev.status || ''; cond.toxicCounter = 1; text = STATUS_JA[ev.status || '']; }
+  else if (ev.kind === 'boosts') {
+    // 能力ランクを手で合わせる (ムラっけ・特性・持ち物など、自動で入らなかった変化)
+    const diffs = [];
+    for (const [k, v] of Object.entries(ev.set || {})) {
+      const nv = Math.max(-6, Math.min(6, Number(v) || 0)), ov = cond.boosts[k] || 0;
+      if (nv !== ov) diffs.push(`${STAT_JA[k]} ${nv - ov > 0 ? '+' : ''}${nv - ov} (→${nv > 0 ? '+' : ''}${nv})`);
+      cond.boosts[k] = nv;
+    }
+    text = diffs.length ? `能力ランク: ${diffs.join('、')}` : '能力ランク (変化なし)';
+  }
   else if (ev.kind === 'boost') { applyBoosts(b, side, mon, {[ev.stat]: ev.delta}, {log: [], resolveAbility: () => ''}); text = `${STAT_JA[ev.stat]} ${ev.delta > 0 ? '+' : ''}${ev.delta} (→${cond.boosts[ev.stat] > 0 ? '+' : ''}${cond.boosts[ev.stat]})`; }
   else if (ev.kind === 'ability') { if (side === 'opp') build.ability = ev.ability; text = `特性 ${abilityName(ev.ability)} 判明`; }
   else if (ev.kind === 'mega') { megaEvolve(b, side, mon, ev.forme || null, {log, resolveAbility: res}); text = 'メガシンカ'; }

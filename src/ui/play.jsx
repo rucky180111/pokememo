@@ -14,6 +14,7 @@ import {speedOutlook} from '../engine/assume.js';
 import {finalSpeed} from '../engine/calc.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, Confirm, cx, fmtPct, rate} from './common.jsx';
 import {OppStatTable} from './arena.jsx';
+import {BoostRow} from './boostrow.jsx';
 import {MegaButtons, EventForm, STATUS_MOVE, STATUS_OPTS, consumable} from './turn.jsx';
 
 const SIDE_JA = {me: '自分', opp: '相手'};
@@ -21,7 +22,6 @@ const SIDE_JA = {me: '自分', opp: '相手'};
 const saveRef = {current: null};
 const FLAGS = [['reflect', 'リフレクター'], ['lightScreen', 'ひかりのかべ'], ['auroraVeil', 'オーロラベール'], ['tailwind', 'おいかぜ'], ['sr', 'ステルスロック'], ['stickyWeb', 'ねばねばネット']];
 const ST_JA = Object.fromEntries(STATUSES);
-const MOODY_KEYS = ['atk', 'def', 'spa', 'spd', 'spe'];
 const living = (b, side) => b.state.sides[side].active.filter(i => i != null && !condOf(b, side, i)?.fainted);
 const maxHPOf = (b, mon) => { const bd = b.my[mon]; return statsOf(currentSpecies(bd, condOf(b, 'me', mon)), bd.sp, bd.nature)[0]; };
 const nameOf = (b, side, i) => speciesName(currentSpecies(buildOf(b, side, i), condOf(b, side, i)));
@@ -220,6 +220,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
   };
   const setOpp = fn => mut(b => { fn(b.opp[mon]); if (canReplay(b)) replay(b, usage); });
   const abil = currentAbility(build, raw);
+  const setBoosts = set => { let log = []; mut(b => { log = addEvent(b, {kind: 'boosts', side, mon, set}, usage); }); toast(log[0] || '記録しました'); };
   // イリュージョン: 相手のパーティにゾロアークがいれば、化けていた可能性
   const zoro = side === 'opp' ? battle.opp.map((o, i) => ({o, i})).find(x => /^zoroark/.test(x.o.species) && x.i !== mon && !condOf(battle, 'opp', x.i)?.fainted) : null;
   const [askZoro, setAskZoro] = useState(false);
@@ -254,7 +255,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
       </div>
       <HpBar side={side} mon={mon} battle={battle} raw={raw} max={myMax} targeted={targeted} setAct={setAct} mut={mut} usage={usage} />
       <div class="pl-body">
-        <div class="scroll-x">{side === 'opp' ? <OppStatTable battle={battle} idx={mon} forme={megaPrev} /> : <MyStatTable build={build} raw={raw} sid={sid} />}</div>
+        <div class="scroll-x">{side === 'opp' ? <OppStatTable battle={battle} idx={mon} forme={megaPrev} onBoosts={raw.fainted ? null : setBoosts} /> : <MyStatTable build={build} raw={raw} sid={sid} onBoosts={raw.fainted ? null : setBoosts} />}</div>
         {side === 'opp' && <SpeedBox battle={battle} ctx={ctx} usage={usage} mon={mon} raw={raw} />}
       </div>
       <div class="pl-lower">
@@ -283,7 +284,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
   );
 }
 
-function MyStatTable({build, raw, sid}) {
+function MyStatTable({build, raw, sid, onBoosts}) {
   const s = dex.species[sid];
   const st = statsOf(sid, build.sp, build.nature);
   return (
@@ -292,7 +293,7 @@ function MyStatTable({build, raw, sid}) {
       <tbody>
         <tr><th>種族値</th>{s.bs.map(v => <td class="num">{v}</td>)}</tr>
         <tr class="est"><th>能力Pt</th>{build.sp.map(v => <td class="num">{v}</td>)}</tr>
-        <tr><th>能力上昇</th><td></td>{BOOST_KEYS.map(k => { const v = raw.boosts?.[k] || 0; return <td class={cx('num rankv', v > 0 && 'pos', v < 0 && 'neg')}>{v > 0 ? `+${v}` : v}</td>; })}</tr>
+        <BoostRow boosts={raw.boosts} onSave={onBoosts} />
         <tr class="real"><th>実数値</th>
           {STAT_KEYS.map((k, i) => {
             const b = raw.boosts?.[k] || 0;
@@ -588,18 +589,14 @@ export function TurnBar({battle, ctx, mut, usage, toast}) {
   const [exp, setExp] = useState({});
   const [ev, setEv] = useState(false);
   const [keep, setKeep] = useState(false);
-  const [moody, setMoody] = useState({});
-  // ムラッケ: ターンの終わりに どれかが↑2・別のどれかが↓1 (どれかを選ぶ)
-  const moodyMons = t ? ['me', 'opp'].flatMap(side => battle.state.sides[side].active.filter(i => i != null && !condOf(battle, side, i)?.fainted && ctx.strictAbility(battle, side, i) === 'moody').map(mon => ({side, mon}))) : [];
   const lostSide = ['opp', 'me'].find(side => faintedCount(battle, side) >= pickCount(battle.format));
   const sure = cands.filter(c => c.checked);
   const unsure = cands.filter(c => !c.checked);
   const keyOf = c => `${c.side}${c.mon}${c.key}`;
   const end = () => {
     let log = [];
-    mut(b => { log = finishTurn(b, usage, {residual: [...sure, ...unsure.filter(c => maybe[keyOf(c)])], expiry: expiries.filter(x => exp[x.key] != null).map(x => ({key: x.key, ended: exp[x.key], n: x.n})),
-      moody: moodyMons.map(m => ({...m, ...moody[`${m.side}${m.mon}`]})).filter(m => m.up || m.down)}) || []; });
-    setMaybe({}); setExp({}); setMoody({});
+    mut(b => { log = finishTurn(b, usage, {residual: [...sure, ...unsure.filter(c => maybe[keyOf(c)])], expiry: expiries.filter(x => exp[x.key] != null).map(x => ({key: x.key, ended: exp[x.key], n: x.n}))}) || []; });
+    setMaybe({}); setExp({});
     toast(log.length ? log[log.length - 1] : 'ターンを終えました');
   };
   // 1つ戻す: ターンを終えた直後なら「ターン終了」を取り消して、そのターンの入力に戻る。
@@ -638,16 +635,6 @@ export function TurnBar({battle, ctx, mut, usage, toast}) {
       {expiries.map(x => (
         <div class="tb-exp"><span>{x.label} 終わった?</span><Seg small value={exp[x.key] == null ? '' : exp[x.key] ? 'y' : 'n'} options={[['', '—'], ['y', '終わった'], ['n', '続く']]} onChange={v => setExp({...exp, [x.key]: v === '' ? null : v === 'y'})} /></div>
       ))}
-      {moodyMons.map(m => {
-        const k = `${m.side}${m.mon}`, v = moody[k] || {};
-        const opts = [['', '—'], ...MOODY_KEYS.map(x => [x, STAT_JA[STAT_KEYS.indexOf(x)]])];
-        return (
-          <div class="tb-exp tb-moody"><span>{SIDE_JA[m.side]}{nameOf(battle, m.side, m.mon)} ムラッケ</span>
-            <span class="tb-mrow">↑2<Seg small value={v.up || ''} options={opts} onChange={x => setMoody({...moody, [k]: {...v, up: x || undefined}})} /></span>
-            <span class="tb-mrow">↓1<Seg small value={v.down || ''} options={opts} onChange={x => setMoody({...moody, [k]: {...v, down: x || undefined}})} /></span>
-          </div>
-        );
-      })}
       <button class="btn primary tb-end" disabled={!t || !doneMe || !doneOpp} onClick={end}>ターン終了</button>
       {ev && <Sheet title="その他の変化" onClose={() => setEv(false)} wide><EventForm battle={battle} mut={mut} usage={usage} toast={m => { toast(m); setEv(false); }} /></Sheet>}
     </div>

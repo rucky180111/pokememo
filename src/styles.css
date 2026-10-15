@@ -1080,3 +1080,10 @@ select.pl-dd { appearance: none; -webkit-appearance: none; padding-right: 22px; 
 .dl-v { font-weight: 700; font-size: 12px; white-space: nowrap; background: transparent !important; color: var(--text) !important; }
 .dl-ko { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); }
 .dl-ko.sure { color: var(--bad); font-weight: 700; } .dl-ko.maybe { color: #c26a00; font-weight: 700; }
+.rank-edit { border: 0; background: none; padding: 0; font: inherit; font-weight: inherit; color: var(--accent); text-decoration: underline dotted; }
+.rank-editing td.rank-cell { padding: 0 1px; }
+.rank-cell { text-align: center; }
+.rank-cell b { display: block; line-height: 1.3; }
+.rank-cell b.pos { color: var(--bad); } .rank-cell b.neg { color: var(--me); } .rank-cell b.diff { text-decoration: underline; }
+.rank-btn { display: block; width: 100%; min-height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); font-size: 13px; line-height: 1; }
+.rank-actions td { text-align: right; padding: 4px; } .rank-actions .btn { margin-left: 4px; }

@@ -216,6 +216,18 @@ check(b.state.mons.opp[1].hp === 20 && !b.state.mons.opp[1].itemGone, `1つ戻�
 await pane('盤面').catch(() => {});
 await shot(page, 'arena-center');
 check(await oppP.locator('.mp-table tbody tr').count() >= 4, '相手の表に 種族値/能力Pt/能力上昇/実数値');
+{
+  const rank = () => oppP.locator('.mp-table .rankv').first().innerText();
+  const before = Number((await rank()).replace('+', ''));
+  await oppP.locator('.rank-edit').click();
+  await oppP.locator('.rank-cell').first().locator('.rank-btn').first().click();
+  await oppP.locator('.rank-cell').first().locator('.rank-btn').first().click();
+  await oppP.locator('.rank-actions').getByRole('button', {name: '記録', exact: true}).click();
+  const after = Number((await rank()).replace('+', ''));
+  check(after === before + 2, `能力ランクを表から直接入力できる (${before} → ${after})`);
+  await page.getByRole('button', {name: '1つ戻す'}).first().click();
+  check(Number((await rank()).replace('+', '')) === before, '1つ戻すで元に戻る');
+}
 check(await oppP.locator('.mp-speed li').count() >= 5, '素早さ一覧に自分の位置が入る');
 // 交代: ⇄ → アイコン → 確定 (いかくが入る)
 await meP.locator('.pl-swap').click();
