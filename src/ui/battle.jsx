@@ -1,5 +1,5 @@
 // 対戦画面: 見せ合い・盤面・ダメージ・素早さ・予測・ログ
-import {useEffect, useMemo, useState} from 'preact/hooks';
+import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName} from '../engine/dex.js';
 import {clone, normalizeBattle, newOpp, describeAct} from '../engine/battle.js';
 import {boardContext} from '../engine/board.js';
@@ -8,11 +8,13 @@ import {useApp, Sheet, Picker, Seg, TypeChip, Empty, Confirm, cx, rate} from './
 import {MonEditor} from './teams.jsx';
 import {SelectTab} from './select.jsx';
 import {Arena, OppStatTable} from './arena.jsx';
+import {DamageLab} from './dmglab.jsx';
+import {TurnBar, FieldBar} from './play.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
-import {DamageTab} from './analysis.jsx';
+import {DamageTab, PredictTab} from './analysis.jsx';
 import {BattleLog} from './turn.jsx';
 
-const TABS = [['setup', '① 選出'], ['board', '② 対戦'], ['dmg', '③ ダメージ計算']];
+const TABS = [['setup', '選出'], ['board', '盤面'], ['dmg', 'ダメージ'], ['log', 'ログ'], ['stat', '傾向']];
 const RESULT_OPTS = [['', '未決'], ['win', '勝ち'], ['lose', '負け'], ['draw', '引分']];
 
 function useWide() {
@@ -36,6 +38,11 @@ export function BattleScreen({id}) {
   const [visited, setVisited] = useState(() => [initialTab]);
   const setTab = next => { setVisited(prev => prev.includes(next) ? prev : [...prev, next]); selectTab(next); };
   const [confirm, setConfirm] = useState(false);
+  const bodyRef = useRef(null);
+  const focusSide = side => {
+    setTab('board');
+    requestAnimationFrame(() => bodyRef.current?.querySelector(`.pl.${side}`)?.scrollIntoView({block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'}));
+  };
   const usage = battle ? store.state.usage[battle.format] : null;
   const ctx = useMemo(() => (battle ? boardContext(battle, usage) : null), [battle, usage]);
   if (!battle) return <div class="page"><Empty>この対戦は見つかりません。</Empty><button class="btn" onClick={() => nav('#/battles')}>対戦一覧へ</button></div>;
@@ -49,12 +56,14 @@ export function BattleScreen({id}) {
     store.saveBattle(b);
     return out;
   };
-  const props = {battle, ctx, mut, usage, setTab, toast, onDelete: () => setConfirm(true)};
+  const props = {battle, ctx, mut, usage, setTab, toast, focusSide, onDelete: () => setConfirm(true)};
   const body = t => {
     switch (t) {
       case 'setup': return <SelectTab {...props} />;
       case 'board': return <Arena {...props} wide={wide} />;
-      case 'dmg': return <DamageTab {...props} />;
+      case 'dmg': return <div class="page-in damage-workspace"><DamageLab {...props} /><details class="damage-matrix"><summary>全体のダメージ表</summary><DamageTab {...props} /></details></div>;
+      case 'log': return <LogTab {...props} />;
+      case 'stat': return <div class="page-in"><PredictTab {...props} /></div>;
       default: return null;
     }
   };
@@ -74,7 +83,9 @@ export function BattleScreen({id}) {
           <button role="tab" aria-selected={tab === k} class={cx(tab === k && 'on')} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
-      <div class="battle-body">{visited.map(t => <div key={t} hidden={tab !== t}>{body(t)}</div>)}</div>
+      {tab !== 'setup' && <div class="battle-field"><FieldBar battle={battle} /></div>}
+      <div class="battle-body" ref={bodyRef}>{visited.map(t => <div key={t} hidden={tab !== t}>{body(t)}</div>)}</div>
+      <div class="arena-turnbar" hidden={tab === 'setup'}><TurnBar {...props} /></div>
       {confirm && <Confirm title="対戦を削除" message="この対戦の記録を削除します。元に戻せません。" okLabel="削除する" danger
         onOk={async () => { await store.deleteBattle(battle.id); nav('#/battles'); }} onClose={() => setConfirm(false)} />}
     </div>
@@ -106,7 +117,7 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
   const megas = s.megas || [];
   // 持ち物の率は、通常の姿とメガの使用率で重みづけ済み (メガストーンが 100% にならない)
   const allItemRank = itemRank;
-  const usedInLog = battle.pick.opp.includes(idx) || battle.state.sides.opp.active.includes(idx) || battle.turns.some(t => t.acts.some(a => (a.side === 'opp' && (a.mon === idx || a.to === idx)) || (a.target?.side === 'opp' && a.target.mon === idx)));
+  const usedInLog = battle.pick.opp.includes(idx) || battle.state.sides.opp.active.includes(idx) || battle.turns.some(t => t.acts.some(a => (a.side === 'opp' && (a.mon === idx || a.to === idx)) || (a.target?.side === 'opp' && a.target.mon === idx) || a.in?.changes?.some(x => x.side === 'opp' && x.mon === idx)));
   return (
     <Sheet title={`相手の${speciesName(o.species)}`} onClose={onClose} wide>
       <div class="editor">

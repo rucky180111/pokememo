@@ -1,56 +1,26 @@
 // 対戦フェーズ: 横幅があれば自分と相手の盤面を横並びにする。ターン操作は共通。
-import {useMemo, useRef, useState} from 'preact/hooks';
-import {dex, speciesName, abilityName, moveName, STAT_JA, STAT_KEYS} from '../engine/dex.js';
-import {BOOST_KEYS, currentSpecies, currentAbility} from '../engine/calc.js';
+import {useMemo, useState} from 'preact/hooks';
+import {dex, speciesName, STAT_JA, STAT_KEYS} from '../engine/dex.js';
+import {currentSpecies} from '../engine/calc.js';
 import {condOf} from '../engine/battle.js';
-import {attackTable} from '../engine/board.js';
-import {estimateStats, scenarioBuild} from '../engine/estimate.js';
-import {Seg, Toggle, TypeChip, Empty, cx, fmtPct, rate} from './common.jsx';
-import {OppSheet, dmgClass, LogTab} from './battle.jsx';
+import {estimateStats} from '../engine/estimate.js';
+import {cx} from './common.jsx';
+import {OppSheet} from './battle.jsx';
 import {MonEditor} from './teams.jsx';
-import {DmgBar} from './board.jsx';
-import {PredictTab} from './analysis.jsx';
-import {PlayBoard, TurnBar, FieldBar} from './play.jsx';
-import {DamageLab} from './dmglab.jsx';
+import {PlayBoard} from './play.jsx';
 import {BoostRow} from './boostrow.jsx';
-import {dispOf} from '../engine/flow.js';
-
-const alive = (battle, side) => battle.state.sides[side].active.filter(i => i != null && !condOf(battle, side, i)?.fainted);
 
 export function Arena({battle, ctx, mut, usage, toast, wide, onDelete}) {
-  const [pane, setPane] = useState('center');
-  const [rightVisited, setRightVisited] = useState(false);
   const [sheet, setSheet] = useState(null);
-  const boardRef = useRef(null);
-  const focusSide = side => {
-    setPane('center');
-    requestAnimationFrame(() => boardRef.current?.querySelector(`.pl.${side}`)?.scrollIntoView({block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'}));
-  };
-  const p = {battle, ctx, mut, usage, toast, setSheet, onDelete, focusSide};
+  const p = {battle, ctx, mut, usage, toast, setSheet, onDelete};
   return (
     <div class={cx('arena', wide && 'wide')}>
-      <div class="arena-toolbar"><div class="arena-tabs"><Seg value={pane} options={[['center', '盤面'], ['right', 'ダメージ・ログ']]} onChange={next => { if (next === 'right') setRightVisited(true); setPane(next); }} /></div><FieldBar battle={battle} /></div>
-      <div class="ar-center" ref={boardRef} hidden={pane !== 'center'}><PlayBoard {...p} /></div>
-      {rightVisited && <div class="ar-right-col" hidden={pane !== 'right'}><RightPane {...p} /></div>}
-      <div class="arena-turnbar"><TurnBar {...p} /></div>
+      <div class="ar-center"><PlayBoard {...p} /></div>
       {sheet && sheet.side === 'opp' && battle.opp[sheet.idx] && <OppSheet battle={battle} idx={sheet.idx} ctx={ctx} mut={mut} usage={usage} onClose={() => setSheet(null)} />}
       {sheet && sheet.side === 'me' && battle.my[sheet.idx] && (
         <MonEditor title="この対戦での自分の型" usage={usage} build={battle.my[sheet.idx]}
           onSave={bd => { mut(b => { b.my[sheet.idx] = bd; }); setSheet(null); }} onClose={() => setSheet(null)} />
       )}
-    </div>
-  );
-}
-
-// ---- 右: ダメージ表・統計 ----
-function RightPane(props) {
-  const [tab, setTab] = useState('dmg');
-  return (
-    <div class="ar-right">
-      <Seg value={tab} options={[['dmg', 'ダメージ'], ['stat', '傾向'], ['log', 'ログ・メモ']]} onChange={setTab} />
-      {tab === 'dmg' && <DamageLab {...props} />}
-      {tab === 'stat' && <PredictTab battle={props.battle} ctx={props.ctx} />}
-      {tab === 'log' && <LogTab battle={props.battle} mut={props.mut} onDelete={props.onDelete} ctx={props.ctx} usage={props.usage} toast={props.toast} />}
     </div>
   );
 }

@@ -1207,3 +1207,46 @@ select.pl-dd { appearance: none; -webkit-appearance: none; padding-right: 22px; 
 .pl-mv { min-height: 32px; }
 .arena-turnbar .tb-side { border: 0; cursor: pointer; min-height: 28px; font: inherit; font-size: 12px; font-weight: 700; }
 .pl { scroll-margin-top: calc(var(--top-h) + 45px); }
+
+/* 対戦ナビゲーションは上部の1段に統合。 */
+.battle-field { padding: 5px 8px 0; }
+.battle > .arena-turnbar { margin: 6px 8px 0; }
+.damage-workspace .damage-matrix { margin: 12px 0; }
+.damage-matrix > summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.battle > .tabs button { flex: 1 1 0; padding: 7px 8px; white-space: nowrap; min-width: 0; }
+.pl-head { display: flex; flex-wrap: nowrap; justify-content: space-between; gap: 6px; align-items: flex-start; }
+.pl-title { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; min-width: 0; flex: 1 1 auto; }
+.pl-head .pl-bench { flex: 0 0 auto; justify-content: flex-end; max-width: 53%; gap: 2px; }
+.pl-head .pl-bmon { width: 30px; height: 32px; }
+.pl-head .pl-swap { width: 30px; height: 32px; font-size: 19px; }
+.pl-head .pl-bmon img { width: 26px; height: 26px; }
+.pl-head .pl-empty { padding: 6px; }
+.pl .pl-lower { display: grid; grid-template-columns: minmax(100px, 33%) minmax(0, 1fr); gap: 6px; align-items: start; }
+.pl-move-column, .pl-action-column { min-width: 0; }
+.pl .pl-moves { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.pl .pl-mv { min-height: 36px; }
+.pl-move-column .pl-suggestions { display: block; margin-top: 5px; }
+.pl-move-column .pl-suggestions > span { display: block; margin-bottom: 3px; }
+.pl-move-column .pl-suggestions .chips { display: flex; flex-direction: column; align-items: stretch; }
+.pl-move-column .pl-suggestions .chip { text-align: left; white-space: normal; }
+.pl .pl-act.move { display: flex; flex-direction: column; align-items: stretch; }
+.pl-action-column .pl-act { min-height: 156px; }
+.pl-action-column .pl-act.hint-box { min-height: 156px; }
+.pl-action-column .pa-hp { flex-wrap: wrap; }
+.pl-action-column .pa-hp label { gap: 3px; }
+.pl-action-column .pa-hp input { width: 58px; }
+.pl-action-column .pa-hp .btn { padding: 2px 5px; }
+.pl-action-column .btnrow .btn { padding: 4px 7px; font-size: 12px; }
+.pl-action-column .chips { gap: 3px; }
+.pl-action-column .chip.sm, .pl-action-column .toggle.sm { padding: 2px 5px; font-size: 12px; }
+.pl-action-column .step-range { grid-template-columns: 28px minmax(0, 1fr) 28px; gap: 3px; }
+@media (max-width: 420px) {
+  .battle > .tabs button { font-size: 13px; padding: 7px 4px; }
+  .pl-name { font-size: 14px; }
+}
+.pl .pl-mv .mv-nm { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; overflow-wrap: anywhere; }
+.pl-action-column .pl-suggestions { display: block; text-align: left; margin-top: 6px; }
+.pl-action-column .pl-suggestions > span { display: block; margin-bottom: 4px; }
+.pl-action-column .pl-suggestions .chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.pl-action-column .pl-suggestions .chip { display: block; text-align: left; line-height: 1.3; }
+.pl-action-column .pl-suggestions small { margin-left: 3px; white-space: nowrap; }

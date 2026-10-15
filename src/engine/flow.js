@@ -545,7 +545,57 @@ const FLAG_JA = {reflect: 'リフレクター', lightScreen: 'ひかりのかべ
  *   kind 'field': {key: 'weather'|'terrain'|'trickRoom'|'gravity', value}
  *   kind 'side': {key: 'reflect'|..., value}  kind 'spikes': {value}
  */
+// 行動・ターン終了を挟まない手動変更を集約。ランクをリセットしうる出来事は境界にする。
+function recordBoosts(b, ev) {
+  const t = ensureTurn(b);
+  let previous = -1;
+  for (let i = t.acts.length - 1; i >= 0; i--) {
+    const a = t.acts[i];
+    if (a.type !== 'event' || ['send', 'mega', 'ability', 'faint', 'hazard', 'residual'].includes(a.kind) || (a.kind === 'hp' && a.in?.hpAfter <= 0)) break;
+    if (a.kind === 'boosts') { if (Array.isArray(a.in?.changes)) previous = i; break; }
+  }
+  const merging = previous >= 0;
+  const changes = merging ? clone(t.acts[previous].in.changes) : [];
+  const edits = ev.changes || [ev];
+  for (const edit of edits) {
+    const side = edit.side;
+    if (side !== 'me' && side !== 'opp') continue;
+    const mon = edit.mon ?? b.state.sides[side].active.find(i => i != null);
+    const cond = mon != null ? condOf(b, side, mon) : null;
+    if (!cond) continue;
+    let entry = changes.find(x => x.side === side && x.mon === mon);
+    if (!entry) { entry = {side, mon, before: clone(cond.boosts), set: clone(cond.boosts)}; changes.push(entry); }
+    const values = ev.kind === 'boost' ? {[edit.stat]: (cond.boosts[edit.stat] || 0) + Number(edit.delta || 0)} : edit.set || {};
+    for (const k of Object.keys(STAT_JA)) if (values[k] != null) {
+      const value = Math.max(-6, Math.min(6, Number(values[k]) || 0));
+      cond.boosts[k] = value;
+      entry.set[k] = value;
+    }
+  }
+  const net = changes.filter(x => Object.keys(STAT_JA).some(k => (x.before[k] || 0) !== (x.set[k] || 0)));
+  if (merging) t.acts.splice(previous, 1);
+  if (!net.length) {
+    if (!t.acts.length) b.turns.pop();
+    b.updatedAt = Date.now();
+    return ['能力変更を取り消しました'];
+  }
+  const text = net.map(x => {
+    const diffs = Object.keys(STAT_JA).filter(k => (x.before[k] || 0) !== (x.set[k] || 0)).map(k => {
+      const value = x.set[k] || 0, delta = value - (x.before[k] || 0);
+      return `${STAT_JA[k]} ${delta > 0 ? '+' : ''}${delta} (→${value > 0 ? '+' : ''}${value})`;
+    });
+    return `${x.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, x.side, x.mon).species)}: ${diffs.join('、')}`;
+  }).join(' / ');
+  const entry = {side: net.length === 1 ? net[0].side : null, mon: net.length === 1 ? net[0].mon : null,
+    type: 'event', kind: 'boosts', text, sp: null, auto: [], flags: {}, in: inputCopy({kind: 'boosts', changes: net})};
+  // 追加入力したグループを最後に置き、「1つ戻す」でもまとめて取り消せるようにする。
+  t.acts.push(entry);
+  b.updatedAt = Date.now();
+  return [text];
+}
+
 export function addEvent(b, ev, usage) {
+  if (ev.kind === 'boosts' || ev.kind === 'boost') return recordBoosts(b, ev);
   const t = ensureTurn(b);
   const side = ev.side;
   const mon = ev.mon ?? b.state.sides[side].active.find(i => i != null);
@@ -610,17 +660,6 @@ export function addEvent(b, ev, usage) {
     return [text, ...log];
   }
   else if (ev.kind === 'status') { cond.status = ev.status || ''; cond.toxicCounter = 1; text = STATUS_JA[ev.status || '']; }
-  else if (ev.kind === 'boosts') {
-    // 能力ランクを手で合わせる (ムラっけ・特性・持ち物など、自動で入らなかった変化)
-    const diffs = [];
-    for (const [k, v] of Object.entries(ev.set || {})) {
-      const nv = Math.max(-6, Math.min(6, Number(v) || 0)), ov = cond.boosts[k] || 0;
-      if (nv !== ov) diffs.push(`${STAT_JA[k]} ${nv - ov > 0 ? '+' : ''}${nv - ov} (→${nv > 0 ? '+' : ''}${nv})`);
-      cond.boosts[k] = nv;
-    }
-    text = diffs.length ? `能力ランク: ${diffs.join('、')}` : '能力ランク (変化なし)';
-  }
-  else if (ev.kind === 'boost') { applyBoosts(b, side, mon, {[ev.stat]: ev.delta}, {log: [], resolveAbility: () => ''}); text = `${STAT_JA[ev.stat]} ${ev.delta > 0 ? '+' : ''}${ev.delta} (→${cond.boosts[ev.stat] > 0 ? '+' : ''}${cond.boosts[ev.stat]})`; }
   else if (ev.kind === 'ability') { if (side === 'opp') build.ability = ev.ability; text = `特性 ${abilityName(ev.ability)} 判明`; }
   else if (ev.kind === 'mega') { megaEvolve(b, side, mon, ev.forme || null, {log, resolveAbility: res}); text = 'メガシンカ'; }
   else if (ev.kind === 'field') {
@@ -757,6 +796,7 @@ export function revealIllusion(b, usage, zIdx) {
     if (entering) { inp.to = zIdx; n++; return; }
     if (a.side === 'opp' && inp.mon === x) { inp.mon = zIdx; n++; }
     if (a.side === 'opp' && a.type !== 'event' && inp.mon == null && a.mon === x) { inp.mon = zIdx; n++; }
+    for (const change of inp.changes || []) if (change.side === 'opp' && change.mon === x) { change.mon = zIdx; n++; }
     if (inp.target?.side === 'opp' && inp.target.mon === x) { inp.target = {...inp.target, mon: zIdx}; n++; }
   };
   if (!from) {

@@ -34,10 +34,7 @@ try {
     const hp = mine.getByLabel('残りHP', {exact:true});
     check(await mine.getByRole('button', {name:'外し', exact:true}).isVisible(), true, '外しを通常欄に表示');
     check(await mine.getByRole('button', {name:'行動不能', exact:true}).isVisible(), true, '行動不能を通常欄に表示');
-    check(await mine.getByRole('button', {name:'まもられた', exact:true}).isVisible(), false, 'まもられたは通常欄を圧迫しない');
-    await mine.locator('.pa-other summary').click();
-    check(await mine.getByRole('button', {name:'まもられた', exact:true}).isVisible(), true, 'まもられたもその他から入力可能');
-    await mine.locator('.pa-other summary').click();
+    check(await mine.getByRole('button', {name:'まもられた', exact:true}).isVisible(), true, 'まもられたも結果欄に並ぶ');
     check(await hp.inputValue(), '', '技を選ぶと空欄のHP入力がすぐ開く');
     check(await mine.getByRole('button', {name:'記録', exact:true}).isDisabled(), true, '予測値を未確認のまま保存できない');
     check(await mine.locator('.mp-table').isVisible(), true, '入力中も能力表が常時見える');
@@ -46,6 +43,28 @@ try {
     check((await state()).state.mons.me[0].boosts.atk, 1, 'ランクを1操作で反映');
     await page.getByRole('button', {name:'1つ戻す', exact:true}).click();
     check((await state()).state.mons.me[0].boosts.atk, 0, 'ランクの直接操作を取り消せる');
+    await mine.getByRole('button', {name:'こうげきを1段階上げる', exact:true}).click();
+    await mine.getByRole('button', {name:'こうげきを1段階下げる', exact:true}).click();
+    check((await state()).turns.length, 0, '能力を上げて戻せば余分なログが消える');
+    await mine.getByRole('button', {name:'こうげきを1段階上げる', exact:true}).click();
+    await opp.getByRole('button', {name:'ぼうぎょを1段階下げる', exact:true}).click();
+    await page.getByRole('tab', {name:'ログ', exact:true}).click();
+    check(await page.locator('.tl-act.ev').count(), 1, '両者の連続した能力変更もログは1件');
+    const logText = await page.locator('.tl-act.ev').innerText();
+    check(logText.includes('こうげき +1') && logText.includes('ぼうぎょ -1'), true, 'まとめたログに両者の変化を表示');
+    await page.getByRole('button', {name:'1つ戻す', exact:true}).click();
+    check((await state()).state.mons.me[0].boosts.atk, 0, 'ログ画面からまとめた自分の変更を戻す');
+    check((await state()).state.mons.opp[0].boosts.def, 0, 'ログ画面からまとめた相手の変更を戻す');
+    await page.getByRole('tab', {name:'盤面', exact:true}).click();
+    check(await hp.inputValue(), '', 'ログの確認・取消後も入力中の技を保持');
+    const moves = await mine.locator('.pl-moves .pl-mv').evaluateAll(els => els.map(el => {const r = el.getBoundingClientRect();return {x:r.x,y:r.y};}));
+    check(moves.every((r,i) => !i || (r.x === moves[0].x && r.y > moves[i-1].y)), true, '技4枠を縦に並べる');
+    const moveBox = await mine.locator('.pl-moves').boundingBox();
+    const actionBox = await mine.locator('.pl-action-column').boundingBox();
+    check(actionBox.x >= moveBox.x + moveBox.width, true, '技の右側に行動記録欄を配置');
+    check(await mine.locator('.pl-head .pl-bench').count(), 1, '交代アイコンは名前と同じヘッダー内');
+    check(await page.getByRole('tab').count(), 5, '機能のタブを1段に統合');
+    check(await page.locator('.arena-tabs').count(), 0, '重複した盤面切り替えをなくす');
     await hp.fill('0');
     check(await mine.getByRole('button', {name:'残りHPの調整を1減らす', exact:true}).isDisabled(), true, 'HPは0未満にしない');
     await hp.fill('100');
@@ -67,7 +86,7 @@ try {
       check(record.y + record.height <= footer.y, true, 'iPad横ではHPの記録ボタンまでスクロールせず表示');
     }
     {
-      await page.locator('.arena-tabs').getByRole('button', {name:'ダメージ・ログ', exact:true}).click();
+      await page.getByRole('tab', {name:'ダメージ', exact:true}).click();
       const h = page.locator('.dl-st').first();
       const point = h.getByLabel('Hの能力Pt', {exact:true});
       const initialPoint = Number(await point.inputValue());
@@ -75,11 +94,11 @@ try {
       check(Number(await point.inputValue()), initialPoint + 1, 'ダメージ計算の能力Ptも1ずつ増やせる');
       await h.getByRole('button', {name:'Hの能力Ptを1減らす', exact:true}).click();
       check(Number(await point.inputValue()), initialPoint, 'ダメージ計算の能力Ptも1ずつ減らせる');
-      await page.locator('.arena-tabs').getByRole('button', {name:'盤面', exact:true}).click();
+      await page.getByRole('tab', {name:'盤面', exact:true}).click();
       check(await hp.inputValue(), '40', '盤面とダメージ・ログの切り替えでHPを保持');
     }
-    await page.getByRole('tab', {name:'③ ダメージ計算'}).click();
-    await page.getByRole('tab', {name:'② 対戦'}).click();
+    await page.getByRole('tab', {name:'ログ'}).click();
+    await page.getByRole('tab', {name:'盤面'}).click();
     check(await hp.inputValue(), '40', '対戦と計算タブの切り替えでHPを保持');
     await mine.getByRole('button', {name:'記録', exact:true}).click();
     check((await state()).state.mons.opp[0].hp, 40, '中間の確定操作なしでHPを保存');

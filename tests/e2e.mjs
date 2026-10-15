@@ -131,8 +131,8 @@ await page.locator('.sel-mon').nth(0).click(); await page.locator('.sel-mon').nt
 await shot(page, 'select');
 await page.getByRole('button', {name: /この選出で対戦開始/}).click();
 await page.waitForSelector('.arena .pl.me');
-const pane = async n => { await page.locator('.arena-tabs button', {hasText: n}).click(); };
-const openLog = async () => { await pane('ダメージ・ログ'); await page.locator('.ar-right .seg button', {hasText: 'ログ・メモ'}).click(); };
+const pane = async n => { await page.getByRole('tab', {name:n === '盤面' ? '盤面' : 'ダメージ', exact:true}).click(); };
+const openLog = async () => { await page.getByRole('tab', {name:'ログ', exact:true}).click(); };
 const closeLog = async () => { await pane('盤面'); };
 const realActs = t => t.acts.filter(a => a.type !== 'event').length;
 const oppP = page.locator('.pl.opp'), meP = page.locator('.pl.me');
@@ -224,9 +224,7 @@ check(await oppP.locator('.mp-table tbody tr').count() >= 4, '相手の表に �
   const after = Number((await rank()).replace('+', ''));
   check(after === before + 2, `能力ランクを表から直接入力できる (${before} → ${after})`);
   await page.getByRole('button', {name: '1つ戻す'}).first().click();
-  check(Number((await rank()).replace('+', '')) === before + 1, '1つ戻すで直前のランク変更が戻る');
-  await page.getByRole('button', {name: '1つ戻す'}).first().click();
-  check(Number((await rank()).replace('+', '')) === before, 'もう1つ戻すと元のランクに戻る');
+  check(Number((await rank()).replace('+', '')) === before, '1つ戻すで連続したランク変更をまとめて戻す');
 }
 await oppP.locator('.pl-speed-detail summary').click();
 check(await oppP.locator('.mp-speed li').count() >= 5, '素早さ一覧に自分の位置が入る');
@@ -238,7 +236,7 @@ b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(b.state.sides.me.active[0] === 2 && b.state.mons.opp[1].boosts.atk === -1, '交代でガオガエンが出て、いかくが入る');
 check(b.state.mons.me[2].hp < 100, `ステルスロックのダメージを自動で反映 (${b.state.mons.me[2].hp})`);
 await pane('ダメージ・ログ');
-await page.locator('.ar-right > .seg').getByRole('button', {name:'ダメージ', exact:true}).click();
+await page.getByRole('tab', {name:'ダメージ', exact:true}).click();
 await page.waitForSelector('.dl');
 await shot(page, 'arena-damage');
 check(await page.locator('.dl-ic.opp').count() >= 3 && await page.locator('.dl-ic.me').count() >= 3, 'ダメージ計算に相手と自分のアイコン');
@@ -276,20 +274,21 @@ const allDragon = await page.locator('.overlay .picker-list .row .type').evaluat
 check(rows > 5 && allDragon, `技をタイプで絞り込める (${rows}件)`);
 await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
 // 既存の詳細タブ
-await page.getByRole('tab', {name: '③ ダメージ計算'}).click();
+await page.getByRole('tab', {name: 'ダメージ'}).click();
+await page.locator('.damage-matrix > summary').click();
 await page.waitForSelector('table.dmg');
 check(await page.locator('table.dmg thead th').count() === 7, 'ダメージ表タブは相手6体ぶん');
 check(await page.locator('table.dmg td .dbar').count() > 0, 'ダメージ表にゲージが出る');
 await shot(page, 'dmg-tab');
-check(await page.getByRole('tab').count() === 3, '大きいタブは 選出・対戦・ダメージ表 の3つ');
-await page.getByRole('tab', {name: '② 対戦'}).click();
+check(await page.getByRole('tab').count() === 5, '選出・盤面・ダメージ・ログ・傾向を1段に統合');
+await page.getByRole('tab', {name: '盤面'}).click();
 await pane('ダメージ・ログ');
-await page.locator('.ar-right > .seg').getByRole('button', {name:'ダメージ', exact:true}).click();
-await page.locator('.ar-right > .seg button', {hasText: 'メモ'}).click();
-check(await page.locator('.ar-right .tl-turn').count() >= 2, '右側のログにターンが並ぶ');
-await page.locator('.ar-right > .seg button', {hasText: '傾向'}).click();
-await page.locator('.ar-right > .seg button', {hasText: 'ダメージ'}).click();
-await page.getByRole('tab', {name: '② 対戦'}).click();
+await page.getByRole('tab', {name:'ダメージ', exact:true}).click();
+await page.getByRole('tab', {name:'ログ', exact:true}).click();
+check(await page.locator('.battle-log .tl-turn').count() >= 2, '右側のログにターンが並ぶ');
+await page.getByRole('tab', {name:'傾向', exact:true}).click();
+await page.getByRole('tab', {name:'ダメージ', exact:true}).click();
+await page.getByRole('tab', {name: '盤面'}).click();
 // 勝敗をつけて統計へ
 await page.locator('.battle-head .seg button', {hasText: '勝ち'}).click();
 await page.getByRole('link', {name: '統計'}).click();
@@ -323,7 +322,7 @@ for (const h of ['#/battles', '#/teams', '#/stats', '#/settings']) {
 const bid = await page.evaluate(() => window.__pokememo.store.battles()[0].id);
 await page.goto(`${url}#/battle/${bid}`);
 await page.waitForSelector('.battle');
-for (const t of ['① 選出', '② 対戦', '③ ダメージ計算']) {
+for (const t of ['選出', '盤面', 'ダメージ']) {
   await page.getByRole('tab', {name: t}).click();
   await page.waitForTimeout(120);
   await scrollOK(page, `対戦/${t}`);

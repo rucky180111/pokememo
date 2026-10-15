@@ -170,15 +170,8 @@ function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, co
     setSheet({side, idx: i});
   };
   const targeted = act && act.kind === 'move' && act.tgt && act.tgt.side === side && act.tgt.mon === mon ? {...act, r: pred} : null;
-  return (
-    <section class={cx('pl', side, fainted && 'fainted', mine && 'acting')}>
-      <div class="pl-main">
-        {empty ? <div class="pl-empty">{needSend ? (side === 'me' ? '先発を選択' : '相手の先発を選択') : '場にいません'}</div>
-          : <MonView side={side} mon={mon} battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} act={act} setAct={setAct} targeted={targeted} done={done} setSheet={setSheet}
-            megaPrev={megaPrev[`${side}${mon}`] || null} setMegaPrev={fm => setMegaPrev(m => ({...m, [`${side}${mon}`]: fm}))} />}
-      </div>
-      <div class="pl-side">
-        <div class="pl-bench">
+  const benchControls = (
+    <div class="pl-bench">
           <button class={cx('pl-swap', (swapMode || (mine && act.kind === 'switch')) && 'on')} disabled={empty || fainted || (done && !needSend)}
             title="交代" onClick={() => (mine && act.kind === 'switch' ? setAct(null) : setAct({side, mon, kind: 'switch', to: null}))}>⇄</button>
           {bench.map(i => {
@@ -187,19 +180,27 @@ function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, co
             const can = !c?.fainted && (swapMode || (mine && act.kind === 'move' && PIVOT_MOVES.has(act.move)));
             return (
               <button class={cx('pl-bmon', c?.fainted && 'out', sel && 'on', can && 'can', side === 'opp' && !battle.pick.opp.includes(i) && 'unseen')} onClick={() => !c?.fainted && pickBench(i)} title={nameOf(battle, side, i)}>
-                <Sprite id={c?.forme || buildOf(battle, side, i).species} size={40} />
+                <Sprite id={c?.forme || buildOf(battle, side, i).species} size={28} />
                 <i class="pl-bhp" style={{width: `${c?.fainted ? 0 : c?.hp ?? 100}%`}} />
               </button>
             );
           })}
         </div>
-        <ActionArea side={side} mon={mon} slot={slot} battle={battle} ctx={ctx} usage={usage} act={mine ? act : null} setAct={setAct} commit={commit} needSend={needSend} waitEnd={waitEnd} done={done} pred={pred} preds={preds} />
+  );
+  const actionArea = extra => <ActionArea {...extra} side={side} mon={mon} slot={slot} battle={battle} ctx={ctx} usage={usage} act={mine ? act : null} setAct={setAct} commit={commit} needSend={needSend} waitEnd={waitEnd} done={done} pred={pred} preds={preds} />;
+  return (
+    <section class={cx('pl', side, fainted && 'fainted', mine && 'acting')}>
+      <div class="pl-main">
+        {empty ? <><div class="pl-head"><span class="pl-empty">{needSend ? (side === 'me' ? '先発を選択' : '相手の先発を選択') : '場にいません'}</span>{benchControls}</div>{actionArea()}</>
+          : <MonView side={side} mon={mon} battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} act={act} setAct={setAct} targeted={targeted} done={done} setSheet={setSheet}
+            benchControls={benchControls} actionArea={actionArea}
+            megaPrev={megaPrev[`${side}${mon}`] || null} setMegaPrev={fm => setMegaPrev(m => ({...m, [`${side}${mon}`]: fm}))} />}
       </div>
     </section>
   );
 }
 
-function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, targeted, done, setSheet, megaPrev, setMegaPrev}) {
+function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, targeted, done, setSheet, megaPrev, setMegaPrev, benchControls, actionArea}) {
   const build = ctx.build(side, mon);
   const raw0 = condOf(battle, side, mon);
   const raw = megaPrev && !raw0.fainted ? {...raw0, forme: megaPrev} : raw0;
@@ -218,6 +219,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
     const mv = dex.moves[m];
     setAct({side, mon, kind: 'move', move: m, tgt: mv?.c === 'Z' && (mv.tg === 'self' || mv.tg === 'allySide' || mv.tg === 'all' || mv.tg === 'foeSide') ? (mv.tg === 'foeSide' ? tgt : null) : tgt, scen: 'base', crit: false, stage: mv && mv.c !== 'Z' && tgt ? 'hp' : 'pick', hp: null, secFx: [], inflict: STATUS_MOVE[m] || ''});
   };
+  const suggestions = side === 'opp' && !raw.fainted && !done && moves.length < 4 && <div class="pl-suggestions"><span class="muted">未判明の技候補</span><div class="chips">{(view?.moves || []).filter(m => !m.known && !moves.includes(m.id)).slice(0, 4 - moves.length).map(m => <button class="chip" onClick={() => selMove(m.id)}>{moveName(m.id)} <small>推定</small></button>)}</div></div>;
   const setOpp = fn => mut(b => { fn(b.opp[mon]); if (canReplay(b)) replay(b, usage); });
   const abil = currentAbility(build, raw);
   const setBoosts = set => { let log = []; mut(b => { log = addEvent(b, {kind: 'boosts', side, mon, set}, usage); }); toast(log[0] || '記録しました'); };
@@ -228,7 +230,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
   const abCands = side === 'opp' && !opp.ability && !s.mega ? (view?.abilities || []) : null;
   return (
     <>
-      <div class="pl-head">
+      <div class="pl-head"><div class="pl-title">
         <span class="pl-owner">{SIDE_JA[side]}</span><Sprite id={sid} size={32} />
         <button class="pl-name" onClick={() => setSheet({side, idx: mon})}>{s.j}</button>
         <span class="types">{typesOf(build, raw).map(t => <TypeChip type={t} small />)}</span>
@@ -236,7 +238,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
         <MegaButtons battle={battle} side={side} mon={mon} mut={mut} usage={usage} preview={megaPrev} setPreview={setMegaPrev} />
         {raw.transformed && <span class="tag accent">へんしん中</span>}
         {zoro && !raw.transformed && <button class="btn ghost sm" onClick={() => setAskZoro(true)} title="イリュージョンの正体がゾロアークだったとき">正体は{speciesName(zoro.o.species)}</button>}
-      </div>
+      </div>{benchControls}</div>
       {askZoro && <Confirm title="イリュージョンの正体" message={`いま場にいる${speciesName(battle.opp[mon].species)}は、${speciesName(zoro.o.species)}のイリュージョンでしたか？ 化けていた間の記録を${speciesName(zoro.o.species)}に付け替えて入れ直します。${speciesName(battle.opp[mon].species)}は選出の最後のポケモンとして記録します。`} okLabel="付け替える" onOk={reveal} onClose={() => setAskZoro(false)} />}
       <div class="pl-info">
         {side === 'opp'
@@ -258,7 +260,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
         <div class="scroll-x">{side === 'opp' ? <OppStatTable battle={battle} idx={mon} forme={megaPrev} onBoosts={raw.fainted ? null : setBoosts} /> : <MyStatTable build={build} raw={raw} sid={sid} onBoosts={raw.fainted ? null : setBoosts} />}</div>
         {side === 'opp' && <details class="pl-speed-detail"><summary>素早さの比較</summary><SpeedBox battle={battle} ctx={ctx} usage={usage} mon={mon} raw={raw} /></details>}
       </div>
-      <div class="pl-lower">
+      <div class="pl-lower"><div class="pl-move-column">
         <div class="pl-moves">
           {[0, 1, 2, 3].map(k => {
             const m = moves[k];
@@ -273,9 +275,9 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
             );
           })}
         </div>
-        {side === 'opp' && !raw.fainted && !done && moves.length < 4 && <div class="pl-suggestions"><span class="muted">未判明の技候補</span><div class="chips">{(view?.moves || []).filter(m => !m.known && !moves.includes(m.id)).slice(0, 4 - moves.length).map(m => <button class="chip" onClick={() => selMove(m.id)}>{moveName(m.id)} <small>推定</small></button>)}</div></div>}
-        <SideState battle={battle} side={side} raw={raw} isMega={isMega} abil={side === 'me' || buildOf(battle, side, mon).ability ? abil : ''} />
-      </div>
+
+      </div><div class="pl-action-column">{actionArea({suggestions})}</div></div>
+      <SideState battle={battle} side={side} raw={raw} isMega={isMega} abil={side === 'me' || buildOf(battle, side, mon).ability ? abil : ''} />
       {pick === 'item' && <Picker kind="items" title="相手の持ち物" allowClear clearLabel="不明に戻す" rank={view?.items?.length ? Object.fromEntries(view.items) : null} onClose={() => setPick(null)}
         filter={id => !dex.items[id].ms || !!dex.items[id].ms[opp.species]}
         onPick={id => { setOpp(o => { o.item = id || ''; }); setPick(null); }} />}
@@ -405,7 +407,7 @@ function HpBar({side, mon, battle, raw, max, targeted, mut, usage}) {
 }
 
 // ---- 行動の入力 (技 → HP・結果 → 記録) ----
-function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, needSend, waitEnd, done, pred, preds}) {
+function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, needSend, waitEnd, done, pred, preds, suggestions}) {
   if (waitEnd) return <div class="pl-act hint-box">ターン終了後に交代</div>;
   if (needSend && (!act || act.kind !== 'send')) return <div class="pl-act hint-box">次のポケモンを選択</div>;
   if (act?.kind === 'send') {
@@ -428,7 +430,7 @@ function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, n
   }
   if (act?.kind === 'move') return <MoveAction side={side} mon={mon} battle={battle} ctx={ctx} usage={usage} act={act} setAct={setAct} commit={commit} r={pred} preds={preds} />;
   if (mon == null) return null;
-  return done ? <div class="pl-act hint-box done">行動済み</div> : null;
+  return done ? <div class="pl-act hint-box done">行動済み</div> : <div class="pl-act hint-box"><span>技または交代を選んで記録</span>{suggestions}</div>;
 }
 
 function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, preds}) {
@@ -528,7 +530,7 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
         <button class="chip sm" onClick={() => fail('miss')}>外し</button>
 
         <button class="chip sm" onClick={() => fail('cant')}>行動不能</button>
-        <details class="pa-other"><summary>その他</summary><button class="chip sm" onClick={() => fail('protect')}>まもられた</button><small>命中外れと区別して記録</small></details>
+        <button class="chip sm" onClick={() => fail('protect')}>まもられた</button>
       </div>
       {act.move === 'revivalblessing' && (dead.length
         ? <div class="chips"><span class="muted">復活:</span>{dead.map(i => <button class={cx('chip sm', act.revive === i && 'on')} onClick={() => set({revive: act.revive === i ? null : i})}>{nameOf(battle, side, i)}</button>)}</div>

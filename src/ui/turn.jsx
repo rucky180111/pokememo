@@ -68,7 +68,7 @@ export function BattleLog({battle, ctx, mut, usage, toast, notes}) {
             <div class="tl-n">— ターン {t.n}{t.open ? ' (入力中)' : ''}{t.incomplete && ' (未入力あり)'} —</div>
             {t.acts.map((a, ai) => (
               <button class={cx('tl-act', a.side, a.type === 'event' && 'ev', a.kind === 'residual' && 'res')} disabled={!editable} onClick={() => setEdit({ti, ai})}>
-                <span class="tl-who">{a.sp && a.side ? <Sprite id={a.sp} size={30} /> : null}<span>{SIDE_JA[a.side] || '場'}</span></span>
+                <span class="tl-who">{a.sp && a.side ? <Sprite id={a.sp} size={30} /> : null}<span>{a.kind === 'boosts' ? '能力' : SIDE_JA[a.side] || '場'}</span></span>
                 <span class="tl-body">{actLine(battle, a)}</span>
                 {(a.auto || []).map(x => <span class="tl-auto">{x}</span>)}
               </button>
