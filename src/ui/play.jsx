@@ -439,7 +439,7 @@ function ObservedHP({battle, target, value, onChange, when = '行動後HP', comp
   const max = target.side === 'me' ? maxHPOf(battle, target.mon) : 100;
   const label = `${SIDE_JA[target.side]} ${nameOf(battle, target.side, target.mon)}の${when}`;
   const number = value == null ? null : Math.round(value * max / 100);
-  const change = n => onChange(n == null ? null : Math.max(0, Math.min(max, n)) / max * 100);
+  const change = n => onChange(n == null ? null : target.side === 'me' ? Math.max(0, Math.min(max, n)) / max * 100 : Math.max(0, Math.min(100, n)));
   return <div class="pa-hp">
     <label>{compact ? when : label}<input class="input num" aria-label={label} type="number" inputMode="numeric" min={0} max={max} step={1} placeholder="未入力" value={number ?? ''} onInput={e => change(e.currentTarget.value === '' ? null : Number(e.currentTarget.value))} /></label>
     <span>{target.side === 'me' ? `/${max}` : '%'}</span>

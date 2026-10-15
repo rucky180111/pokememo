@@ -57,7 +57,7 @@ const UNSUPPORTED = new Set(['gyroball', 'electroball', 'payback', 'avalanche', 
   'stompingtantrum', 'retaliate', 'ragefist', 'revenge', 'lashout', 'temperflare', 'present', 'magnitude', 'reversal', 'flail', 'eruption', 'waterspout', 'dragonenergy',
   'wringout', 'crushgrip', 'hardpress', 'triplekick', 'tripleaxel', 'populationbomb', 'beatup', 'pursuit', 'spitup', 'trumpcard', 'return', 'frustration', 'naturalgift', 'fling',
   'storedpower', 'powertrip', 'punishment', 'lastrespects', 'terrainpulse', 'risingvoltage', 'expandingforce', 'mistyexplosion', 'psyblade', 'hydrosteam', 'electrodrift', 'collisioncourse',
-  'bide', 'metronome', 'naturepower', 'sleeptalk', 'copycat', 'mefirst', 'mirrormove', 'struggle', 'futuresight', 'doomdesire', 'selfdestruct', 'explosion','foulplay', 'bodypress', 'psyshock', 'psystrike', 'secretsword', 'photongeyser', 'shellsidearm', 'seismictoss', 'nightshade', 'superfang', 'ruination', 'naturesmadness', 'endeavor', 'finalgambit', 'counter', 'mirrorcoat', 'metalburst', 'comeuppance', 'dragonrage', 'sonicboom', 'fissure', 'horndrill', 'guillotine', 'sheercold']);
+  'bide', 'metronome', 'naturepower', 'sleeptalk', 'copycat', 'mefirst', 'mirrormove', 'struggle', 'futuresight', 'doomdesire', 'selfdestruct', 'explosion','foulplay', 'photongeyser', 'shellsidearm', 'seismictoss', 'nightshade', 'superfang', 'ruination', 'naturesmadness', 'endeavor', 'finalgambit', 'counter', 'mirrorcoat', 'metalburst', 'comeuppance', 'dragonrage', 'sonicboom', 'fissure', 'horndrill', 'guillotine', 'sheercold']);
 export function inferable(moveId) {
   const mv = dex.moves[moveId];
   return !!mv && mv.c !== 'Z' && !UNSUPPORTED.has(moveId);
@@ -69,7 +69,7 @@ export function inferable(moveId) {
  */
 export function inferFromTaken(ctx, oppIdx, myIdx, moveId, damage, opts = {}) {
   if (!inferable(moveId) || !(damage > 0)) return null;
-  const stat = dex.moves[moveId].c === 'P' ? 'atk' : 'spa';
+  const stat = moveId === 'bodypress' ? 'def' : dex.moves[moveId].c === 'P' ? 'atk' : 'spa';
   const si = STAT_KEYS.indexOf(stat);
   const base = ctx.build('opp', oppIdx);
   const tol = opts.tol || 0;
@@ -88,7 +88,9 @@ export function inferFromTaken(ctx, oppIdx, myIdx, moveId, damage, opts = {}) {
     }
     mask += ok ? '1' : '0';
   }
-  return {...summarize(ctx, oppIdx, stat, mask), atLeast: !!opts.atLeast};
+  const result = {...summarize(ctx, oppIdx, stat, mask), atLeast: !!opts.atLeast};
+  // ボディプレスで判明する防御は、最大HPの候補とは独立。既存のHP×防御形式へ展開。
+  return stat === 'def' ? {...result, mask: mask.repeat(33), count: result.count * 33} : result;
 }
 
 function summarize(ctx, oppIdx, stat, mask) {
@@ -109,7 +111,7 @@ export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts =
   if (!inferable(moveId)) return null;
   if (!opts.atLeast && (!(before > after) || after <= 0)) return null;
   const tol = opts.tol ?? 1;
-  const stat = dex.moves[moveId].c === 'P' ? 'def' : 'spd';
+  const stat = dex.moves[moveId].c === 'P' || ['psyshock', 'psystrike', 'secretsword'].includes(moveId) ? 'def' : 'spd';
   const si = STAT_KEYS.indexOf(stat);
   const base = ctx.build('opp', oppIdx);
   const cond = ctx.cond('opp', oppIdx);
@@ -139,7 +141,8 @@ export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts =
     for (let c = 0; c < SPE_COMBOS; c++) {
       const r = rolls(c);
       // atLeast: 「少なくとも lost% は入った」(きあいのタスキで耐えた = 本来は倒れていた)
-      const ok = !!r && (r[1] / maxHP) * 100 >= lost - tol && (opts.atLeast || (r[0] / maxHP) * 100 <= lost + tol);
+      const ok = !!r && (r[1] / maxHP) * 100 >= lost - tol && (opts.atLeast || (r[0] / maxHP) * 100 <= lost + tol)
+        && (!opts.damageRange || (r[1] >= opts.damageRange[0] && (opts.atLeast || r[0] <= opts.damageRange[1])));
       mask += ok ? '1' : '0';
       if (ok) { count++; hLo = Math.min(hLo, h); hHi = Math.max(hHi, h); const v = statValue(bs[si], comboSP(c), comboMod(c), false); dLo = Math.min(dLo, v); dHi = Math.max(dHi, v); }
     }
@@ -150,6 +153,7 @@ export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts =
 // 配分 (性格 + SP) が、これまでの絞り込みと矛盾しないか
 export function spreadFits(opp, nature, sp) {
   const k = opp.statOk || {};
+  if (k.hp && k.hp[sp[0]] !== '1') return false;
   for (const stat of ['atk', 'spa']) {
     if (k[stat] && k[stat][comboOf(natureMod(nature, stat), sp[STAT_KEYS.indexOf(stat)])] !== '1') return false;
   }
@@ -174,18 +178,34 @@ export function applyInference(opp, view, res) {
   if ((res.stat === 'def' || res.stat === 'spd') && opp.statOk.hp) {
     let out = '';
     for (let h = 0; h <= 32; h++) out += opp.statOk.hp[h] === '1' ? merged.slice(h * SPE_COMBOS, (h + 1) * SPE_COMBOS) : '0'.repeat(SPE_COMBOS);
-    if (out.includes('1')) { opp.statOk[res.stat] = out; return applyMsg(res); }
+    if (!out.includes('1')) return 'HPの絞り込みと矛盾するため、保存していません';
+    opp.statOk[res.stat] = out; return applyMsg(res);
   }
   opp.statOk[res.stat] = merged;
   return applyMsg(res);
 }
 function applyMsg(res) {
   const names = {atk: 'こうげき', spa: 'とくこう', def: 'ぼうぎょ', spd: 'とくぼう'};
-  const msg = res.range ? `${names[res.stat]}の実数値は ${res.range[0]}〜${res.range[1]}` : `HPの能力ポイント ${res.hpRange[0]}〜${res.hpRange[1]}・${names[res.stat]}の実数値 ${res.defRange[0]}〜${res.defRange[1]}`;
+  const msg = res.range ? `${names[res.stat]}の実数値は ${res.range[0] === res.range[1] ? `${res.range[0]}（確定）` : `${res.range[0]}〜${res.range[1]}`}` : `HPの能力ポイント ${res.hpRange[0]}〜${res.hpRange[1]}・${names[res.stat]}の実数値 ${res.defRange[0]}〜${res.defRange[1]}`;
   const minimum = res.spRange?.[0] > 0 ? `（能力Ptは最低${res.spRange[0]}）` : '';
   return `${msg}${minimum}。${res.atLeast ? 'ひんし・タスキ時はダメージの下限で判定。' : ''}`;
 }
 export {parseSpread, ALL};
+
+// 回復量など、通常のダメージ式を使わずに観測できた実数値から絞り込む。
+export function applyStatConstraint(opp, speciesId, stat, accepts) {
+  const base = dex.species[speciesId]?.bs[STAT_KEYS.indexOf(stat)];
+  if (base == null) return '';
+  let mask = '', lo = Infinity, hi = -Infinity, spLo = 33, spHi = -1, count = 0;
+  for (let c = 0; c < SPE_COMBOS; c++) {
+    const sp = comboSP(c), value = statValue(base, sp, comboMod(c), false);
+    const ok = accepts(value) && (!opp.statOk?.[stat] || opp.statOk[stat][c] === '1');
+    mask += ok ? '1' : '0';
+    if (ok) { count++; lo = Math.min(lo, value); hi = Math.max(hi, value); spLo = Math.min(spLo, sp); spHi = Math.max(spHi, sp); }
+  }
+  if (count === SPE_COMBOS) return '';
+  return applyInference(opp, null, {stat, mask, count, range: count ? [lo, hi] : null, spRange: count ? [spLo, spHi] : null});
+}
 
 /**
  * HP の能力ポイントの絞り込みを足す (やどりぎのタネの回復量などから分かる)。
@@ -196,7 +216,12 @@ export function applyHpConstraint(opp, okSP) {
   opp.statOk ||= {};
   let row = '';
   for (let h = 0; h <= 32; h++) row += okSP(h) ? '1' : '0';
-  const merged = opp.statOk.hp ? and(opp.statOk.hp, row) : row;
+  let merged = opp.statOk.hp ? and(opp.statOk.hp, row) : row;
+  for (const st of ['def', 'spd']) if (opp.statOk[st]) {
+    let compatible = '';
+    for (let h = 0; h <= 32; h++) compatible += opp.statOk[st].slice(h * SPE_COMBOS, (h + 1) * SPE_COMBOS).includes('1') ? '1' : '0';
+    merged = and(merged, compatible);
+  }
   if (!merged.includes('1')) return 'HPの能力ポイントがこれまでの絞り込みと矛盾するため、保存していません';
   opp.statOk.hp = merged;
   for (const st of ['def', 'spd']) {

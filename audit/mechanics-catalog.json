@@ -537,7 +537,8 @@
         ],
         "engineReferences": [
           "src/engine/battle.js",
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "bravebird": {
@@ -827,7 +828,8 @@
         "hooks": [],
         "engineReferences": [
           "src/engine/battle.js",
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ],
         "dataEffects": {
           "boosts": {
@@ -1448,7 +1450,8 @@
         ],
         "volatile": "endure",
         "engineReferences": [
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "energyball": {
@@ -3170,7 +3173,8 @@
           "onHit"
         ],
         "engineReferences": [
-          "src/engine/battle.js"
+          "src/engine/battle.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "paraboliccharge": {
@@ -3414,7 +3418,8 @@
         "volatile": "protect",
         "engineReferences": [
           "src/engine/battle.js",
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "psychup": {
@@ -3648,7 +3653,8 @@
         "engineReferences": [
           "src/engine/battle.js",
           "src/engine/calc.js",
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "reflecttype": {
@@ -3811,6 +3817,7 @@
           "src/engine/dex.js",
           "src/engine/flow.js",
           "src/engine/infer-dmg.js",
+          "src/engine/infer-hp-effects.js",
           "src/engine/predict.js",
           "src/engine/shot.js",
           "src/engine/teamdiag.js",
@@ -4442,7 +4449,8 @@
           "onMoveFail"
         ],
         "engineReferences": [
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "steelroller": {
@@ -4544,7 +4552,8 @@
           "onHit"
         ],
         "engineReferences": [
-          "src/engine/battle.js"
+          "src/engine/battle.js",
+          "src/engine/infer-hp-effects.js"
         ],
         "dataEffects": {
           "healing": true,
@@ -5092,6 +5101,7 @@
           "src/engine/battle.js",
           "src/engine/board.js",
           "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js",
           "src/engine/infer.js"
         ]
       },
@@ -5116,6 +5126,7 @@
           "src/engine/board.js",
           "src/engine/calc.js",
           "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js",
           "src/engine/infer.js"
         ]
       },
@@ -5496,7 +5507,8 @@
           "onDamagingHit"
         ],
         "engineReferences": [
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "analytic": {
@@ -5775,7 +5787,8 @@
         "engineReferences": [
           "src/engine/battle.js",
           "src/engine/calc.js",
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "dragonize": {
@@ -5932,6 +5945,7 @@
           "src/engine/estimate.js",
           "src/engine/flow.js",
           "src/engine/infer-dmg.js",
+          "src/engine/infer-hp-effects.js",
           "src/engine/infer.js",
           "src/engine/predict.js",
           "src/engine/shot.js",
@@ -6392,7 +6406,8 @@
         ],
         "engineReferences": [
           "src/engine/battle.js",
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "leafguard": {
@@ -6469,7 +6484,8 @@
           "onSourceTryHeal"
         ],
         "engineReferences": [
-          "src/engine/battle.js"
+          "src/engine/battle.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "liquidvoice": {
@@ -6502,7 +6518,8 @@
           "onAllyTryHitSide"
         ],
         "engineReferences": [
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "magicguard": {
@@ -6514,7 +6531,8 @@
         ],
         "engineReferences": [
           "src/engine/battle.js",
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "magician": {
@@ -7072,7 +7090,9 @@
         "hooks": [
           "onDamage"
         ],
-        "engineReferences": []
+        "engineReferences": [
+          "src/engine/infer-hp-effects.js"
+        ]
       },
       "roughskin": {
         "name": "さめはだ",
@@ -7082,7 +7102,8 @@
           "onDamagingHit"
         ],
         "engineReferences": [
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "runaway": {
@@ -8046,7 +8067,8 @@
           "onTryHeal"
         ],
         "engineReferences": [
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "bindingband": {
@@ -8840,7 +8862,8 @@
         ],
         "engineReferences": [
           "src/engine/flow.js",
-          "src/engine/infer-dmg.js"
+          "src/engine/infer-dmg.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "lightball": {
@@ -9452,7 +9475,8 @@
           "onAfterMoveSecondarySelf"
         ],
         "engineReferences": [
-          "src/engine/flow.js"
+          "src/engine/flow.js",
+          "src/engine/infer-hp-effects.js"
         ]
       },
       "shucaberry": {

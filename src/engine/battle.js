@@ -83,6 +83,8 @@ export function healHP(b, side, i, amount, {log = [], label = '回復'} = {}) {
   const mx = maxHPOf(b, side, i), before = c.hp;
   const after = side === 'me' ? (Math.round(c.hp * mx / 100) + Math.max(1, Math.floor(amount))) / mx * 100 : c.hp + amount / mx * 100;
   setHP(b, side, i, Math.min(100, after));
+  // 相手は最大HPと表示丸めが未確定。自動更新した割合を次の「実測」として使わない。
+  if (side === 'opp' && c.hp !== before) c.hpUnknown = true;
   if (c.hp !== before) log.push(`${label}: ${speciesName(buildOf(b, side, i).species)} HP ${Math.round(before)}% → ${Math.round(c.hp)}%`);
   return c.hp !== before;
 }
@@ -290,7 +292,10 @@ function leaveField(b, side, i, {log = [], resolveAbility} = {}) {
   if (cond.fainted) return;
   const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}`;
   if (ab === 'regenerator' && cond.hp < 100) {
-    cond.hp = Math.min(100, Math.round((cond.hp + 100 / 3) * 10) / 10);
+    if (side === 'me') {
+      const mx = maxHPOf(b, side, i);
+      cond.hp = Math.min(100, (Math.round(cond.hp * mx / 100) + Math.floor(mx / 3)) / mx * 100);
+    } else { cond.hp = Math.min(100, Math.round((cond.hp + 100 / 3) * 10) / 10); cond.hpUnknown = true; }
     log.push(`${who}のさいせいりょく: HP ${Math.round(cond.hp)}% に回復`);
   }
   // マイティチェンジ (イルカマン): 一度下がるとマイティフォルムになる (以後ずっと)

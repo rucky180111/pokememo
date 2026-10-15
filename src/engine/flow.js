@@ -2,6 +2,7 @@
 import {dex, speciesName, moveName, statsOf, itemName, abilityName, TYPE_JA, typeEffect} from './dex.js';
 import {currentSpecies, typesOf, currentAbility, finalSpeed, disguiseIntact, defaultHits} from './calc.js';
 import moveEffects from '../generated/move-effects.json' with {type: 'json'};
+import {inferHpEffects} from './infer-hp-effects.js';
 
 export const FORCE_MOVES = new Set(['dragontail', 'circlethrow', 'roar', 'whirlwind']);
 // シンクロ: どく・まひ・やけどにされると、相手も同じ状態異常に (判明している特性のみ)
@@ -236,6 +237,7 @@ export function addAct(b, input, usage) {
     flags: {crit: !!input.crit, miss: !!input.miss, protect: !!input.protect, cant: !!input.cant},
     sp: build.species, vs: b.state.sides[other(side)].active.filter(i => i != null).map(i => buildOf(b, other(side), i)?.species).filter(Boolean)};
   const slot = b.state.sides[side].active.indexOf(mon);
+  let evidenceBefore;
   if (a.type === 'switch') {
     if (a.to == null || slot < 0) return ['交代先がありません'];
     a.toSp = buildOf(b, side, a.to)?.species;
@@ -243,6 +245,7 @@ export function addAct(b, input, usage) {
     sendOut(b, side, slot, a.to, {log, resolveAbility: res});
   } else {
     if (a.mega) { megaEvolve(b, side, mon, input.megaForme || null, {log, resolveAbility: res}); ctx = boardContext(b, usage); }
+    evidenceBefore = clone(b.state);
     // へんしん中に使った技は相手からコピーした技なので、判明した技には入れない
     if (side === 'opp' && !condOf(b, side, mon)?.transformed && dex.moves[a.move] && !build.moves.includes(a.move) && build.moves.length < 4) build.moves.push(a.move);
     const foe = other(side);
@@ -286,7 +289,7 @@ export function addAct(b, input, usage) {
     if (!failed && tgt && tgt.side !== side && mvd?.c === 'Z') {
       const tab = res(b, tgt.side, tgt.mon);
       if (tab === 'goodasgold' && (!mvd.tg || mvd.tg === 'allAdjacentFoes' || mvd.tg === 'any')) { failed = true; log.push(`${speciesName(buildOf(b, tgt.side, tgt.mon).species)}のおうごんのからだ: ${moveName(a.move)}は効かない`); }
-      else if (tab === 'magicbounce' && (moveEffects[a.move]?.reflectable || BOUNCE.has(a.move))) { bounced = true; log.push(`${speciesName(buildOf(b, tgt.side, tgt.mon).species)}のマジックミラー: ${moveName(a.move)}をはね返した`); }
+      else if (tab === 'magicbounce' && (moveEffects[a.move]?.reflectable || BOUNCE.has(a.move))) { bounced = true; a.bounced = true; log.push(`${speciesName(buildOf(b, tgt.side, tgt.mon).species)}のマジックミラー: ${moveName(a.move)}をはね返した`); }
     }
     // HPを消費する技・回復封じは、能力変化などを適用する前に成否を確定する。
     if (!failed && (mvd?.c === 'Z' || (a.move === 'pollenpuff' && tgt?.side === side))) {
@@ -330,6 +333,7 @@ export function addAct(b, input, usage) {
     // ばけのかわ: ダメージを受けず HP が 1/8 減るだけ。推定には使わない
     const disguiseHit = !failed && tgt && mvd && mvd.c !== 'Z' && disguiseIntact(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon)) && !['moldbreaker', 'teravolt', 'turboblaze', 'myceliummight'].includes(res(b, side, mon));
     if (disguiseHit) {
+      a.disguiseHit = true;
       const tc0 = condOf(b, tgt.side, tgt.mon);
       tc0.disguiseBroken = true;
       if (hp == null || !Number.isFinite(hp) || hp > tc0.hp) hp = Math.max(0, tc0.hp - 12.5);
@@ -465,7 +469,7 @@ export function addAct(b, input, usage) {
     // 被弾時の特性は「判明している特性」だけで反映する (使用率からの推測で能力ランクを動かさない)
     if (!failed && tgt && tgt.side !== side) onHitEffects(b, {side, mon, move: a.move, crit: a.flags.crit, tgt, before: hpBeforeHit, defItem}, defaultAbilityResolver, log);
     // 攻撃した側のHPの変化 (いのちのたま・反動・ゴツゴツメット・さめはだ・吸収)
-    if (!failed && tgt && tgt.side !== side && input.selfFx?.length) attackerHpEffects(b, {side, mon, tgt, move: a.move, fx: input.selfFx, hpAfter: input.atkHpAfter, tgtBefore: hpBeforeHit, a}, log);
+    if (!failed && tgt && tgt.side !== side && input.selfFx?.length) attackerHpEffects(b, {side, mon, tgt, move: a.move, fx: input.selfFx, hpAfter: input.atkHpAfter ?? input.observedHp?.find(h => h.side === side && h.mon === mon)?.hpAfter, tgtBefore: hpBeforeHit, a}, log);
     // 追加効果・変化技で相手が状態異常になった
     if (!failed && tgt && input.inflict && !condOf(b, tgt.side, tgt.mon).fainted && !bounced) {
       const tc2 = condOf(b, tgt.side, tgt.mon);
@@ -528,7 +532,12 @@ export function addAct(b, input, usage) {
     if (uc && !uc.fainted && d) {
       const before = uc.hp;
       if (d < 0 && uc.hp <= -d * 100 && a.move !== 'curse') log.push(`${who}の${moveName(a.move)}: HPが足りないので失敗`);
-      else { const mx = maxHPOf(b, side, mon); const h = Math.round(uc.hp * mx / 100) + Math.sign(d) * Math.max(1, Math.floor(mx * Math.abs(d))); setHP(b, side, mon, h / mx * 100); if (uc.hp !== before) log.push(`${who}: HP ${Math.round(before)}% → ${Math.round(uc.hp)}%`); }
+      else {
+        const mx = maxHPOf(b, side, mon), h = Math.round(uc.hp * mx / 100) + Math.sign(d) * Math.max(1, Math.floor(mx * Math.abs(d)));
+        setHP(b, side, mon, h / mx * 100);
+        if (side === 'opp' && uc.hp !== before) uc.hpUnknown = true;
+        if (uc.hp !== before) log.push(`${who}: HP ${Math.round(before)}% → ${Math.round(uc.hp)}%`);
+      }
     }
     // ねむる: HP全快して2ターン眠る
     if (a.move === 'rest' && !hb && uc && !uc.fainted && uc.hp < 100 && !sleepBlocked(b, side, mon, res)) { setHP(b, side, mon, 100); uc.status = 'slp'; uc.statusKey = 'slpRest'; uc.statusCant = 0; uc.toxicCounter = 1; log.push(`${who}はねむって全回復`); }
@@ -596,6 +605,7 @@ export function addAct(b, input, usage) {
     if (pending >= 0) log.splice(pending, 1);
     log.push(`${speciesName(buildOf(b, h.side, h.mon).species)}: 行動後HP ${Math.round(h.hpAfter)}%`);
   }
+  if (evidenceBefore) inferHpEffects(b, evidenceBefore, a, input, usage, log);
   if (input.hpUnknown) a.hpUnknown = true;
   a.auto = log;
   a.in = inputCopy(input);
@@ -688,6 +698,7 @@ export function addEvent(b, ev, usage) {
       if (hp == null) hp = cond.hp;
     }
     if (hp != null) setHP(b, side, mon, hp);
+    if (Number.isFinite(ev.hpAfter)) delete cond.hpUnknown;
     text = `${itemName(ev.item) || '持ち物'} ${ev.consumed ? '発動・消費' : '判明'}${hp != null ? ` → HP ${Math.round(hp)}%` : ''}`;
   } else if (ev.kind === 'hp') { setHP(b, side, mon, ev.hpAfter); delete condOf(b, side, mon).hpUnknown; text = `HP → ${Math.round(ev.hpAfter)}%${ev.note ? ` (${ev.note})` : ''}`; }
   else if (ev.kind === 'faint') { setHP(b, side, mon, 0); text = 'ひんし'; }
@@ -705,6 +716,7 @@ export function addEvent(b, ev, usage) {
     if (!r) return [];
     const was = cond.hp;
     setHP(b, side, mon, cond.hp + r.pct);
+    if (side === 'opp') cond.hpUnknown = true;
     if (ev.key === 'tox') cond.toxicCounter = Math.min(15, (cond.toxicCounter || 1) + 1);
     if (side === 'opp' && RESIDUAL_ITEM[ev.key] && !build.item) build.item = RESIDUAL_ITEM[ev.key];
     text = `${RESIDUAL_JA[ev.key]} ${r.pct > 0 ? '+' : ''}${side === 'me' ? `${r.hp}` : `${Math.round(r.pct * 10) / 10}%`}${cond.fainted && was > 0 ? ' → ひんし' : ''}`;
@@ -722,6 +734,8 @@ export function addEvent(b, ev, usage) {
         if (msg) log.push(msg);
       }
       setHP(b, side, mon, hp);
+      if (Number.isFinite(ev.hpAfter)) delete cond.hpUnknown;
+      else if (side === 'opp' && d) cond.hpUnknown = true;
       text = `設置技のダメージ → HP ${side === 'me' ? `${Math.round((hp * maxHPOf(b, side, mon)) / 100)}` : `${Math.round(hp)}%`}`;
     }
   } else if (ev.kind === 'send') {
@@ -1377,38 +1391,6 @@ function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a},
   if (fx.includes('lifeorb')) steps.push({k: 'frac', f: 1 / 10});
   const before = ab.hp;
   if (hpAfter != null) {
-    // 相手が攻撃した: 表示の変化から最大HPを絞り込む
-    if (side === 'opp' && steps.every(Boolean) && Number.isInteger(before)) { const m = inferHpFromDisplay(b, mon, before, Math.round(hpAfter), steps); if (m) log.push(m); }
-    // 自分が攻撃した: 反動・吸収の実数から、相手に与えたダメージの実数 → 相手の最大HPを絞り込む
-    // (満タンまで回復した・倒れた場合は量が頭打ちになるので使わない)
-    if (side === 'me' && tgt.side === 'opp' && a.hitHpAfter == null && hpAfter < 100 - 1e-9 && hpAfter > 0 && (fx.includes('recoil') || fx.includes('drain')) && fx.every(k => ['recoil', 'drain', 'lifeorb', 'helmet', 'roughskin'].includes(k)) && Number.isInteger(tgtBefore) && Number.isInteger(tc.hp)) {
-      const max = maxHPOf(b, 'me', mon);
-      let change = Math.round((hpAfter / 100) * max) - Math.round((before / 100) * max);
-      if (fx.includes('lifeorb')) change += Math.max(1, Math.floor(max / 10));
-      if (fx.includes('helmet')) change += Math.max(1, Math.floor(max / 6));
-      if (fx.includes('roughskin')) change += Math.max(1, Math.floor(max / 8));
-      const ratio = fx.includes('recoil') ? RECOIL[move] : DRAIN[move];
-      const amount = Math.abs(change);
-      if (ratio && amount > 0 && !(fx.includes('recoil') && fx.includes('drain'))) {
-        const o = b.opp[tgt.mon];
-        const sid = currentSpecies(o, tc);
-        const d0 = tgtBefore, d1 = tc.hp;
-        const okSP = sp => {
-          const tmax = statsOf(sid, [sp, 0, 0, 0, 0, 0], 'Serious')[0];
-          const lo = d0 === 100 ? tmax : d0 === 1 ? 1 : Math.ceil((d0 * tmax) / 100);
-          const hi = d0 === 100 ? tmax : Math.min(tmax, Math.ceil(((d0 + 1) * tmax) / 100) - 1);
-          for (let h = lo; h <= hi; h++) for (let dm = 1; dm <= h; dm++) {
-            const r = Math.round((dm * ratio[0]) / ratio[1] * (fx.includes('drain') ? root : 1));
-            if ((fx.includes('recoil') ? Math.max(1, r) : r) !== amount) continue;
-            if (dispPct(h - dm, tmax) === d1) return true;
-          }
-          return false;
-        };
-        let n = 0;
-        for (let sp = 0; sp <= 32; sp++) if (okSP(sp)) n++;
-        if (n > 0 && n < 33) log.push(`相手の${speciesName(o.species)}: ${SELF_FX_JA[fx.includes('recoil') ? 'recoil' : 'drain']}の量 ${amount} から ${applyHpConstraint(o, okSP)}`);
-      }
-    }
     setHP(b, side, mon, hpAfter);
     delete condOf(b, side, mon).hpUnknown;
   } else {
@@ -1423,6 +1405,7 @@ function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a},
     let h = Math.round((before / 100) * max);
     for (const st of steps) if (st) h = Math.max(0, stepHp(st, h, max));
     setHP(b, side, mon, (h / max) * 100);
+    if (side === 'opp' && ab.hp !== before) ab.hpUnknown = true;
   }
   a.selfFx = fx;
   log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(abd.species)}: ${fx.map(k => SELF_FX_JA[k]).join('・')}`);
