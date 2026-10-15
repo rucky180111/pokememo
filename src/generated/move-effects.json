@@ -1,0 +1,637 @@
+{
+  "acidarmor": {
+    "boosts": {
+      "def": 2
+    }
+  },
+  "agility": {
+    "boosts": {
+      "spe": 2
+    }
+  },
+  "amnesia": {
+    "boosts": {
+      "spd": 2
+    }
+  },
+  "armorcannon": {
+    "selfBoosts": {
+      "def": -1,
+      "spd": -1
+    }
+  },
+  "aromaticmist": {
+    "boosts": {
+      "spd": 1
+    }
+  },
+  "attract": {
+    "reflectable": true
+  },
+  "babydolleyes": {
+    "boosts": {
+      "atk": -1
+    },
+    "reflectable": true
+  },
+  "bitterblade": {
+    "drain": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "block": {
+    "reflectable": true
+  },
+  "bravebird": {
+    "recoil": [
+      33,
+      100
+    ]
+  },
+  "bulkup": {
+    "boosts": {
+      "atk": 1,
+      "def": 1
+    }
+  },
+  "calmmind": {
+    "boosts": {
+      "spa": 1,
+      "spd": 1
+    }
+  },
+  "charge": {
+    "boosts": {
+      "spd": 1
+    }
+  },
+  "charm": {
+    "boosts": {
+      "atk": -2
+    },
+    "reflectable": true
+  },
+  "clangoroussoul": {
+    "boosts": {
+      "atk": 1,
+      "def": 1,
+      "spa": 1,
+      "spd": 1,
+      "spe": 1
+    }
+  },
+  "closecombat": {
+    "selfBoosts": {
+      "def": -1,
+      "spd": -1
+    }
+  },
+  "coaching": {
+    "boosts": {
+      "atk": 1,
+      "def": 1
+    }
+  },
+  "coil": {
+    "boosts": {
+      "atk": 1,
+      "def": 1,
+      "accuracy": 1
+    }
+  },
+  "confuseray": {
+    "reflectable": true
+  },
+  "corrosivegas": {
+    "reflectable": true
+  },
+  "cosmicpower": {
+    "boosts": {
+      "def": 1,
+      "spd": 1
+    }
+  },
+  "cottonguard": {
+    "boosts": {
+      "def": 3
+    }
+  },
+  "cottonspore": {
+    "boosts": {
+      "spe": -2
+    },
+    "reflectable": true
+  },
+  "decorate": {
+    "boosts": {
+      "atk": 2,
+      "spa": 2
+    }
+  },
+  "defog": {
+    "reflectable": true
+  },
+  "disable": {
+    "reflectable": true
+  },
+  "doubleteam": {
+    "boosts": {
+      "evasion": 1
+    }
+  },
+  "doubleedge": {
+    "recoil": [
+      33,
+      100
+    ]
+  },
+  "dracometeor": {
+    "selfBoosts": {
+      "spa": -2
+    }
+  },
+  "dragondance": {
+    "boosts": {
+      "atk": 1,
+      "spe": 1
+    }
+  },
+  "drainpunch": {
+    "drain": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "drainingkiss": {
+    "drain": [
+      3,
+      4
+    ],
+    "healing": true
+  },
+  "eerieimpulse": {
+    "boosts": {
+      "spa": -2
+    },
+    "reflectable": true
+  },
+  "encore": {
+    "reflectable": true
+  },
+  "entrainment": {
+    "reflectable": true
+  },
+  "faketears": {
+    "boosts": {
+      "spd": -2
+    },
+    "reflectable": true
+  },
+  "featherdance": {
+    "boosts": {
+      "atk": -2
+    },
+    "reflectable": true
+  },
+  "flareblitz": {
+    "recoil": [
+      33,
+      100
+    ]
+  },
+  "flatter": {
+    "boosts": {
+      "spa": 1
+    },
+    "reflectable": true
+  },
+  "forestscurse": {
+    "reflectable": true
+  },
+  "gastroacid": {
+    "reflectable": true
+  },
+  "gigadrain": {
+    "drain": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "glare": {
+    "reflectable": true
+  },
+  "growth": {
+    "boosts": {
+      "atk": 1,
+      "spa": 1
+    }
+  },
+  "hammerarm": {
+    "selfBoosts": {
+      "spe": -1
+    }
+  },
+  "headsmash": {
+    "recoil": [
+      1,
+      2
+    ]
+  },
+  "headlongrush": {
+    "selfBoosts": {
+      "def": -1,
+      "spd": -1
+    }
+  },
+  "healpulse": {
+    "healing": true,
+    "reflectable": true
+  },
+  "healingwish": {
+    "healing": true
+  },
+  "hornleech": {
+    "drain": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "howl": {
+    "boosts": {
+      "atk": 1
+    }
+  },
+  "hypnosis": {
+    "reflectable": true
+  },
+  "icehammer": {
+    "selfBoosts": {
+      "spe": -1
+    }
+  },
+  "irondefense": {
+    "boosts": {
+      "def": 2
+    }
+  },
+  "leafstorm": {
+    "selfBoosts": {
+      "spa": -2
+    }
+  },
+  "leechlife": {
+    "drain": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "leechseed": {
+    "reflectable": true
+  },
+  "lifedew": {
+    "heal": [
+      1,
+      4
+    ],
+    "healing": true
+  },
+  "lightofruin": {
+    "recoil": [
+      1,
+      2
+    ]
+  },
+  "magicpowder": {
+    "reflectable": true
+  },
+  "makeitrain": {
+    "selfBoosts": {
+      "spa": -2
+    }
+  },
+  "matchagotcha": {
+    "drain": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "meanlook": {
+    "reflectable": true
+  },
+  "memento": {
+    "boosts": {
+      "atk": -2,
+      "spa": -2
+    }
+  },
+  "metalsound": {
+    "boosts": {
+      "spd": -2
+    },
+    "reflectable": true
+  },
+  "milkdrink": {
+    "heal": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "minimize": {
+    "boosts": {
+      "evasion": 2
+    }
+  },
+  "moonlight": {
+    "healing": true
+  },
+  "morningsun": {
+    "healing": true
+  },
+  "nastyplot": {
+    "boosts": {
+      "spa": 2
+    }
+  },
+  "noretreat": {
+    "boosts": {
+      "atk": 1,
+      "def": 1,
+      "spa": 1,
+      "spd": 1,
+      "spe": 1
+    }
+  },
+  "nobleroar": {
+    "boosts": {
+      "atk": -1,
+      "spa": -1
+    },
+    "reflectable": true
+  },
+  "overheat": {
+    "selfBoosts": {
+      "spa": -2
+    }
+  },
+  "paraboliccharge": {
+    "drain": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "partingshot": {
+    "reflectable": true
+  },
+  "poisonpowder": {
+    "reflectable": true
+  },
+  "quiverdance": {
+    "boosts": {
+      "spa": 1,
+      "spd": 1,
+      "spe": 1
+    }
+  },
+  "recover": {
+    "heal": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "rest": {
+    "healing": true
+  },
+  "revivalblessing": {
+    "healing": true
+  },
+  "roar": {
+    "reflectable": true
+  },
+  "rockpolish": {
+    "boosts": {
+      "spe": 2
+    }
+  },
+  "roost": {
+    "heal": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "scaryface": {
+    "boosts": {
+      "spe": -2
+    },
+    "reflectable": true
+  },
+  "screech": {
+    "boosts": {
+      "def": -2
+    },
+    "reflectable": true
+  },
+  "shellsmash": {
+    "boosts": {
+      "def": -1,
+      "spd": -1,
+      "atk": 2,
+      "spa": 2,
+      "spe": 2
+    }
+  },
+  "shelter": {
+    "boosts": {
+      "def": 2
+    }
+  },
+  "shiftgear": {
+    "boosts": {
+      "spe": 2,
+      "atk": 1
+    }
+  },
+  "simplebeam": {
+    "reflectable": true
+  },
+  "sing": {
+    "reflectable": true
+  },
+  "slackoff": {
+    "heal": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "sleeppowder": {
+    "reflectable": true
+  },
+  "soak": {
+    "reflectable": true
+  },
+  "softboiled": {
+    "heal": [
+      1,
+      2
+    ],
+    "healing": true
+  },
+  "spicyextract": {
+    "boosts": {
+      "atk": 2,
+      "def": -2
+    },
+    "reflectable": true
+  },
+  "spikes": {
+    "reflectable": true
+  },
+  "spite": {
+    "reflectable": true
+  },
+  "spore": {
+    "reflectable": true
+  },
+  "stealthrock": {
+    "reflectable": true
+  },
+  "stickyweb": {
+    "reflectable": true
+  },
+  "strengthsap": {
+    "healing": true,
+    "reflectable": true
+  },
+  "stringshot": {
+    "boosts": {
+      "spe": -2
+    },
+    "reflectable": true
+  },
+  "stunspore": {
+    "reflectable": true
+  },
+  "superpower": {
+    "selfBoosts": {
+      "atk": -1,
+      "def": -1
+    }
+  },
+  "swagger": {
+    "boosts": {
+      "atk": 2
+    },
+    "reflectable": true
+  },
+  "swallow": {
+    "healing": true
+  },
+  "sweetkiss": {
+    "reflectable": true
+  },
+  "sweetscent": {
+    "boosts": {
+      "evasion": -2
+    },
+    "reflectable": true
+  },
+  "swordsdance": {
+    "boosts": {
+      "atk": 2
+    }
+  },
+  "synthesis": {
+    "healing": true
+  },
+  "taunt": {
+    "reflectable": true
+  },
+  "tearfullook": {
+    "boosts": {
+      "atk": -1,
+      "spa": -1
+    },
+    "reflectable": true
+  },
+  "thunderwave": {
+    "reflectable": true
+  },
+  "tickle": {
+    "boosts": {
+      "atk": -1,
+      "def": -1
+    },
+    "reflectable": true
+  },
+  "topsyturvy": {
+    "reflectable": true
+  },
+  "torment": {
+    "reflectable": true
+  },
+  "toxic": {
+    "reflectable": true
+  },
+  "toxicspikes": {
+    "reflectable": true
+  },
+  "toxicthread": {
+    "boosts": {
+      "spe": -2
+    },
+    "reflectable": true
+  },
+  "trickortreat": {
+    "reflectable": true
+  },
+  "volttackle": {
+    "recoil": [
+      33,
+      100
+    ]
+  },
+  "wavecrash": {
+    "recoil": [
+      33,
+      100
+    ]
+  },
+  "whirlwind": {
+    "reflectable": true
+  },
+  "wildcharge": {
+    "recoil": [
+      1,
+      4
+    ]
+  },
+  "willowisp": {
+    "reflectable": true
+  },
+  "wish": {
+    "healing": true
+  },
+  "woodhammer": {
+    "recoil": [
+      33,
+      100
+    ]
+  },
+  "worryseed": {
+    "reflectable": true
+  },
+  "yawn": {
+    "reflectable": true
+  }
+}

@@ -3,6 +3,7 @@
 import {TYPE_JA} from './dex.js';
 import {dex, megaFormeFor, speciesName, moveName, abilityName, statsOf} from './dex.js';
 import {newCond, emptyBoosts, currentSpecies, typesOf, BOOST_KEYS} from './calc.js';
+import moveEffects from '../generated/move-effects.json' with {type: 'json'};
 
 export const UNDO_DEPTH = 6;
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -67,6 +68,25 @@ export const faintedCount = (b, side) => b.state.mons[side].filter(c => c.fainte
 // これまでに倒れた回数の合計 (さいきのいのりで復活してまた倒れた分も数える)。おはかまいり・そうだいしょう用
 export const totalFainted = (b, side) => b.state.sides[side].faintTotal ?? faintedCount(b, side);
 
+// 相手の最大HPはHPポイント16の見込み。自分のHPは実数で丸めてから反映する。
+export function maxHPOf(b, side, i) {
+  const bd = buildOf(b, side, i), c = condOf(b, side, i);
+  return statsOf(currentSpecies(bd, c), side === 'me' ? bd.sp : [16, 0, 0, 0, 0, 0], side === 'me' ? bd.nature : 'Serious')[0];
+}
+export function activeItem(b, side, i) {
+  const c = condOf(b, side, i);
+  return !c || c.itemGone || b.state.field.magicRoom || defaultAbilityResolver(b, side, i) === 'klutz' ? '' : buildOf(b, side, i)?.item || '';
+}
+export function healHP(b, side, i, amount, {log = [], label = '回復'} = {}) {
+  const c = condOf(b, side, i);
+  if (!c || c.fainted || (c.healBlock || 0) >= turnNumber(b)) return false;
+  const mx = maxHPOf(b, side, i), before = c.hp;
+  const after = side === 'me' ? (Math.round(c.hp * mx / 100) + Math.max(1, Math.floor(amount))) / mx * 100 : c.hp + amount / mx * 100;
+  setHP(b, side, i, Math.min(100, after));
+  if (c.hp !== before) log.push(`${label}: ${speciesName(buildOf(b, side, i).species)} HP ${Math.round(before)}% → ${Math.round(c.hp)}%`);
+  return c.hp !== before;
+}
+
 // 特性が確定していないポケモンの「たぶんこの特性」を返す resolver を差し込める
 // resolver(side, index) -> abilityId ('' なら不明)
 const NO_TRACE = new Set(['trace', 'imposter', 'illusion', 'disguise', 'stancechange', 'zerotohero', 'commander', 'protosynthesis', 'quarkdrive', 'multitype', 'rkssystem', 'schooling', 'shieldsdown', 'battlebond', 'powerconstruct', 'iceface', 'hungerswitch', 'gulpmissile', 'receiver', 'powerofalchemy', 'flowergift', 'forecast', 'neutralizinggas', 'wonderguard', 'comatose', 'zenmode']);
@@ -111,7 +131,17 @@ export function setTerrain(b, t, by) {
   f.terrain = t;
   f.since.terrain = t ? turnNumber(b) : undefined;
   (f.by ||= {}).terrain = t && by ? by : undefined;
+  activateTerrainSeeds(b);
   return true;
+}
+function activateTerrainSeeds(b, log = []) {
+  const seed = {Electric: ['electricseed', 'def'], Grassy: ['grassyseed', 'def'], Misty: ['mistyseed', 'spd'], Psychic: ['psychicseed', 'spd']}[b.state.field.terrain];
+  if (!seed) return;
+  for (const side of ['me', 'opp']) for (const i of b.state.sides[side].active) {
+    if (i == null || condOf(b, side, i)?.fainted || activeItem(b, side, i) !== seed[0]) continue;
+    condOf(b, side, i).itemGone = true;
+    applyBoosts(b, side, i, {[seed[1]]: 1}, {log});
+  }
 }
 export function setSideFlag(b, side, key, val, by) {
   const s = b.state.sides[side];
@@ -140,6 +170,7 @@ export function applyBoosts(b, side, i, changes, {fromOpp = false, log = [], res
   const ab = (resolveAbility || defaultAbilityResolver)(b, side, i);
   const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(currentSpecies(build, cond))}`;
   let dropped = false;
+  const ups = {};
   for (const [k, raw] of Object.entries(changes)) {
     if (!BOOST_KEYS.includes(k) || !raw) continue;
     let d = raw;
@@ -151,17 +182,22 @@ export function applyBoosts(b, side, i, changes, {fromOpp = false, log = [], res
     const after = Math.max(-6, Math.min(6, before + d));
     if (after === before) continue;
     cond.boosts[k] = after;
+    if (after > before) ups[k] = after - before;
     if (after < before && fromOpp) dropped = true;
     log.push(`${who}の${STAT_JA[k]} ${after - before > 0 ? '+' : ''}${after - before} (→${after > 0 ? '+' : ''}${after})`);
   }
   if (dropped && ab === 'defiant') applyBoosts(b, side, i, {atk: 2}, {log, resolveAbility: () => ''});
   // びんじょう: 相手の能力が上がると、自分も同じだけ上がる
-  const ups = Object.fromEntries(Object.entries(changes).filter(([k, v]) => BOOST_KEYS.includes(k) && v > 0 && ab !== 'contrary'));
   if (Object.keys(ups).length && !opportunist) {
     const os = other(side);
     for (const t of b.state.sides[os].active) if (t != null && !condOf(b, os, t)?.fainted && defaultAbilityResolver(b, os, t) === 'opportunist') applyBoosts(b, os, t, ups, {log, resolveAbility: () => '', opportunist: true});
   }
   if (dropped && ab === 'competitive') applyBoosts(b, side, i, {spa: 2}, {log, resolveAbility: () => ''});
+  if (activeItem(b, side, i) === 'whiteherb' && Object.values(cond.boosts).some(v => v < 0)) {
+    for (const k of BOOST_KEYS) if (cond.boosts[k] < 0) cond.boosts[k] = 0;
+    cond.itemGone = true;
+    log.push(`${who}のしろいハーブ: 下がった能力が元に戻った`);
+  }
 }
 
 // 場に出たとき・メガシンカしたときに発動する特性
@@ -173,6 +209,11 @@ export function applyEntryAbility(b, side, i, {log = [], resolveAbility} = {}) {
   const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(currentSpecies(build, cond))}`;
   if (WEATHER_ABILITY[ab] && setWeather(b, WEATHER_ABILITY[ab], {side, mon: i})) log.push(`${who}の${abilityName(ab)}: 天候が${WEATHER_JA[WEATHER_ABILITY[ab]]}に`);
   if (TERRAIN_ABILITY[ab] && setTerrain(b, TERRAIN_ABILITY[ab], {side, mon: i})) log.push(`${who}の${abilityName(ab)}: ${TERRAIN_JA[TERRAIN_ABILITY[ab]]}に`);
+  if (ab === 'hospitality' || ab === 'curiousmedicine') for (const ally of b.state.sides[side].active) {
+    if (ally == null || ally === i || condOf(b, side, ally)?.fainted) continue;
+    if (ab === 'hospitality') healHP(b, side, ally, maxHPOf(b, side, ally) / 4, {log, label: 'おもてなし'});
+    else { condOf(b, side, ally).boosts = emptyBoosts(); log.push(`${who}のきみょうなくすり: 味方のランク変化が元に戻った`); }
+  }
   // かわりもの (メタモン): 場に出たとき、向かい合う相手にへんしんする
   if (ab === 'imposter') {
     const os = other(side);
@@ -232,6 +273,8 @@ function leaveField(b, side, i, {log = [], resolveAbility} = {}) {
   for (const t of b.state.sides[other(side)].active) { const tc = t != null ? condOf(b, other(side), t) : null; if (tc?.bound?.by?.mon === i && tc.bound.by.side === side) tc.bound = null; if (tc?.octolock?.mon === i && tc.octolock.side === side) tc.octolock = null; }
   cond.bound = null; cond.syrup = 0; cond.octolock = null; cond.aquaRing = false; cond.ingrain = false; cond.destinyBond = false; cond.perish = null;
   cond.abilityChanged = null; // 変わった特性は交代で戻る
+  delete cond.cudChew;
+  cond.stockpile = 0; cond.stockpileDrops = null;
   cond.lastResult = null;
   cond.types = null; // みずびたし・へんげんじざい等のタイプ変化は交代で戻る
   cond.proteanUsed = false;
@@ -269,6 +312,7 @@ export function sendOut(b, side, slot, monIdx, opts = {}) {
   entryHazards(b, side, monIdx, log, opts.resolveAbility);
   if (!b.pick[side].includes(monIdx)) b.pick[side].push(monIdx);
   if (!opts.silent) applyEntryAbility(b, side, monIdx, {log, resolveAbility: opts.resolveAbility});
+  activateTerrainSeeds(b, log);
   return log;
 }
 
@@ -380,6 +424,7 @@ export function applyMoveEffects(b, act, opts = {}) {
   const mv = dex.moves[move];
   if (!mv) return log;
   const foe = other(side);
+  if (move === 'stockpile' && (condOf(b, side, mon).stockpile || 0) >= 3) { log.push('たくわえる: すでに3回たくわえているため失敗'); return log; }
   const userAb = res(b, side, mon);
   const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(currentSpecies(buildOf(b, side, mon), condOf(b, side, mon)))}`;
   const st = b.state;
@@ -443,6 +488,7 @@ export function applyMoveEffects(b, act, opts = {}) {
   // 対象 (ランク変化・はたきおとす用)
   let targets = [];
   if (act.target && act.target.mon != null) targets = [act.target];
+  else if (mv.tg === 'adjacentAlly') targets = st.sides[side].active.filter(i => i != null && i !== mon).map(i => ({side, mon: i}));
   else if (mv.tg === 'allAdjacentFoes') targets = st.sides[foe].active.filter(i => i != null).map(i => ({side: foe, mon: i}));
   else if (mv.tg === 'allAdjacent') {
     targets = st.sides[foe].active.filter(i => i != null).map(i => ({side: foe, mon: i}))
@@ -452,17 +498,35 @@ export function applyMoveEffects(b, act, opts = {}) {
     if (foes.length === 1) targets = [{side: foe, mon: foes[0]}];
   }
 
-  const eff = MOVE_BOOSTS[move];
+  // ちからをすいとる: ランクを下げる前の攻撃実数値で回復。やけど・持ち物・特性の攻撃倍率は含まない。
+  if (move === 'strengthsap' && tcond && !tcond.fainted) {
+    if ((tcond.boosts.atk || 0) <= -6) { log.push('ちからをすいとる: 相手のこうげきが最低なので失敗'); return log; }
+    const tb = opts.build?.(tgtRef.side, tgtRef.mon) || buildOf(b, tgtRef.side, tgtRef.mon);
+    const stage = tcond.boosts.atk || 0;
+    const raw = statsOf(currentSpecies(tb, tcond), tb.sp, tb.nature)[1];
+    const attack = Math.floor(raw * (stage >= 0 ? (2 + stage) / 2 : 2 / (2 - stage)));
+    const root = activeItem(b, side, mon) === 'bigroot' ? 5324 / 4096 : 1;
+    const amount = Math.max(1, Math.ceil(attack * root - 0.5));
+    if (res(b, tgtRef.side, tgtRef.mon) === 'liquidooze') {
+      if (userAb !== 'magicguard') setHP(b, side, mon, condOf(b, side, mon).hp - amount / maxHPOf(b, side, mon) * 100);
+      log.push('ヘドロえき: ちからをすいとるの回復量がダメージになった');
+    } else healHP(b, side, mon, amount, {log, label: 'ちからをすいとる'});
+    if (tgtRef.side === 'opp') { condOf(b, side, mon).hpUnknown = true; log.push('回復量は相手のこうげきの見込みから計算。実際のHPはHP欄で修正できます'); }
+  }
+  const data = moveEffects[move];
+  const eff = MOVE_BOOSTS[move] || (data?.boosts ? (mv.tg === 'self' ? B(data.boosts) : B(null, data.boosts)) : data?.selfBoosts ? B(data.selfBoosts) : null);
+  const stockBefore = move === 'stockpile' ? {...condOf(b, side, mon).boosts} : null;
   if (eff) {
     const sheer = eff.sec && userAb === 'sheerforce';
     if (eff.self && !sheer) {
       let self = eff.self;
       if (move === 'growth' && st.field.weather === 'Sun') self = {atk: 2, spa: 2};
-      applyBoosts(b, side, mon, self, {log, resolveAbility: res});
+      if (mv.tg === 'allies') for (const ally of st.sides[side].active) { if (ally != null) applyBoosts(b, side, ally, self, {log, resolveAbility: res}); }
+      else applyBoosts(b, side, mon, self, {log, resolveAbility: res});
     }
     if (eff.target && !sheer) {
       for (const t of targets) {
-        if (eff.sec && res(b, t.side, t.mon) === 'shielddust') continue;
+        if (eff.sec && (res(b, t.side, t.mon) === 'shielddust' || activeItem(b, t.side, t.mon) === 'covertcloak')) continue;
         applyBoosts(b, t.side, t.mon, eff.target, {log, fromOpp: t.side !== side, resolveAbility: res});
       }
     }
@@ -473,6 +537,27 @@ export function applyMoveEffects(b, act, opts = {}) {
   }
   // ランク変化をいじる技
   const uc = condOf(b, side, mon);
+  if (stockBefore) {
+    uc.stockpile = (uc.stockpile || 0) + 1;
+    uc.stockpileDrops ||= {def: 0, spd: 0};
+    for (const k of ['def', 'spd']) if (uc.boosts[k] !== stockBefore[k]) uc.stockpileDrops[k]--;
+    log.push(`たくわえる: ${uc.stockpile}回`);
+  }
+  if (data?.heal || move === 'healpulse' || move === 'pollenpuff') {
+    const healTargets = mv.tg === 'allies' ? st.sides[side].active.filter(i => i != null).map(mon => ({side, mon})) : move === 'healpulse' ? targets : move === 'pollenpuff' ? targets.filter(t => t.side === side && t.mon !== mon) : [];
+    for (const h of healTargets) {
+      const ratio = move === 'healpulse' ? (userAb === 'megalauncher' ? 3 / 4 : 1 / 2) : move === 'pollenpuff' ? 1 / 2 : data.heal[0] / data.heal[1];
+      healHP(b, h.side, h.mon, maxHPOf(b, h.side, h.mon) * ratio, {log, label: moveName(move)});
+    }
+  }
+  if (move === 'swallow') {
+    if (!uc.stockpile) log.push('のみこむ: たくわえていないため失敗');
+    else {
+      healHP(b, side, mon, maxHPOf(b, side, mon) * [0, 1 / 4, 1 / 2, 1][uc.stockpile], {log, label: 'のみこむ'});
+      applyBoosts(b, side, mon, uc.stockpileDrops || {}, {log, resolveAbility: res});
+      uc.stockpile = 0; uc.stockpileDrops = null;
+    }
+  }
   if (move === 'haze') { for (const sd of ['me', 'opp']) for (const i of st.sides[sd].active) if (i != null) condOf(b, sd, i).boosts = emptyBoosts(); log.push('くろいきり: 全員のランク変化が元に戻った'); }
   for (const t of targets) {
     const tc = condOf(b, t.side, t.mon);

@@ -1,0 +1,33 @@
+// iPad横向きで、回復と味方対象の入力を盤面から検証する。
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {chromium} from 'playwright';
+import {serve} from './serve.mjs';
+import {newTeam,newBuild,newBattle,newOpp,normalizeBattle,sendOut,setHP} from '../src/engine/battle.js';
+const {server,url}=await serve();let browser;
+try {
+ browser=await chromium.launch();const context=await browser.newContext({viewport:{width:1180,height:820}});
+ await context.route('https://play.pokemonshowdown.com/**',r=>r.fulfill({contentType:'image/png',body:fs.readFileSync(new URL('../docs/icon-192.png',import.meta.url))}));
+ const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(url);await page.waitForSelector('.bottomnav');
+ async function open(format,builds){
+  const team=newTeam({format});team.mons=builds;const b=newBattle({team,format});b.opp=[newOpp('garchomp'),newOpp('clefable')];normalizeBattle(b);sendOut(b,'me',0,0);sendOut(b,'opp',0,0);
+  if(format==='double'){sendOut(b,'me',1,1);sendOut(b,'opp',1,1);setHP(b,'me',1,20);}
+  setHP(b,'me',0,20);b.opp[0].ability='roughskin';
+  await page.evaluate(b=>window.__pokememo.store.saveBattle(b),b);await page.goto(`${url}#/battle/${b.id}`);await page.locator('.pl.me').first().waitFor();return b;
+ }
+ const sap=await open('single',[{...newBuild('arboliva'),moves:['strengthsap']}]);const mine=page.locator('.pl.me').first();
+ await mine.locator('.pl-mv',{hasText:'ちからをすいとる'}).click();await mine.getByRole('button',{name:'記録',exact:true}).click();
+ let saved=await page.evaluate(id=>window.__pokememo.store.battle(id),sap.id);assert.ok(saved.state.mons.me[0].hp>20);assert.equal(saved.state.mons.opp[0].boosts.atk,-1);assert.ok(await mine.getByText('HP未確認・目安').isVisible());
+ await page.getByRole('button',{name:'1つ戻す',exact:true}).click();saved=await page.evaluate(id=>window.__pokememo.store.battle(id),sap.id);assert.equal(saved.state.mons.me[0].hp,20);console.log('ok iPad: ちからをすいとるの回復表示・ランク・取り消し');
+ const doubles=await open('double',[{...newBuild('clefable'),moves:['lifedew','healpulse']},{...newBuild('garchomp'),moves:['earthquake']}]);
+ await mine.locator('.pl-mv',{hasText:'いのちのしずく'}).click();await mine.getByRole('button',{name:'記録',exact:true}).click();
+ saved=await page.evaluate(id=>window.__pokememo.store.battle(id),doubles.id);assert.ok(saved.state.mons.me.every(c=>c.hp>20));assert.equal(saved.state.mons.opp[0].hp,100);
+ await page.getByRole('button',{name:'1つ戻す',exact:true}).click();
+ await mine.locator('.pl-mv',{hasText:'いやしのはどう'}).click();
+ // 同じ種族が相手にもいるため、自分/相手のラベルで味方を選ぶ。
+ await mine.locator('.pa-h').getByRole('button',{name:'自分 ガブリアス',exact:true}).click();await mine.getByRole('button',{name:'記録',exact:true}).click();
+ saved=await page.evaluate(id=>window.__pokememo.store.battle(id),doubles.id);assert.equal(saved.state.mons.me[0].hp,20);assert.ok(saved.state.mons.me[1].hp>60);assert.equal(saved.state.mons.opp[0].hp,100);
+ assert.deepEqual(errors,[]);await page.screenshot({path:'e2e-out/effects-ipad.png'});console.log('ok iPad: いのちのしずく・いやしのはどうの味方対象');
+ await context.close();
+} finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}

@@ -1,6 +1,7 @@
 // 時系列での入力: 行動を1つずつ追加していく。追加のたびに盤面・判明情報・能力の絞り込みへ反映する。
 import {dex, speciesName, moveName, statsOf, itemName, abilityName, TYPE_JA, typeEffect} from './dex.js';
 import {currentSpecies, typesOf, currentAbility, finalSpeed, disguiseIntact, defaultHits} from './calc.js';
+import moveEffects from '../generated/move-effects.json' with {type: 'json'};
 
 export const FORCE_MOVES = new Set(['dragontail', 'circlethrow', 'roar', 'whirlwind']);
 // シンクロ: どく・まひ・やけどにされると、相手も同じ状態異常に (判明している特性のみ)
@@ -17,10 +18,22 @@ const CURE_BERRY = {lumberry: ['psn', 'tox', 'par', 'brn', 'slp', 'frz'], cherib
 function autoCureBerries(b, log) {
   for (const side of ['me', 'opp']) for (const i of b.state.sides[side].active) {
     const c = i != null ? condOf(b, side, i) : null, bd = i != null ? buildOf(b, side, i) : null;
-    if (!c || c.fainted || !c.status || c.itemGone || !CURE_BERRY[bd.item]?.includes(c.status)) continue;
+    if (!c || c.fainted || !c.status || activeItem(b, side, i) !== bd.item || !CURE_BERRY[bd.item]?.includes(c.status)) continue;
+    if (b.state.sides[other(side)].active.some(j => j != null && !condOf(b, other(side), j)?.fainted && defaultAbilityResolver(b, other(side), j) === 'unnerve')) continue;
     log.push(`${side === 'me' ? '自分' : '相手'}の${speciesName(bd.species)}は${itemName(bd.item)}で${STATUS_JA[c.status]}が治った`);
     c.status = ''; c.statusKey = ''; c.itemGone = true;
+    berryEffects(b, side, i, bd.item, log, {cure: false});
   }
+}
+function berryEffects(b, side, mon, item, log, {cure = true, restoreHP = true, repeat = false} = {}) {
+  if (!/berry$/.test(item)) return;
+  const c = condOf(b, side, mon), ab = defaultAbilityResolver(b, side, mon);
+  if (cure && CURE_BERRY[item]?.includes(c.status)) { c.status = ''; c.statusKey = ''; log.push(`${itemName(item)}で状態異常が治った`); }
+  const mx = maxHPOf(b, side, mon), ripen = ab === 'ripen' ? 2 : 1;
+  const amount = item === 'sitrusberry' ? (side === 'me' ? Math.max(1, Math.floor(mx / 4)) : mx / 4) * ripen : item === 'oranberry' ? 10 * ripen : 0;
+  if (amount && restoreHP) healHP(b, side, mon, amount, {log, label: itemName(item)});
+  if (ab === 'cheekpouch' && restoreHP) healHP(b, side, mon, mx / 3, {log, label: 'ほおぶくろ'});
+  if (ab === 'cudchew' && !repeat) c.cudChew = {item, turn: turnNumber(b) + 1};
 }
 const STATUS_RESIDUAL = new Set(['hydration', 'shedskin', 'harvest']);
 // 追加効果が起きない理由 (りんぷん・おんみつマント・ちからずく)。なければ ''
@@ -34,8 +47,9 @@ function secBlocked(b, side, mon, tgt, res) {
 const failed0 = a => a.flags.miss || a.flags.protect || a.flags.cant;
 export const EJECT_JA = {ejectbutton: 'だっしゅつボタン', redcard: 'レッドカード', ejectpack: 'だっしゅつパック', emergencyexit: 'ききかいひ', wimpout: 'にげごし'};
 // 変化技で自分のHPが変わる割合 (+回復 / −消費)
-const SELF_HP = {recover: 1 / 2, roost: 1 / 2, slackoff: 1 / 2, softboiled: 1 / 2, milkdrink: 1 / 2, healorder: 1 / 2, junglehealing: 1 / 4, lifedew: 1 / 4,
-  bellydrum: -1 / 2, filletaway: -1 / 2, clangoroussoul: -1 / 3, substitute: -1 / 4, shedtail: -1 / 2, curse: -1 / 2};
+const SELF_HP = {recover: 1 / 2, roost: 1 / 2, slackoff: 1 / 2, softboiled: 1 / 2, milkdrink: 1 / 2, healorder: 1 / 2, junglehealing: 1 / 4,
+  bellydrum: -1 / 2, filletaway: -1 / 2, clangoroussoul: -33 / 100, substitute: -1 / 4, shedtail: -1 / 2, curse: -1 / 2};
+const MOVE_COST_BOOSTS = {filletaway: {atk: 2, spa: 2, spe: 2}, clangoroussoul: {atk: 1, def: 1, spa: 1, spd: 1, spe: 1}};
 export const SELF_KO = new Set(['explosion', 'selfdestruct', 'mistyexplosion', 'memento', 'finalgambit', 'healingwish', 'lunardance']);
 // 眠らない (ふみん・やるき・スイートベール・きよめのしお・ぜったいねむり、エレキ/ミストフィールドで接地)
 const NO_SLEEP = new Set(['insomnia', 'vitalspirit', 'sweetveil', 'purifyingsalt', 'comatose']);
@@ -52,7 +66,7 @@ function sleepBlocked(b, side, i, res) {
 }
 // マジックミラーではね返る変化技
 const BOUNCE = new Set(['stealthrock', 'spikes', 'toxicspikes', 'stickyweb', 'yawn', 'taunt', 'encore', 'thunderwave', 'willowisp', 'toxic', 'glare', 'spore', 'sleeppowder', 'stunspore', 'hypnosis', 'leechseed', 'partingshot', 'charm', 'faketears', 'scaryface', 'screech', 'roar', 'whirlwind', 'trick', 'switcheroo', 'soak', 'magicpowder', 'trickortreat', 'forestscurse', 'nobleroar', 'tickle', 'stringshot', 'cottonspore', 'disable', 'torment', 'embargo', 'healblock', 'confuseray', 'swagger', 'sweetkiss', 'teeterdance', 'gastroacid', 'worryseed', 'simplebeam', 'entrainment', 'skillswap', 'poisonpowder', 'lovelykiss', 'sing', 'grasswhistle', 'darkvoid', 'yawn', 'defog', 'memento', 'babydolleyes', 'playnice', 'venomdrench', 'tearfullook', 'captivate', 'meanlook', 'block', 'spiderweb']);
-import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA, WEATHER_ABILITY, TERRAIN_ABILITY} from './battle.js';
+import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA, WEATHER_ABILITY, TERRAIN_ABILITY, maxHPOf, activeItem, healHP} from './battle.js';
 import {boardContext} from './board.js';
 import {inferFromTaken, inferFromDealt, applyInference, inferable, applyHpConstraint} from './infer-dmg.js';
 import {inferSpeeds} from './infer.js';
@@ -110,6 +124,11 @@ export function endTurn(b, usage, opts = {}) {
     for (const i of sd.active) {
       const c = i != null ? condOf(b, side, i) : null;
       if (!c || c.fainted) continue;
+      if (c.cudChew && c.cudChew.turn <= t.n && defaultAbilityResolver(b, side, i) === 'cudchew') {
+        const item = c.cudChew.item; delete c.cudChew;
+        log.push(`はんすう: ${itemName(item)}の効果がもう一度発動`);
+        berryEffects(b, side, i, item, log, {repeat: true});
+      }
       if (c.syrup && c.syrup >= t.n) applyBoosts(b, side, i, {spe: -1}, {log, fromOpp: true, resolveAbility: res});
       if (c.octolock && b.state.sides[c.octolock.side].active.includes(c.octolock.mon)) applyBoosts(b, side, i, {def: -1, spd: -1}, {log, fromOpp: true, resolveAbility: res});
       if (c.bound && t.n - c.bound.turn >= 4) c.bound = null;
@@ -227,9 +246,11 @@ export function addAct(b, input, usage) {
     // へんしん中に使った技は相手からコピーした技なので、判明した技には入れない
     if (side === 'opp' && !condOf(b, side, mon)?.transformed && dex.moves[a.move] && !build.moves.includes(a.move) && build.moves.length < 4) build.moves.push(a.move);
     const foe = other(side);
-    const tgt = a.target || (() => { const f = b.state.sides[foe].active.filter(i => i != null && !condOf(b, foe, i)?.fainted); return f.length === 1 ? {side: foe, mon: f[0]} : null; })();
-    let failed = a.flags.miss || a.flags.protect || a.flags.cant;
     const mvd = dex.moves[a.move];
+    const noTarget = ['self', 'allies', 'allySide', 'all'].includes(mvd?.tg);
+    const ally = mvd?.tg === 'adjacentAlly' ? b.state.sides[side].active.find(i => i != null && i !== mon && !condOf(b, side, i)?.fainted) : null;
+    const tgt = noTarget ? null : a.target || (mvd?.tg === 'adjacentAlly' ? (ally != null ? {side, mon: ally} : null) : (() => { const f = b.state.sides[foe].active.filter(i => i != null && !condOf(b, foe, i)?.fainted); return f.length === 1 ? {side: foe, mon: f[0]} : null; })());
+    let failed = a.flags.miss || a.flags.protect || a.flags.cant;
     // みちづれは次に技を出すまで
     if (!a.flags.cant) condOf(b, side, mon).destinyBond = false;
     // ねむり・こおり: 行動できなかった回数を数える。技を出せた = 目を覚ました / 溶けた (ねごと・いびきは眠ったまま)
@@ -265,8 +286,34 @@ export function addAct(b, input, usage) {
     if (!failed && tgt && tgt.side !== side && mvd?.c === 'Z') {
       const tab = res(b, tgt.side, tgt.mon);
       if (tab === 'goodasgold' && (!mvd.tg || mvd.tg === 'allAdjacentFoes' || mvd.tg === 'any')) { failed = true; log.push(`${speciesName(buildOf(b, tgt.side, tgt.mon).species)}のおうごんのからだ: ${moveName(a.move)}は効かない`); }
-      else if (tab === 'magicbounce' && BOUNCE.has(a.move)) { bounced = true; log.push(`${speciesName(buildOf(b, tgt.side, tgt.mon).species)}のマジックミラー: ${moveName(a.move)}をはね返した`); }
+      else if (tab === 'magicbounce' && (moveEffects[a.move]?.reflectable || BOUNCE.has(a.move))) { bounced = true; log.push(`${speciesName(buildOf(b, tgt.side, tgt.mon).species)}のマジックミラー: ${moveName(a.move)}をはね返した`); }
     }
+    // HPを消費する技・回復封じは、能力変化などを適用する前に成否を確定する。
+    if (!failed && (mvd?.c === 'Z' || (a.move === 'pollenpuff' && tgt?.side === side))) {
+      const uc = condOf(b, side, mon), cost = {bellydrum: 1 / 2, filletaway: 1 / 2, clangoroussoul: 33 / 100, substitute: 1 / 4, shedtail: 1 / 2}[a.move];
+      const mx = maxHPOf(b, side, mon), hp = Math.round(uc.hp * mx / 100);
+      const full = a.move === 'bellydrum' ? uc.boosts.atk >= 6 : ['filletaway', 'clangoroussoul'].includes(a.move) && Object.keys(MOVE_COST_BOOSTS[a.move]).every(k => uc.boosts[k] >= 6);
+      if (cost && (hp <= Math.floor(mx * cost) || full)) { failed = true; log.push(`${moveName(a.move)}: HP不足または能力が上限のため失敗`); }
+      if ((moveEffects[a.move]?.healing || a.move === 'pollenpuff') && (uc.healBlock || 0) >= t.n) { failed = true; log.push(`${moveName(a.move)}: かいふくふうじで失敗`); }
+    }
+    // 無効化・吸収は被弾の追加効果より先。未判明の相手特性では自動発動しない。
+    if (!failed && !bounced && tgt && mvd && tgt.mon != null && !(tgt.side === side && tgt.mon === mon)) {
+      const tab = defaultAbilityResolver(b, tgt.side, tgt.mon), uab = defaultAbilityResolver(b, side, mon);
+      const bypass = ['moldbreaker', 'teravolt', 'turboblaze', 'myceliummight'].includes(uab) || ['sunsteelstrike', 'moongeistbeam', 'photongeyser'].includes(a.move);
+      let ty = mvd.t;
+      if (mvd.fl?.includes('sound') && uab === 'liquidvoice') ty = 'Water';
+      else if (ty === 'Normal') ty = {aerilate: 'Flying', pixilate: 'Fairy', refrigerate: 'Ice', dragonize: 'Dragon'}[uab] || ty;
+      const absorbType = {waterabsorb: 'Water', dryskin: 'Water', voltabsorb: 'Electric', eartheater: 'Ground', lightningrod: 'Electric', motordrive: 'Electric', sapsipper: 'Grass', flashfire: 'Fire'}[tab];
+      if (!bypass && absorbType === ty) {
+        failed = true;
+        log.push(`${speciesName(buildOf(b, tgt.side, tgt.mon).species)}の${abilityName(tab)}: ${moveName(a.move)}を無効化`);
+        if (['waterabsorb', 'dryskin', 'voltabsorb', 'eartheater'].includes(tab)) healHP(b, tgt.side, tgt.mon, maxHPOf(b, tgt.side, tgt.mon) / 4, {log, label: abilityName(tab)});
+        const boosts = {lightningrod: {spa: 1}, motordrive: {spe: 1}, sapsipper: {atk: 1}}[tab];
+        if (boosts) applyBoosts(b, tgt.side, tgt.mon, boosts, {log, resolveAbility: defaultAbilityResolver});
+        if (tab === 'flashfire') condOf(b, tgt.side, tgt.mon).abilityOn = true;
+      }
+    }
+    if (!failed && mvd?.tg === 'adjacentAlly' && !tgt) { failed = true; log.push(`${moveName(a.move)}: 対象の味方がいないため失敗`); }
     // 持ち物の発動: 攻撃側 (いのちのたま等) と受ける側 (タスキ・オボン・半減実など)
     const atkItem = input.atkItem?.item, defItem = tgt ? input.defItem?.item : null;
     if (atkItem && side === 'opp') build.item = atkItem;
@@ -315,8 +362,9 @@ export function addAct(b, input, usage) {
       const knockedOut = a.hpAfter === 0;
       // 回復実が発動していたら、回復前のHPに戻してからダメージを逆算する
       let healPct = heal;
-      if (heal && tgt.side === 'me') { const tb0 = buildOf(b, 'me', tgt.mon); const mx = statsOf(currentSpecies(tb0, tc), tb0.sp, tb0.nature)[0]; healPct = (Math.floor(mx / 4) / mx) * 100; }
+      if (heal && tgt.side === 'me') { const mx = maxHPOf(b, 'me', tgt.mon); healPct = ((defItem === 'sitrusberry' ? Math.floor(mx / 4) * ripen : 0) + (cheek ? Math.floor(mx / 3) : 0)) / mx * 100; }
       const hitAfter = heal && !knockedOut ? Math.max(0.1, a.hpAfter - healPct) : a.hpAfter;
+      if (heal && !knockedOut) a.hitHpAfter = hitAfter;
       if (heal === null) log.push('オレンのみの回復量は割合に直せないため、このダメージからの推定は見送り');
       const unsafe = disguiseHit ? 'ばけのかわ' : input.pierce ? 'まもるを貫いた (1/4) ' : tgt.side !== side ? unsafeForInference(b, t, side, mon, tgt, a.move, res, a.flags.crit) : '';
       if (unsafe && tgt.side !== side && inferable(a.move)) log.push(`${unsafe}ため、このダメージからの推定は見送り`);
@@ -363,10 +411,10 @@ export function addAct(b, input, usage) {
       const yc = yt ? condOf(b, yt.side, yt.mon) : null;
       if (yc && !yc.fainted && !yc.status && !yc.drowsy && !sleepBlocked(b, yt.side, yt.mon, res)) { yc.drowsy = t.n; log.push(`${yt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, yt.side, yt.mon).species)}はねむけをさそわれた`); }
     }
-    if (!failed && bounced) applyMoveEffects(b, {...a, side: tgt.side, mon: tgt.mon, target: {side, mon}}, {log, resolveAbility: res});
-    else if (!failed) applyMoveEffects(b, {...a, target: tgt}, {log, resolveAbility: res});
+    if (!failed && bounced) applyMoveEffects(b, {...a, side: tgt.side, mon: tgt.mon, target: {side, mon}}, {log, resolveAbility: res, build: ctx.build});
+    else if (!failed) applyMoveEffects(b, {...a, target: tgt}, {log, resolveAbility: res, build: ctx.build});
     // 特性を変える技: なやみのタネ・シンプルビーム・なかまづくり・スキルスワップ・いえき
-    if (!failed && tgt && !bounced && ABILITY_MOVES[a.move]) {
+    if (!failed && tgt && !bounced && Object.hasOwn(ABILITY_MOVES, a.move)) {
       const tc4 = condOf(b, tgt.side, tgt.mon), uc4 = condOf(b, side, mon);
       const tName = `${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}`;
       const mine = res(b, side, mon), theirs = res(b, tgt.side, tgt.mon);
@@ -401,6 +449,7 @@ export function addAct(b, input, usage) {
     // 技の結果を覚えておく (じだんだ・やけっぱち・ふんどのこぶし・ゆきなだれ・ダメおし・カウンター等の威力/ダメージ計算に使う)
     if (mvd && mvd.c !== 'Z' && tgt) {
       const immune = !failed && typeEffect(mvd.t, typesOf(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon))) === 0;
+      if (immune) a.moveImmune = true;
       if (!failed && !immune && hpBeforeHit != null && a.hpAfter != null) {
         a.dmgPct = Math.max(0, hpBeforeHit - a.hpAfter);
       }
@@ -424,8 +473,12 @@ export function addAct(b, input, usage) {
       log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は${STATUS_JA[input.inflict]}になった`);
       syncStatus(b, tgt, {side, mon}, input.inflict, log);
     }
-    if (!failed && defItem && input.defItem.consumed !== false && tgt) condOf(b, tgt.side, tgt.mon).itemGone = true;
+    if (!failed && defItem && input.defItem.consumed !== false && tgt) {
+      condOf(b, tgt.side, tgt.mon).itemGone = true;
+      berryEffects(b, tgt.side, tgt.mon, defItem, log, {restoreHP: false});
+    }
     if (atkItem && input.atkItem.consumed) condOf(b, side, mon).itemGone = true;
+    if (failed) a.effectFailed = true;
     if (a.to != null && !failed) {
       const s2 = b.state.sides[side].active.indexOf(mon);
       if (s2 >= 0) {
@@ -435,6 +488,15 @@ export function addAct(b, input, usage) {
         sendOut(b, side, s2, a.to, {log, resolveAbility: res});
         if (passed && Object.values(passed).some(Boolean)) { condOf(b, side, a.to).boosts = passed; log.push('バトンタッチ: ランク変化を引き継ぎ'); }
       }
+    }
+  }
+  // とびひざげり等の失敗ダメージ、てっていこうせんの外れ・まもる時のHP消費。
+  if (a.type === 'move' && !a.flags.cant && (a.effectFailed || a.moveImmune) && defaultAbilityResolver(b, side, mon) !== 'magicguard') {
+    const crash = ['highjumpkick', 'jumpkick', 'axekick', 'supercellslam'].includes(a.move);
+    if (crash || (a.effectFailed && HALF_RECOIL.has(a.move))) {
+      const mx = maxHPOf(b, side, mon), damage = crash ? Math.max(1, Math.floor(mx / 2)) : Math.round(mx / 2);
+      setHP(b, side, mon, (Math.round(condOf(b, side, mon).hp * mx / 100) - damage) / mx * 100);
+      log.push(`${moveName(a.move)}の失敗ダメージ: HP -${damage}`);
     }
   }
   // ニードルガード (接触で1/8)・トーチカ (接触でどく)・キングシールド (接触でこうげき-1): まもられた技が接触技なら
@@ -452,11 +514,12 @@ export function addAct(b, input, usage) {
     a.pp = ft && ft.side !== side && defaultAbilityResolver(b, ft.side, ft.mon) === 'pressure' ? 2 : 1;
   }
   // 自分のHPが変わる変化技 (回復技・はらだいこ・みがわり等)。失敗・行動できずのときは何もしない
-  if (a.type === 'move' && dex.moves[a.move]?.c === 'Z' && !(a.flags.cant || a.flags.miss || a.flags.protect)) {
+  if (a.type === 'move' && dex.moves[a.move]?.c === 'Z' && !a.effectFailed && !(a.flags.cant || a.flags.miss || a.flags.protect)) {
     const uc = condOf(b, side, mon);
     const w = b.state.field.weather;
     const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}`;
-    let d = SELF_HP[a.move];
+    const dataHeal = moveEffects[a.move]?.heal;
+    let d = SELF_HP[a.move] ?? (dataHeal && dex.moves[a.move]?.tg === 'self' ? dataHeal[0] / dataHeal[1] : undefined);
     if (a.move === 'moonlight' || a.move === 'morningsun' || a.move === 'synthesis') d = w === 'Sun' ? 2 / 3 : w ? 1 / 4 : 1 / 2;
     if (a.move === 'shoreup') d = w === 'Sand' ? 2 / 3 : 1 / 2;
     if (a.move === 'curse' && !typesOf(build, uc).includes('Ghost')) d = 0;
@@ -465,7 +528,7 @@ export function addAct(b, input, usage) {
     if (uc && !uc.fainted && d) {
       const before = uc.hp;
       if (d < 0 && uc.hp <= -d * 100 && a.move !== 'curse') log.push(`${who}の${moveName(a.move)}: HPが足りないので失敗`);
-      else { setHP(b, side, mon, uc.hp + d * 100); if (uc.hp !== before) log.push(`${who}: HP ${Math.round(before)}% → ${Math.round(uc.hp)}%`); }
+      else { const mx = maxHPOf(b, side, mon); const h = Math.round(uc.hp * mx / 100) + Math.sign(d) * Math.max(1, Math.floor(mx * Math.abs(d))); setHP(b, side, mon, h / mx * 100); if (uc.hp !== before) log.push(`${who}: HP ${Math.round(before)}% → ${Math.round(uc.hp)}%`); }
     }
     // ねむる: HP全快して2ターン眠る
     if (a.move === 'rest' && !hb && uc && !uc.fainted && uc.hp < 100 && !sleepBlocked(b, side, mon, res)) { setHP(b, side, mon, 100); uc.status = 'slp'; uc.statusKey = 'slpRest'; uc.statusCant = 0; uc.toxicCounter = 1; log.push(`${who}はねむって全回復`); }
@@ -611,7 +674,10 @@ export function addEvent(b, ev, usage) {
     if (side === 'opp' && ev.item) build.item = ev.item;
     if (ev.consumed) cond.itemGone = true;
     let hp = ev.hpAfter;
-    if (hp == null && ev.consumed && ev.item === 'sitrusberry' && !((cond.healBlock || 0) >= t.n)) hp = Math.min(100, cond.hp + 25 + (defaultAbilityResolver(b, side, mon) === 'cheekpouch' ? 100 / 3 : 0));
+    if (ev.consumed && /berry$/.test(ev.item || '')) {
+      berryEffects(b, side, mon, ev.item, log, {restoreHP: hp == null});
+      if (hp == null) hp = cond.hp;
+    }
     if (hp != null) setHP(b, side, mon, hp);
     text = `${itemName(ev.item) || '持ち物'} ${ev.consumed ? '発動・消費' : '判明'}${hp != null ? ` → HP ${Math.round(hp)}%` : ''}`;
   } else if (ev.kind === 'hp') { setHP(b, side, mon, ev.hpAfter); delete condOf(b, side, mon).hpUnknown; text = `HP → ${Math.round(ev.hpAfter)}%${ev.note ? ` (${ev.note})` : ''}`; }
@@ -862,11 +928,6 @@ function residualFrac(b, side, mon, key) {
 }
 
 // 1回分の変化量 {pct: HP割合の変化, hp: 自分なら実数の変化}。満タンで回復しないときは null
-// 最大HPの実数 (相手は能力ポイントが分からないので HP に 16 振った見込みで近似)
-const maxHPOf = (b, side, mon) => {
-  const bd = buildOf(b, side, mon), c = condOf(b, side, mon);
-  return statsOf(currentSpecies(bd, c), side === 'me' ? bd.sp : [16, 0, 0, 0, 0, 0], side === 'me' ? bd.nature : 'Serious')[0];
-};
 function residualDelta(b, side, mon, key, hpNow) {
   const cond = condOf(b, side, mon), build = buildOf(b, side, mon);
   const cur = hpNow ?? cond?.hp;
@@ -1263,9 +1324,11 @@ function stepOf(b, side, mon, key) {
 
 // ---- 攻撃した側のHPの変化 ----
 // 反動 (与えたダメージ × 割合 の四捨五入、最低1) / 吸収 (与えたダメージ × 割合 の四捨五入)
-export const RECOIL = {bravebird: [33, 100], doubleedge: [33, 100], flareblitz: [33, 100], headsmash: [1, 2], lightofruin: [1, 2], volttackle: [33, 100], wavecrash: [33, 100], wildcharge: [1, 4], woodhammer: [33, 100], takedown: [1, 4], submission: [1, 4], headcharge: [1, 4]};
+const LEGACY_RECOIL = {bravebird: [33, 100], doubleedge: [33, 100], flareblitz: [33, 100], headsmash: [1, 2], lightofruin: [1, 2], volttackle: [33, 100], wavecrash: [33, 100], wildcharge: [1, 4], woodhammer: [33, 100], takedown: [1, 4], submission: [1, 4], headcharge: [1, 4]};
 export const HALF_RECOIL = new Set(['steelbeam', 'mindblown', 'chloroblast']);
-export const DRAIN = {bitterblade: [1, 2], drainpunch: [1, 2], drainingkiss: [3, 4], gigadrain: [1, 2], hornleech: [1, 2], leechlife: [1, 2], matchagotcha: [1, 2], paraboliccharge: [1, 2]};
+const LEGACY_DRAIN = {bitterblade: [1, 2], drainpunch: [1, 2], drainingkiss: [3, 4], gigadrain: [1, 2], hornleech: [1, 2], leechlife: [1, 2], matchagotcha: [1, 2], paraboliccharge: [1, 2]};
+export const RECOIL = {...LEGACY_RECOIL, ...Object.fromEntries(Object.entries(moveEffects).filter(([, m]) => m.recoil).map(([id, m]) => [id, m.recoil]))};
+export const DRAIN = {...LEGACY_DRAIN, ...Object.fromEntries(Object.entries(moveEffects).filter(([, m]) => m.drain).map(([id, m]) => [id, m.drain]))};
 export const SELF_FX_JA = {lifeorb: 'いのちのたまの反動', recoil: '反動ダメージ', drain: '吸収で回復', ooze: 'ヘドロえきでダメージ', helmet: 'ゴツゴツメット', roughskin: 'さめはだ・てつのトゲ', shellbell: 'かいがらのすず', aftermath: 'ゆうばく', innards: 'とびだすなかみ'};
 
 function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a}, log) {
@@ -1278,15 +1341,16 @@ function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a},
   if (tgt.side === 'opp' && fx.includes('roughskin') && !tb.ability) { const s0 = dex.species[tb.species]?.ab || []; tb.ability = s0.includes('roughskin') ? 'roughskin' : s0.includes('ironbarbs') ? 'ironbarbs' : tb.ability; }
   // 与えたダメージの実数 (受けたのが自分なら正確に分かる)
   //  (受けたのが相手なら、相手の最大HPの見込みで概算する)
-  const dealtReal = tgtBefore != null ? Math.round(((tgtBefore - tc.hp) / 100) * maxHPOf(b, tgt.side, tgt.mon)) : null;
+  const dealtReal = tgtBefore != null ? Math.max(0, Math.round(((tgtBefore - (a.hitHpAfter ?? tc.hp)) / 100) * maxHPOf(b, tgt.side, tgt.mon))) : null;
   const steps = [];
   // かいふくふうじ中は 吸収・かいがらのすず で回復しない (ヘドロえきのダメージは受ける)
   if ((ab.healBlock || 0) >= (openTurn(b)?.n ?? turnNumber(b))) fx = fx.filter(k => k !== 'drain' && k !== 'shellbell');
+  if (defaultAbilityResolver(b, side, mon) === 'magicguard') fx = fx.filter(k => k !== 'ooze');
   // おおきなねっこ: 吸収量1.3倍
-  const root = !ab.itemGone && abd.item === 'bigroot' ? 1.3 : 1;
+  const root = activeItem(b, side, mon) === 'bigroot' ? 5324 / 4096 : 1;
   if (fx.includes('drain') && DRAIN[move]) steps.push(dealtReal != null ? {k: 'fixed', amount: Math.round(((dealtReal * DRAIN[move][0]) / DRAIN[move][1]) * root)} : null);
   // ヘドロえき: 吸収するはずの分だけダメージ
-  if (fx.includes('ooze') && DRAIN[move]) steps.push(dealtReal != null ? {k: 'fixed', amount: -Math.max(1, Math.round((dealtReal * DRAIN[move][0]) / DRAIN[move][1]))} : null);
+  if (fx.includes('ooze') && DRAIN[move]) steps.push(dealtReal != null ? {k: 'fixed', amount: -Math.max(1, Math.round((dealtReal * DRAIN[move][0]) / DRAIN[move][1] * root))} : null);
   // かいがらのすず: 与えたダメージの1/8回復
   if (fx.includes('shellbell')) steps.push(dealtReal != null ? {k: 'fixed', amount: Math.max(1, Math.floor(dealtReal / 8))} : null);
   // ゆうばく: 接触技で倒すと最大HPの1/4 / とびだすなかみ: 倒した相手の残りHPぶん
@@ -1302,7 +1366,7 @@ function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a},
     if (side === 'opp' && steps.every(Boolean) && Number.isInteger(before)) { const m = inferHpFromDisplay(b, mon, before, Math.round(hpAfter), steps); if (m) log.push(m); }
     // 自分が攻撃した: 反動・吸収の実数から、相手に与えたダメージの実数 → 相手の最大HPを絞り込む
     // (満タンまで回復した・倒れた場合は量が頭打ちになるので使わない)
-    if (side === 'me' && tgt.side === 'opp' && hpAfter < 100 - 1e-9 && hpAfter > 0 && (fx.includes('recoil') || fx.includes('drain')) && fx.every(k => ['recoil', 'drain', 'lifeorb', 'helmet', 'roughskin'].includes(k)) && Number.isInteger(tgtBefore) && Number.isInteger(tc.hp)) {
+    if (side === 'me' && tgt.side === 'opp' && a.hitHpAfter == null && hpAfter < 100 - 1e-9 && hpAfter > 0 && (fx.includes('recoil') || fx.includes('drain')) && fx.every(k => ['recoil', 'drain', 'lifeorb', 'helmet', 'roughskin'].includes(k)) && Number.isInteger(tgtBefore) && Number.isInteger(tc.hp)) {
       const max = maxHPOf(b, 'me', mon);
       let change = Math.round((hpAfter / 100) * max) - Math.round((before / 100) * max);
       if (fx.includes('lifeorb')) change += Math.max(1, Math.floor(max / 10));
@@ -1319,7 +1383,7 @@ function attackerHpEffects(b, {side, mon, tgt, move, fx, hpAfter, tgtBefore, a},
           const lo = d0 === 100 ? tmax : d0 === 1 ? 1 : Math.ceil((d0 * tmax) / 100);
           const hi = d0 === 100 ? tmax : Math.min(tmax, Math.ceil(((d0 + 1) * tmax) / 100) - 1);
           for (let h = lo; h <= hi; h++) for (let dm = 1; dm <= h; dm++) {
-            const r = Math.round((dm * ratio[0]) / ratio[1]);
+            const r = Math.round((dm * ratio[0]) / ratio[1] * (fx.includes('drain') ? root : 1));
             if ((fx.includes('recoil') ? Math.max(1, r) : r) !== amount) continue;
             if (dispPct(h - dm, tmax) === d1) return true;
           }

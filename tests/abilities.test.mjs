@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {dex} from '../src/engine/dex.js';
-import {newBattle, newTeam, newOpp, normalizeBattle, sendOut, condOf} from '../src/engine/battle.js';
+import {newBattle, newTeam, newOpp, normalizeBattle, sendOut, condOf, maxHPOf} from '../src/engine/battle.js';
 import {boardContext} from '../src/engine/board.js';
 import {addAct, replay} from '../src/engine/flow.js';
 import {calcDamage, typesOf} from '../src/engine/calc.js';
@@ -189,7 +189,7 @@ test('さいきのいのり・しおづけ・回復技・はらだいこ', async
   // はらだいこ
   const b3 = battle([B('azumarill')], ['garchomp']);
   addAct(b3, {side: 'me', type: 'move', move: 'bellydrum'}, usage);
-  assert.equal(condOf(b3, 'me', 0).hp, 50);
+  assert.equal(Math.round(condOf(b3, 'me', 0).hp / 100 * maxHPOf(b3, 'me', 0)), 88, '最大HP175から87消費');
   assert.equal(condOf(b3, 'me', 0).boosts.atk, 6);
 });
 

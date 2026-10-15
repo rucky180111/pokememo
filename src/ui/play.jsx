@@ -217,7 +217,9 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
     const foes = living(battle, other(side));
     const tgt = foes.length ? {side: other(side), mon: foes[0]} : null;
     const mv = dex.moves[m];
-    setAct({side, mon, kind: 'move', move: m, tgt: mv?.c === 'Z' && (mv.tg === 'self' || mv.tg === 'allySide' || mv.tg === 'all' || mv.tg === 'foeSide') ? (mv.tg === 'foeSide' ? tgt : null) : tgt, scen: 'base', crit: false, stage: mv && mv.c !== 'Z' && tgt ? 'hp' : 'pick', hp: null, secFx: [], inflict: STATUS_MOVE[m] || ''});
+    const ally = living(battle, side).find(i => i !== mon);
+    const target = mv?.tg === 'adjacentAlly' ? (ally != null ? {side, mon: ally} : null) : mv?.c === 'Z' && ['self', 'allySide', 'all', 'allies', 'foeSide'].includes(mv.tg) ? (mv.tg === 'foeSide' ? tgt : null) : tgt;
+    setAct({side, mon, kind: 'move', move: m, tgt: target, scen: 'base', crit: false, stage: mv && mv.c !== 'Z' && target ? 'hp' : 'pick', hp: null, secFx: [], inflict: STATUS_MOVE[m] || ''});
   };
   const suggestions = side === 'opp' && !raw.fainted && !done && moves.length < 4 && <div class="pl-suggestions"><span class="muted">未判明の技候補</span><div class="chips">{(view?.moves || []).filter(m => !m.known && !moves.includes(m.id)).slice(0, 4 - moves.length).map(m => <button class="chip" onClick={() => selMove(m.id)}>{moveName(m.id)} <small>推定</small></button>)}</div></div>;
   const setOpp = fn => mut(b => { fn(b.opp[mon]); if (canReplay(b)) replay(b, usage); });
@@ -436,8 +438,11 @@ function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, n
 function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, preds}) {
   const mv = dex.moves[act.move];
   const tgt = act.tgt;
-  const damaging = mv && mv.c !== 'Z';
+  const damaging = mv && mv.c !== 'Z' && !(act.move === 'pollenpuff' && tgt?.side === side);
   const foes = living(battle, other(side));
+  const targetOptions = mv?.tg === 'adjacentAlly' ? living(battle, side).filter(i => i !== mon).map(mon => ({side, mon}))
+    : ['healpulse', 'decorate', 'pollenpuff'].includes(act.move) ? ['me', 'opp'].flatMap(s => living(battle, s).filter(i => s !== side || i !== mon).map(mon => ({side: s, mon})))
+    : foes.map(mon => ({side: other(side), mon}));
   const tgtHp = tgt ? (condOf(battle, tgt.side, tgt.mon)?.hp ?? 100) : 100;
   const tgtMax = tgt?.side === 'me' ? maxHPOf(battle, tgt.mon) : null;
   const set = patch => setAct(a => ({...a, ...patch}));
@@ -502,7 +507,7 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
   return (
     <div class="pl-act move">
       <div class="pa-h"><span class={cx('mv-bar inline', `t-${mv?.t}`)} /><b>{moveName(act.move)}</b><button class="btn ghost sm pa-cancel" onClick={() => setAct(null)}>取消</button>
-        {battle.format === 'double' && foes.length > 1 && <span class="chips">{foes.map(i => <button class={cx('chip sm', tgt?.mon === i && 'on')} onClick={() => { if (tgt?.mon !== i) set({tgt: {side: other(side), mon: i}, hp: null, defItem: '', forceTo: null, eject: null, cst: null, secFx: []}); }}>{nameOf(battle, other(side), i)}</button>)}</span>}
+        {battle.format === 'double' && targetOptions.length > 1 && !['self', 'allies', 'allySide', 'all', 'foeSide'].includes(mv?.tg) && <span class="chips">{targetOptions.map(t => <button class={cx('chip sm', tgt?.side === t.side && tgt?.mon === t.mon && 'on')} onClick={() => { if (tgt?.side !== t.side || tgt?.mon !== t.mon) set({tgt: t, stage: mv?.c === 'Z' || (act.move === 'pollenpuff' && t.side === side) ? 'pick' : 'hp', hp: null, defItem: '', forceTo: null, eject: null, cst: null, secFx: []}); }}>{targetOptions.some(x => x.side === side) && `${t.side === 'me' ? '自分' : '相手'} `}{nameOf(battle, t.side, t.mon)}</button>)}</span>}
       </div>
       {damaging && tgt && <>
         <details class="pa-predictions">
@@ -524,7 +529,7 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
           </div>
         </details>
       </>}
-      {!damaging && <p class="muted">変化技{act.inflict ? ` (${STATUS_OPTS.find(x => x[0] === act.inflict)?.[1]})` : ''}</p>}
+      {!damaging && <p class="muted">{act.move === 'pollenpuff' ? '味方のHPを半分回復' : '変化技'}{act.inflict ? ` (${STATUS_OPTS.find(x => x[0] === act.inflict)?.[1]})` : ''}</p>}
       <div class="chips">
         {damaging && <Toggle small on={act.crit} onChange={v => set({crit: v})}>急所</Toggle>}
         <button class="chip sm" onClick={() => fail('miss')}>外し</button>
