@@ -2,7 +2,7 @@
 // UI から独立した純粋なロジックで、tests/ から直接検証する。
 import {TYPE_JA} from './dex.js';
 import {dex, megaFormeFor, speciesName, moveName, abilityName, statsOf} from './dex.js';
-import {newCond, emptyBoosts, currentSpecies, typesOf, BOOST_KEYS} from './calc.js';
+import {newCond, emptyBoosts, currentSpecies, typesOf, BOOST_KEYS, grounded} from './calc.js';
 import moveEffects from '../generated/move-effects.json' with {type: 'json'};
 
 export const UNDO_DEPTH = 6;
@@ -335,11 +335,10 @@ function entryHazards(b, side, i, log, resolveAbility) {
   const who = `${side === 'me' ? '自分' : '相手'}の${speciesName(currentSpecies(bd, c))}`;
   if (s.healingWish) { s.healingWish = false; c.hp = 100; c.status = ''; log.push(`いやしのねがい: ${who}は全回復した`); }
   const res = resolveAbility || defaultAbilityResolver;
-  const ab = res(b, side, i), item = c.itemGone ? '' : bd.item;
+  const ab = res(b, side, i), item = activeItem(b, side, i);
   if (item === 'heavydutyboots') return;
   const types = typesOf(bd, c);
-  const grounded = b.state.field.gravity || (!types.includes('Flying') && ab !== 'levitate' && ab !== 'eelevate' && item !== 'airballoon');
-  if (!grounded) return;
+  if (!grounded({build: {...bd, item}, cond: {...c, abilityChanged: ab}}, {field: b.state.field})) return;
   if (s.stickyWeb) applyBoosts(b, side, i, {spe: -1}, {log, fromOpp: true, resolveAbility: res});
   if (s.tspikes) {
     if (types.includes('Poison')) { s.tspikes = 0; log.push(`${who}がどくびしを回収した`); }

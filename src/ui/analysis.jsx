@@ -237,15 +237,17 @@ export function PredictTab({battle, ctx}) {
 
       <div class="box">
         <h4>自分の対戦記録から <span class="muted">(実戦のみ)</span></h4>
-        {st.seen === 0 && <p class="muted">{speciesName(o.species)} との対戦記録はまだありません。記録が増えるほど、この欄が当たるようになります。</p>}
+        {st.seen === 0 && <p class="muted">{speciesName(o.species)} との対戦記録はまだありません。記録すると、過去の選出と行動を確認できます。</p>}
         {st.seen > 0 && <p>見せ合いに {st.seen}回 / 選出 {st.picked}回 ({pct(st.picked, st.seen)}%) / 初手 {st.lead}回 / 選出された試合 {st.pickedWin}勝 {st.pickedLose}敗</p>}
+        {general.battles > 0 && general.battles < 5 && <p class="hint">まだ{general.battles}戦の記録です。行動割合は参考値として確認してください。</p>}
+        {general.cant > 0 && <p class="hint">行動不能 {general.cant}回は、技・交代の割合から除外しています。</p>}
         {myActive.map(ms => {
           const m = matchupActions(battles, o.species, ms, filter);
           if (!m.n) return <p class="muted">自分の{speciesName(ms)}との対面: 記録なし</p>;
-          return <Bars title={`自分の${speciesName(ms)}との対面で相手がしたこと`} note={`${m.n}回`} entries={acts(m)} total={m.n} name={actName} />;
+          return <Bars title={`自分の${speciesName(ms)}との対面で相手がしたこと`} note={`${m.battles}戦・${m.n}行動`} entries={acts(m)} total={m.n} name={actName} />;
         })}
-        {general.turn1.n > 0 && <Bars title="1ターン目の行動" note={`${general.turn1.n}回`} entries={acts(general.turn1)} total={general.turn1.n} name={actName} />}
-        {general.n > 0 && <Bars title="全対面での行動" note={`${general.n}回`} entries={acts(general)} total={general.n} name={actName} />}
+        {general.turn1.n > 0 && <Bars title="1ターン目の行動" note={`${general.turn1.battles}戦・${general.turn1.n}行動`} entries={acts(general.turn1)} total={general.turn1.n} name={actName} />}
+        {general.n > 0 && <Bars title="全対面での行動" note={`${general.battles}戦・${general.n}行動`} entries={acts(general)} total={general.n} name={actName} />}
         {Object.keys(st.items).length > 0 && <Bars title="判明した持ち物" entries={sortCounts(st.items)} total={st.seen} name={itemName} />}
         {Object.keys(st.moves).length > 0 && <Bars title="判明した技" note={`技が見えた ${st.moveBattles}戦中`} entries={sortCounts(st.moves).slice(0, 8)} total={st.moveBattles} name={moveName} />}
       </div>

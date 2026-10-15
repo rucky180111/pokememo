@@ -56,7 +56,7 @@ const withBuild = (ctx, oppIdx, alt) => {
 const UNSUPPORTED = new Set(['gyroball', 'electroball', 'payback', 'avalanche', 'boltbeak', 'fishiousrend', 'assurance', 'furycutter', 'echoedvoice', 'rollout', 'iceball',
   'stompingtantrum', 'retaliate', 'ragefist', 'revenge', 'lashout', 'temperflare', 'present', 'magnitude', 'reversal', 'flail', 'eruption', 'waterspout', 'dragonenergy',
   'wringout', 'crushgrip', 'hardpress', 'triplekick', 'tripleaxel', 'populationbomb', 'beatup', 'pursuit', 'spitup', 'trumpcard', 'return', 'frustration', 'naturalgift', 'fling',
-  'storedpower', 'powertrip', 'punishment', 'lastrespects', 'terrainpulse', 'risingvoltage', 'expandingforce', 'mistyexplosion', 'psyblade', 'hydrosteam', 'electrodrift', 'collisioncourse',
+  'punishment', 'lastrespects', 'terrainpulse', 'risingvoltage', 'expandingforce', 'mistyexplosion', 'psyblade', 'hydrosteam', 'electrodrift', 'collisioncourse',
   'bide', 'metronome', 'naturepower', 'sleeptalk', 'copycat', 'mefirst', 'mirrormove', 'struggle', 'futuresight', 'doomdesire', 'selfdestruct', 'explosion','foulplay', 'photongeyser', 'shellsidearm', 'seismictoss', 'nightshade', 'superfang', 'ruination', 'naturesmadness', 'endeavor', 'finalgambit', 'counter', 'mirrorcoat', 'metalburst', 'comeuppance', 'dragonrage', 'sonicboom', 'fissure', 'horndrill', 'guillotine', 'sheercold']);
 export function inferable(moveId) {
   const mv = dex.moves[moveId];

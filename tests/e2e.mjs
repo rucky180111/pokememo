@@ -419,7 +419,7 @@ await ipad.locator('.ta > .seg button', {hasText: '選出パターン'}).click()
 check(await ipad.locator('.ta-pat').count() >= 1, '選出パターンごとの行');
 await shot(ipad, 'ipad-stats-pattern');
 await ipad.locator('.ta > .seg button', {hasText: '相手'}).click();
-check(await ipad.locator('.ta-opp').count() >= 5, '相手が選出したときの勝率');
+check(await ipad.locator('.matchup-results tbody tr').count() >= 5 && await ipad.locator('.matchup-results').innerText().then(t => t.includes('自分の勝率') && t.includes('選出確認 / 遭遇')), '相手が選出したときの勝率と集計件数');
 await shot(ipad, 'ipad-stats-opp');
 // 対戦の外 (構築画面) からも見られる
 await ipad.goto(`${url}#/teams`);

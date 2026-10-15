@@ -1,4 +1,4 @@
-// 公式シミュレーター (Pokémon Showdown) で実際に対戦を回し、そのログを「几帳面なユーザーの入力」としてアプリに流し込む総当たり検査。
+// 比較用シミュレーター (Pokémon Showdown) の対戦ログを入力し、推定・盤面処理を検査。
 // 使い方: PS=/path/to/pokemon-showdown(ビルド済み) node tests/fuzz.mjs [対戦数] [乱数の種]
 // 検査すること:
 //   1. どんな対戦でもアプリが例外を出さない
@@ -38,6 +38,7 @@ const psDex = Dex.mod('champions');
     if ((m.bp || 0) !== pm.basePower && !(pm.basePowerCallback)) bad.push(`${m.j}: 威力 ${m.bp} ≠ ${pm.basePower}`);
   }
   for (const [id, sp] of Object.entries(dex.species)) {
+    if (id === 'aegislashboth') continue; // アプリ独自の「攻撃時ブレード/待機時シールド」用の別名
     const ps = psDex.species.get(sp.n);
     if (!ps.exists) { bad.push(`${sp.j}: シミュレーターに無い`); continue; }
     const bs = ps.baseStats;
@@ -394,4 +395,5 @@ console.log('確実として出したのに起きなかったもの:'); console.
 console.log(`HPの絞り込みが本当の値を外した: ${stats.hpUnsound.length} / 絞り込んだ相手 ${stats.hpNarrowed} / 攻撃側のHP変化を入れた行動 ${stats.selfFx || 0}`); console.log(stats.hpUnsound.slice(0, 10).join('\n'));
 console.log(`入れ直しの不具合: ${stats.replayBad.length}`); console.log(stats.replayBad.slice(0, 8).join('\n'));
 console.log('自動反映のずれ (多い順):'); console.log(top(stats.mismatch));
-process.exit(stats.crashes.length ? 1 : 0);
+// 自動反映の差分には、入力が必要な確率効果・期限の確認も含む。推定の健全性・再生は失敗させる。
+process.exitCode = stats.crashes.length || stats.unsound.length || stats.speedUnsound.length || stats.hpUnsound.length || stats.replayBad.length ? 1 : 0;

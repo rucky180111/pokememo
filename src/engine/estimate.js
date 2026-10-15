@@ -14,7 +14,11 @@ function allowed(opp, stat) {
     for (let c = 0; c < SPE_COMBOS; c++) { let ok = false; for (let h = 0; h <= 32 && !ok; h++) ok = m[h * SPE_COMBOS + c] === '1'; out += ok ? '1' : '0'; }
     return out;
   }
-  if (stat === 'spe') { const p = opp.speOk?.plain; return p && p.includes('1') ? p : opp.speOk?.scarf || null; }
+  if (stat === 'spe') {
+    const p = opp.speOk?.plain, s = opp.speOk?.scarf;
+    if (p && s) return [...p].map((v, i) => v === '1' || s[i] === '1' ? '1' : '0').join('');
+    return p || s || null;
+  }
   return null;
 }
 function hpAllowed(opp) {

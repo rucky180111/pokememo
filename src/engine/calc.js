@@ -3,6 +3,7 @@
 import calcPkg from '@smogon/calc';
 import utilPkg from '@smogon/calc/dist/mechanics/util.js';
 import {dex, STAT_KEYS, clampSP, typeEffect, statValue} from './dex.js';
+import moveEffects from '../generated/move-effects.json' with {type: 'json'};
 
 const {calculate, Generations, Pokemon, Move, Field} = calcPkg;
 const {getFinalSpeed} = utilPkg;
@@ -11,6 +12,16 @@ export const gen = Generations.get(0); // 0 = Pokémon Champions
 export const BOOST_KEYS = ['atk', 'def', 'spa', 'spd', 'spe'];
 export const emptyBoosts = () => ({atk: 0, def: 0, spa: 0, spd: 0, spe: 0});
 export const newCond = () => ({hp: 100, status: '', boosts: emptyBoosts(), forme: null, itemGone: false, abilityOn: false, fainted: false});
+
+export const makesContact = (moveId, build, cond) => !!dex.moves[moveId]?.fl?.includes('contact') &&
+  currentAbility(build, cond) !== 'longreach' && (cond?.itemGone || build.item !== 'protectivepads');
+
+export function grounded({build, cond}, ctx = {}) {
+  const ab = currentAbility(build, cond);
+  const item = cond?.itemGone || ctx.field?.magicRoom || ab === 'klutz' ? '' : build.item;
+  return !!ctx.field?.gravity || !!cond?.ingrain || item === 'ironball' ||
+    (!typesOf(build, cond).includes('Flying') && !['levitate', 'eelevate'].includes(ab) && item !== 'airballoon');
+}
 
 export const WEATHERS = [['', 'なし'], ['Sun', 'はれ'], ['Rain', 'あめ'], ['Sand', 'すなあらし'], ['Snow', 'ゆき']];
 export const TERRAINS = [['', 'なし'], ['Electric', 'エレキ'], ['Grassy', 'グラス'], ['Misty', 'ミスト'], ['Psychic', 'サイコ']];
@@ -224,11 +235,13 @@ function fixedDamage(moveId, atk, def, attacker, defender, opts) {
   const mv = dex.moves[moveId];
   const maxHP = def.maxHP(), curHP = def.curHP();
   const types = def.types;
-  const dab = currentAbility(defender.build, defender.cond);
+  const bypass = ['moldbreaker', 'teravolt', 'turboblaze'].includes(currentAbility(attacker.build, attacker.cond));
+  const dab = bypass ? '' : currentAbility(defender.build, defender.cond);
   let eff = typeEffect(mv.t, types);
+  if (types.includes('Ghost') && ['Normal', 'Fighting'].includes(mv.t) && ['scrappy', 'mindseye'].includes(currentAbility(attacker.build, attacker.cond))) eff = typeEffect(mv.t, types.filter(t => t !== 'Ghost'));
   if (moveId === 'sheercold' && types.includes('Ice')) eff = 0;
   if (OHKO.has(moveId) && dab === 'sturdy') eff = 0;
-  if (dab === 'wonderguard' || (mv.t === 'Ground' && (dab === 'levitate' || dab === 'eelevate'))) eff = 0;
+  if ((dab === 'wonderguard' && eff <= 1) || (mv.t === 'Ground' && !grounded({build: {...defender.build, ability: dab}, cond: {...defender.cond, abilityChanged: dab}}, opts))) eff = 0;
   let dmg = 0, note = '';
   if (eff > 0) {
     if (moveId === 'superfang') dmg = Math.max(1, Math.floor(curHP / 2));
@@ -264,6 +277,7 @@ export function movePriority(moveId, abilityId, {hpFull = true, grassyTerrain = 
   let p = mv.pr || 0;
   if (abilityId === 'prankster' && mv.c === 'Z') p += 1;
   if (abilityId === 'galewings' && mv.t === 'Flying' && hpFull) p += 1;
+  if (abilityId === 'triage' && moveEffects[moveId]?.healing) p += 3;
   if (moveId === 'grassyglide' && grassyTerrain) p += 1;
   return p;
 }
@@ -274,7 +288,7 @@ export function movePriority(moveId, abilityId, {hpFull = true, grassyTerrain = 
  */
 export function turnOrder(a, b, ctx = {}) {
   const pri = x => (x.moveId == null ? 99 : movePriority(x.moveId, currentAbility(x.build, x.cond), {
-    hpFull: (x.cond?.hp ?? 100) >= 100, grassyTerrain: ctx.field?.terrain === 'Grassy',
+    hpFull: (x.cond?.hp ?? 100) >= 100, grassyTerrain: ctx.field?.terrain === 'Grassy' && grounded(x, ctx),
   }));
   const pa = pri(a), pb = pri(b);
   if (pa !== pb) return pa > pb ? 'a' : 'b';

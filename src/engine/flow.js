@@ -1,6 +1,6 @@
 // 時系列での入力: 行動を1つずつ追加していく。追加のたびに盤面・判明情報・能力の絞り込みへ反映する。
 import {dex, speciesName, moveName, statsOf, itemName, abilityName, TYPE_JA, typeEffect} from './dex.js';
-import {currentSpecies, typesOf, currentAbility, finalSpeed, disguiseIntact, defaultHits} from './calc.js';
+import {currentSpecies, typesOf, currentAbility, finalSpeed, disguiseIntact, defaultHits, calcDamage, makesContact, grounded} from './calc.js';
 import moveEffects from '../generated/move-effects.json' with {type: 'json'};
 import {inferHpEffects} from './infer-hp-effects.js';
 
@@ -60,8 +60,7 @@ function sleepBlocked(b, side, i, res) {
   const t = b.state.field.terrain;
   if (t === 'Electric' || t === 'Misty') {
     const bd = buildOf(b, side, i), c = condOf(b, side, i);
-    const grounded = !typesOf(bd, c).includes('Flying') && ab !== 'levitate' && !(bd.item === 'airballoon' && !c.itemGone);
-    if (grounded) return true;
+    if (grounded({build: {...bd, item: activeItem(b, side, i)}, cond: {...c, abilityChanged: ab}}, {field: b.state.field})) return true;
   }
   return false;
 }
@@ -225,6 +224,7 @@ export function addAct(b, input, usage) {
   const side = input.side;
   const mon = input.mon ?? b.state.sides[side].active.find(i => i != null && !condOf(b, side, i)?.fainted);
   if (mon == null) return ['場にポケモンがいません'];
+  if (input.type !== 'switch' && condOf(b, side, mon)?.fainted) return ['ひんしのポケモンは行動できません'];
   // 同じポケモンが同じターンに2回目の行動 → 前のターンを締めて次のターンへ
   let t = openTurn(b);
   if (t && !input.sameTurn && t.acts.some(a => a.type !== 'event' && a.side === side && (a.mon === mon || a.to === mon))) { endTurn(b, usage); t = null; }
@@ -302,21 +302,29 @@ export function addAct(b, input, usage) {
     // 無効化・吸収は被弾の追加効果より先。未判明の相手特性では自動発動しない。
     if (!failed && !bounced && tgt && mvd && tgt.mon != null && !(tgt.side === side && tgt.mon === mon)) {
       const tab = defaultAbilityResolver(b, tgt.side, tgt.mon), uab = defaultAbilityResolver(b, side, mon);
-      const bypass = ['moldbreaker', 'teravolt', 'turboblaze', 'myceliummight'].includes(uab) || ['sunsteelstrike', 'moongeistbeam', 'photongeyser'].includes(a.move);
+      const bypass = ['moldbreaker', 'teravolt', 'turboblaze'].includes(uab) || (uab === 'myceliummight' && mvd.c === 'Z') || ['sunsteelstrike', 'moongeistbeam', 'photongeyser'].includes(a.move);
       let ty = mvd.t;
       if (mvd.fl?.includes('sound') && uab === 'liquidvoice') ty = 'Water';
       else if (ty === 'Normal') ty = {aerilate: 'Flying', pixilate: 'Fairy', refrigerate: 'Ice', dragonize: 'Dragon'}[uab] || ty;
-      const absorbType = {waterabsorb: 'Water', dryskin: 'Water', voltabsorb: 'Electric', eartheater: 'Ground', lightningrod: 'Electric', motordrive: 'Electric', sapsipper: 'Grass', flashfire: 'Fire'}[tab];
+      const absorbType = {waterabsorb: 'Water', dryskin: 'Water', voltabsorb: 'Electric', eartheater: 'Ground', lightningrod: 'Electric', motordrive: 'Electric', sapsipper: 'Grass', flashfire: 'Fire', wellbakedbody: 'Fire'}[tab];
       if (!bypass && absorbType === ty) {
         failed = true;
         log.push(`${speciesName(buildOf(b, tgt.side, tgt.mon).species)}の${abilityName(tab)}: ${moveName(a.move)}を無効化`);
         if (['waterabsorb', 'dryskin', 'voltabsorb', 'eartheater'].includes(tab)) healHP(b, tgt.side, tgt.mon, maxHPOf(b, tgt.side, tgt.mon) / 4, {log, label: abilityName(tab)});
-        const boosts = {lightningrod: {spa: 1}, motordrive: {spe: 1}, sapsipper: {atk: 1}}[tab];
+        const boosts = {lightningrod: {spa: 1}, motordrive: {spe: 1}, sapsipper: {atk: 1}, wellbakedbody: {def: 2}}[tab];
         if (boosts) applyBoosts(b, tgt.side, tgt.mon, boosts, {log, resolveAbility: defaultAbilityResolver});
         if (tab === 'flashfire') condOf(b, tgt.side, tgt.mon).abilityOn = true;
       }
     }
     if (!failed && mvd?.tg === 'adjacentAlly' && !tgt) { failed = true; log.push(`${moveName(a.move)}: 対象の味方がいないため失敗`); }
+    // タイプ・判明済み特性・持ち物による無効を、追加効果より先に判定する。
+    // 推測した特性や持ち物で実際の盤面を書き換えない。
+    if (!failed && tgt && mvd?.c !== 'Z' && mvd) {
+      const actual = (sd, i) => ({build: {...ctx.build(sd, i), item: buildOf(b, sd, i).item || ''},
+        cond: {...ctx.cond(sd, i), abilityChanged: defaultAbilityResolver(b, sd, i)}});
+      const r = calcDamage(actual(side, mon), actual(tgt.side, tgt.mon), a.move, {format: b.format, field: b.state.field});
+      if (r.ok && r.immune) { failed = true; a.moveImmune = true; log.push(`${moveName(a.move)}は効かない`); }
+    }
     // 持ち物の発動: 攻撃側 (いのちのたま等) と受ける側 (タスキ・オボン・半減実など)
     const atkItem = input.atkItem?.item, defItem = tgt ? input.defItem?.item : null;
     if (atkItem && side === 'opp') build.item = atkItem;
@@ -452,7 +460,7 @@ export function addAct(b, input, usage) {
     } else if (input.hpUnknown && !failed && tgt) condOf(b, tgt.side, tgt.mon).hpUnknown = true;
     // 技の結果を覚えておく (じだんだ・やけっぱち・ふんどのこぶし・ゆきなだれ・ダメおし・カウンター等の威力/ダメージ計算に使う)
     if (mvd && mvd.c !== 'Z' && tgt) {
-      const immune = !failed && typeEffect(mvd.t, typesOf(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon))) === 0;
+      const immune = !!a.moveImmune;
       if (immune) a.moveImmune = true;
       if (!failed && !immune && hpBeforeHit != null && a.hpAfter != null) {
         a.dmgPct = Math.max(0, hpBeforeHit - a.hpAfter);
@@ -467,7 +475,7 @@ export function addAct(b, input, usage) {
       }
     } else if (mvd && !a.flags.cant) condOf(b, side, mon).lastResult = {n: t.n, failed: !!failed};
     // 被弾時の特性は「判明している特性」だけで反映する (使用率からの推測で能力ランクを動かさない)
-    if (!failed && tgt && tgt.side !== side) onHitEffects(b, {side, mon, move: a.move, crit: a.flags.crit, tgt, before: hpBeforeHit, defItem}, defaultAbilityResolver, log);
+    if (!failed && tgt && tgt.side !== side) onHitEffects(b, {side, mon, move: a.move, hits: input.hits, crit: a.flags.crit, tgt, before: hpBeforeHit, defItem}, defaultAbilityResolver, log);
     // 攻撃した側のHPの変化 (いのちのたま・反動・ゴツゴツメット・さめはだ・吸収)
     if (!failed && tgt && tgt.side !== side && input.selfFx?.length) attackerHpEffects(b, {side, mon, tgt, move: a.move, fx: input.selfFx, hpAfter: input.atkHpAfter ?? input.observedHp?.find(h => h.side === side && h.mon === mon)?.hpAfter, tgtBefore: hpBeforeHit, a}, log);
     // 追加効果・変化技で相手が状態異常になった
@@ -504,7 +512,7 @@ export function addAct(b, input, usage) {
     }
   }
   // ニードルガード (接触で1/8)・トーチカ (接触でどく)・キングシールド (接触でこうげき-1): まもられた技が接触技なら
-  if (a.type === 'move' && a.flags.protect && dex.moves[a.move]?.fl?.includes('contact')) {
+  if (a.type === 'move' && a.flags.protect && makesContact(a.move, {...build, item: activeItem(b, side, mon)}, condOf(b, side, mon))) {
     const pt = a.target || (() => { const f = b.state.sides[other(side)].active.filter(i => i != null); return f.length ? {side: other(side), mon: f[0]} : null; })();
     const pm = pt ? [...t.acts].reverse().find(x => x.type === 'move' && x.side === pt.side && x.mon === pt.mon && !x.flags?.cant)?.move : null;
     const uc = condOf(b, side, mon), who = `${side === 'me' ? '自分' : '相手'}の${speciesName(build.species)}`;
@@ -997,7 +1005,7 @@ export function residualCandidates(b, usage) {
       const maybe = ab => abs.includes(ab);
       if (maybe('magicguard') && sure('magicguard')) { /* 定数ダメージを受けない */ }
       const itemKnown = side === 'me' || !!build.item || sure('klutz');
-      const item = cond.itemGone || sure('klutz') ? '' : build.item; // ぶきよう: 持ち物の効果なし
+      const item = activeItem(b, side, mon);
       const itemRates = side === 'opp' && !build.item ? Object.fromEntries(ctx.views[mon]?.items || []) : {};
       const already = new Set((openTurn(b)?.acts || []).filter(x => x.target?.side === side && x.target?.mon === mon).flatMap(x => x.healedBy || []));
       // 処理は順番に起きる (例: すなあらしで減ってから たべのこしで回復) ので、確実なものはHPを進めながら候補を作る
@@ -1019,8 +1027,12 @@ export function residualCandidates(b, usage) {
       const noIndirect = sure('magicguard');
       if (w === 'Sand' && !noIndirect && !types.some(t => ['Rock', 'Ground', 'Steel'].includes(t)) && item !== 'safetygoggles' && !['sandveil', 'sandrush', 'sandforce', 'overcoat'].some(sure))
         push('sand', !['sandveil', 'sandrush', 'sandforce', 'overcoat', 'magicguard'].some(maybe));
-      if (terrain === 'Grassy' && !types.includes('Flying') && !sure('levitate') && item !== 'airballoon') push('grassy', !maybe('levitate'));
-      if (!cond.itemGone) {
+      if (terrain === 'Grassy' && grounded({build: {...build, item}, cond: {...cond, abilityChanged: known}}, {field: b.state.field})) push('grassy', b.state.field.gravity || (!maybe('levitate') && !maybe('eelevate')));
+      if (cond.tricked) {
+        // トリック等のあとは元の持ち物・消費済みの印から回復を決めつけない。
+        // 観測した回復は選べるよう、持ち物による処理を未選択で提示する。
+        push('leftovers', false); push('blacksludge', false);
+      } else if (!cond.itemGone) {
         if (itemKnown) { if (item === 'leftovers') push('leftovers', true); if (item === 'blacksludge') push('blacksludge', true); }
         else {
           if ((itemRates.leftovers || 0) > 0) push('leftovers', false);
@@ -1142,14 +1154,17 @@ function simultaneousEntry(b, usage, side, mon, res) {
 
 // 攻撃を受けたときに必ず起きる特性・持ち物の効果 (ランク変化・天候・フィールド)
 const HIT_ITEM_BOOST = {weaknesspolicy: {atk: 2, spa: 2}, cellbattery: {atk: 1}, absorbbulb: {spa: 1}, luminousmoss: {spd: 1}, snowball: {atk: 1}, keeberry: {def: 1}, marangaberry: {spd: 1}};
-function onHitEffects(b, {side, mon, move, crit, tgt, before, defItem}, res, log) {
+function onHitEffects(b, {side, mon, move, hits, crit, tgt, before, defItem}, res, log) {
   const mv = dex.moves[move];
   if (!mv || mv.c === 'Z') return;
   const tc = condOf(b, tgt.side, tgt.mon);
+  if (before != null && before <= tc.hp && !tc.hpUnknown) return;
+  const contact = makesContact(move, {...buildOf(b, side, mon), item: activeItem(b, side, mon)}, condOf(b, side, mon));
   const who = `${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}`;
-  const boost = (d, why) => { const l = []; applyBoosts(b, tgt.side, tgt.mon, d, {log: l, resolveAbility: () => ''}); if (l.length) log.push(`${why}: ${l.join('、')}`); };
+  const boost = (d, why) => { const l = []; applyBoosts(b, tgt.side, tgt.mon, d, {log: l, resolveAbility: res}); if (l.length) log.push(`${why}: ${l.join('、')}`); };
   if (defItem && HIT_ITEM_BOOST[defItem] && !tc.fainted) boost(HIT_ITEM_BOOST[defItem], itemName(defItem));
   if (tc.fainted) {
+    if (condOf(b, side, mon).fainted) return;
     // 倒したとき: じしんかじょう等
     const ab = res(b, side, mon);
     let ko = {moxie: {atk: 1}, chillingneigh: {atk: 1}, grimneigh: {spa: 1}}[ab];
@@ -1180,10 +1195,10 @@ function onHitEffects(b, {side, mon, move, crit, tgt, before, defItem}, res, log
   const ab = res(b, tgt.side, tgt.mon);
   if (!ab) return;
   const name = `${who}の${abilityName(ab)}`;
-  if (ab === 'pickpocket' && mv.fl?.includes('contact')) steal(tgt, {side, mon}, name);
+  if (ab === 'pickpocket' && contact) steal(tgt, {side, mon}, name);
   const t = mv.t;
-  if (ab === 'stamina') boost({def: 1}, name);
-  else if (ab === 'weakarmor' && mv.c === 'P') boost({def: -1, spe: 2}, name);
+  if (ab === 'stamina') boost({def: hits || defaultHits(move, res(b, side, mon))}, name);
+  else if (ab === 'weakarmor' && mv.c === 'P') boost({def: -(hits || defaultHits(move, res(b, side, mon))), spe: 2 * (hits || defaultHits(move, res(b, side, mon)))}, name);
   else if (ab === 'justified' && t === 'Dark') boost({atk: 1}, name);
   else if (ab === 'steamengine' && (t === 'Fire' || t === 'Water')) boost({spe: 6}, name);
   else if (ab === 'watercompaction' && t === 'Water') boost({def: 2}, name);
@@ -1193,7 +1208,7 @@ function onHitEffects(b, {side, mon, move, crit, tgt, before, defItem}, res, log
   else if (ab === 'berserk' && before > 50 && tc.hp <= 50) boost({spa: 1}, name);
   else if (ab === 'seedsower' && setTerrain(b, 'Grassy')) log.push(`${name}: グラスフィールドに`);
   else if (ab === 'sandspit' && setWeather(b, 'Sand')) log.push(`${name}: 天候がすなあらしに`);
-  else if ((ab === 'gooey' || ab === 'tanglinghair') && mv.fl?.includes('contact')) { const l = []; applyBoosts(b, side, mon, {spe: -1}, {log: l, fromOpp: true, resolveAbility: res}); if (l.length) log.push(`${name}: ${l.join('、')}`); }
+  else if ((ab === 'gooey' || ab === 'tanglinghair') && contact) { const l = []; applyBoosts(b, side, mon, {spe: -1}, {log: l, fromOpp: true, resolveAbility: res}); if (l.length) log.push(`${name}: ${l.join('、')}`); }
   // 技を吸収する特性: ひらいしん/そうしょく/でんきエンジン は能力が上がる
   else if (ab === 'lightningrod' && t === 'Electric') boost({spa: 1}, name);
   else if (ab === 'motordrive' && t === 'Electric') boost({spe: 1}, name);
@@ -1205,7 +1220,7 @@ function onHitEffects(b, {side, mon, move, crit, tgt, before, defItem}, res, log
     const ac = condOf(b, side, mon), aT = typesOf(buildOf(b, side, mon), ac);
     if (ac && !ac.fainted && !ac.status && !aT.includes('Fire')) { ac.status = 'brn'; log.push(`${name}: やけどにした`); }
   }
-  else if ((ab === 'mummy' || ab === 'wanderingspirit') && mv.fl?.includes('contact') && !condOf(b, side, mon).fainted) {
+  else if ((ab === 'mummy' || ab === 'wanderingspirit') && contact && !condOf(b, side, mon).fainted) {
     // ミイラ: 触れた相手の特性をミイラに / さまようたましい: 特性を入れ替える
     const ac = condOf(b, side, mon), mine = res(b, side, mon);
     if (ab === 'mummy') { ac.abilityChanged = 'mummy'; log.push(`${name}: 攻撃した側の特性がミイラになった`); }
@@ -1263,18 +1278,19 @@ export function hazardDamage(b, side, mon) {
   if (!bd || !c || c.fainted) return null;
   const types = typesOf(bd, c) || [];
   const ab = defaultAbilityResolver(b, side, mon);
-  if (ab === 'magicguard') return null;
+  const item = activeItem(b, side, mon);
+  if (ab === 'magicguard' || item === 'heavydutyboots') return null;
   let frac = 0;
+  const fractions = [];
   const parts = [];
   if (sd.sr) {
     let eff = 1;
     for (const ty of types) eff *= {Fire: 2, Ice: 2, Flying: 2, Bug: 2, Fighting: 0.5, Ground: 0.5, Steel: 0.5}[ty] || 1;
-    frac += eff / 8; parts.push('ステルスロック');
+    frac += eff / 8; fractions.push(eff / 8); parts.push('ステルスロック');
   }
-  const grounded = !types.includes('Flying') && ab !== 'levitate' && !(bd.item === 'airballoon' && !c.itemGone);
-  if (sd.spikes && grounded) { frac += [0, 1 / 8, 1 / 6, 1 / 4][Math.min(3, sd.spikes)]; parts.push(`まきびし${sd.spikes}`); }
+  if (sd.spikes && grounded({build: {...bd, item}, cond: {...c, abilityChanged: ab}}, {field: b.state.field})) { const f = [0, 1 / 8, 1 / 6, 1 / 4][Math.min(3, sd.spikes)]; frac += f; fractions.push(f); parts.push(`まきびし${sd.spikes}`); }
   if (!frac) return null;
-  if (side === 'me') { const max = maxHPOf(b, side, mon); const d = Math.floor(max * frac); return {pct: (d / max) * 100, hp: d, parts}; }
+  if (side === 'me') { const max = maxHPOf(b, side, mon); const d = fractions.reduce((sum, f) => sum + Math.max(1, Math.floor(max * f)), 0); return {pct: (d / max) * 100, hp: d, parts}; }
   return {pct: frac * 100, parts};
 }
 

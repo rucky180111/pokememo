@@ -79,7 +79,7 @@ export function App({store, syncer, cloud}) {
       <header class="topbar">
         <a class="brand" href="#/battles">対戦メモ</a>
         <span class="grow" />
-        {store.state.saveError && <span class="tag bad">{store.state.saveError}</span>}
+        {store.state.saveError && <button class="tag bad" role="alert" title={store.state.saveError} onClick={async () => toast(await store.retrySaves() ? '端末に保存しました' : store.state.saveError)}>未保存 · 再試行</button>}
         {cloudSt.state !== 'off' && (
           <a class={cx('syncbtn', cloudSt.state === 'ok' ? 'ok' : cloudSt.state === 'error' ? 'error' : cloudSt.state === 'signedout' ? 'off' : 'syncing')} href="#/settings" title={cloudSt.message || ''}>
             <span class="dot" />{cloudSt.state === 'ok' ? '同期済み' : cloudSt.state === 'error' ? '同期エラー' : cloudSt.state === 'signedout' ? '未ログイン' : '接続中'}

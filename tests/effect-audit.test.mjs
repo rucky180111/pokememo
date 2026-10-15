@@ -128,7 +128,7 @@ for(const [id,m] of Object.entries(effects).filter(([id,m])=>m.heal&&dex.moves[i
  const b=battle();setHP(b,'me',0,10);const before=hp(b);move(b,id,{cant:true});assert.equal(hp(b),before);move(b,id);assert.equal(hp(b),Math.min(maxHPOf(b,'me',0),before+Math.floor(maxHPOf(b,'me',0)*m.heal[0]/m.heal[1])));
 });
 for(const [id,m] of Object.entries(effects).filter(([,m])=>m.drain||m.recoil))test(`${id}: 変動する吸収・反動は入力したHPで記録`,()=>{
- const b=battle([B('snorlax')],[B('garchomp')]);setHP(b,'me',0,50);const before=hp(b);
+ const b=battle([B('snorlax')],[B('snorlax')]);setHP(b,'me',0,50);const before=hp(b);
  move(b,id,{hpAfter:50,selfFx:[m.drain?'drain':'recoil']});assert.equal(hp(b),before);assert.ok(condOf(b,'me',0).hpUnknown);move(b,id,{hpAfter:25,selfFx:[m.drain?'drain':'recoil'],observedHp:[{side:'me',mon:0,hpAfter:60}]});assert.equal(condOf(b,'me',0).hp,60);assert.ok(!condOf(b,'me',0).hpUnknown);
 });
 test('吸収: 相手のオボン回復があっても入力した行動後HPをそのまま採用',()=>{

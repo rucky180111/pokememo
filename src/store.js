@@ -82,9 +82,20 @@ export function createStore(backend) {
   const subs = new Set();
   let version = 0;
   const emit = () => { version++; for (const f of subs) f(version); };
-  const write = async (k, v) => {
-    try { await backend.set(k, v); if (state.saveError) { state.saveError = ''; emit(); } }
-    catch (e) { state.saveError = `保存に失敗しました: ${e?.message || e}`; emit(); }
+  // 入力時点の値を順番どおり保存する。非同期バックエンドでも古い入力が後から上書きしない。
+  let pending = Promise.resolve();
+  const failures = new Map();
+  const write = (k, v) => {
+    const snapshot = structuredCloneSafe(v);
+    const task = pending.then(async () => {
+      try { await backend.set(k, snapshot); failures.delete(k); }
+      catch (e) { failures.set(k, `保存に失敗しました: ${e?.message || e}`); }
+      const message = [...failures.values()].join(' / ');
+      if (state.saveError !== message) { state.saveError = message; emit(); }
+      return !failures.has(k);
+    });
+    pending = task.then(() => {});
+    return task;
   };
   const upsert = (list, rec) => {
     const i = list.findIndex(x => x.id === rec.id);
@@ -93,6 +104,14 @@ export function createStore(backend) {
   const api = {
     state,
     get version() { return version; },
+    flush: () => pending,
+    async retrySaves() {
+      for (const k of [...failures.keys()]) {
+        const v = k.startsWith('battle:') ? state.battles.find(r => r.id === k.slice(7)) : k.startsWith('team:') ? state.teams.find(r => r.id === k.slice(5)) : k === 'settings' ? state.settings : state.usage[k.slice(6)];
+        if (v != null) await write(k, v);
+      }
+      return !state.saveError;
+    },
     subscribe(f) { subs.add(f); return () => subs.delete(f); },
     async load() {
       const rows = await backend.getAll();
@@ -158,8 +177,10 @@ export function createStore(backend) {
           if (!r || typeof r.id !== 'string') continue;
           const cur = list.find(x => x.id === r.id);
           if (cur && (cur.updatedAt || 0) >= (r.updatedAt || 0)) continue;
-          upsert(list, r);
-          await write(`${kind}:${r.id}`, r);
+          if (!await write(`${kind}:${r.id}`, r)) { emit(); throw new Error(state.saveError); }
+          // 保存中に新しい編集が入った場合は、表示を古いバックアップに戻さない。
+          const latest = list.find(x => x.id === r.id);
+          if (!latest || (latest.updatedAt || 0) < (r.updatedAt || 0)) upsert(list, r);
           n++;
         }
       }
@@ -169,7 +190,9 @@ export function createStore(backend) {
     },
     // この端末のデータを全消去 (削除の印も残さないので、同期先には影響しない)
     async wipe() {
+      await pending;
       for (const [k] of await backend.getAll()) await backend.del(k);
+      failures.clear(); state.saveError = '';
       state.teams = []; state.battles = []; state.settings = structuredCloneSafe(DEFAULT_SETTINGS); state.usage = {single: null, double: null};
       emit();
     },

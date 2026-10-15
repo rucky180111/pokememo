@@ -9,8 +9,10 @@ export function serverAdapter(baseUrl, key, {fetchFn = (...a) => fetch(...a), on
   const handlers = {team: null, battle: null};
   const errs = new Set();
   let seq = 0, stopped = false, ctrl = null, started = false, tries = 0, kicked = false;
+  let idle = null, retryTimer = null, retryWake = null;
+  const cancelRetry = () => { clearTimeout(retryTimer); retryTimer = null; retryWake?.(); retryWake = null; };
   // 画面に戻ってきたとき・ネットが戻ったときは、すぐに張り直して取りこぼしを受け取る
-  const kick = () => { if (stopped || !started) return; kicked = true; ctrl?.abort(); };
+  const kick = () => { if (stopped || !started) return; kicked = true; ctrl?.abort(); cancelRetry(); };
   const onVis = () => { if (typeof document === 'undefined' || document.visibilityState === 'visible') kick(); };
   const fail = e => { for (const f of errs) f(e); };
   const dispatch = (records, first) => {
@@ -28,16 +30,17 @@ export function serverAdapter(baseUrl, key, {fetchFn = (...a) => fetch(...a), on
     let first = true;
     while (!stopped) {
       try {
+        ctrl = new AbortController();
         if (first) {
-          const r = await fetchFn(`${base}/api/records?since=0`, {headers, cache: 'no-store'});
+          const r = await fetchFn(`${base}/api/records?since=0`, {headers, cache: 'no-store', signal: ctrl.signal});
           if (!r.ok) throw new Error(await msg(r));
           const data = await r.json();
+          if (stopped) break;
           seq = data.seq || 0;
           dispatch(data.records || [], true);
           first = false;
           onState?.('ok');
         }
-        ctrl = new AbortController();
         const r = await fetchFn(`${base}/api/stream?since=${seq}`, {headers, cache: 'no-store', signal: ctrl.signal});
         if (!r.ok || !r.body) throw new Error(r.ok ? 'この端末ではリアルタイム受信が使えません' : await msg(r));
         tries = 0;
@@ -46,7 +49,6 @@ export function serverAdapter(baseUrl, key, {fetchFn = (...a) => fetch(...a), on
         const dec = new TextDecoder();
         let buf = '';
         // iPhone をスリープ・アプリ切り替えすると、エラーにならないまま受信が止まることがあるので見張る
-        let idle = null;
         const arm = () => { clearTimeout(idle); idle = setTimeout(() => ctrl?.abort(), idleMs); };
         arm();
         for (;;) {
@@ -67,9 +69,12 @@ export function serverAdapter(baseUrl, key, {fetchFn = (...a) => fetch(...a), on
         if (stopped) break;
         if (kicked) { kicked = false; tries = 0; continue; }
         if (e?.name !== 'AbortError') fail(new Error(/fetch|network|load failed/i.test(e?.message || '') ? 'サーバーにつながりません (ラズパイの電源・ネット・アドレスを確認してください)' : e?.message || String(e)));
+      } finally {
+        clearTimeout(idle); idle = null;
       }
       if (stopped) break;
-      await new Promise(r => setTimeout(r, RETRY[Math.min(tries++, RETRY.length - 1)]));
+      await new Promise(r => { retryWake = r; retryTimer = setTimeout(r, RETRY[Math.min(tries++, RETRY.length - 1)]); });
+      retryWake = null; retryTimer = null;
     }
   }
   return {
@@ -82,7 +87,7 @@ export function serverAdapter(baseUrl, key, {fetchFn = (...a) => fetch(...a), on
         loop();
       }
       return () => {
-        handlers[kind] = null; stopped = true; ctrl?.abort();
+        handlers[kind] = null; stopped = true; ctrl?.abort(); clearTimeout(idle); cancelRetry();
         if (typeof window !== 'undefined') { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('online', kick); window.removeEventListener('pageshow', kick); }
       };
     },
@@ -91,6 +96,7 @@ export function serverAdapter(baseUrl, key, {fetchFn = (...a) => fetch(...a), on
       try { r = await fetchFn(`${base}/api/records/${kind}/${encodeURIComponent(id)}`, {method: 'PUT', headers: {...headers, 'Content-Type': 'application/json'}, body: JSON.stringify(data)}); }
       catch { throw new Error('サーバーにつながりません (ラズパイの電源・ネット・アドレスを確認してください)'); }
       if (!r.ok) throw new Error(await msg(r));
+      await r.text();
     },
   };
 }
@@ -101,8 +107,10 @@ export async function testServer(baseUrl, key, fetchFn = (...a) => fetch(...a)) 
   let r;
   try { r = await fetchFn(`${base}/api/health`, {cache: 'no-store'}); } catch { throw new Error('サーバーにつながりません。アドレスと、ラズパイ側の公開設定を確認してください'); }
   if (!r.ok) throw new Error(`サーバーの応答がおかしいです (${r.status})`);
+  await r.text();
   r = await fetchFn(`${base}/api/records?since=999999999999`, {headers: {Authorization: `Bearer ${key}`}, cache: 'no-store'});
   if (r.status === 401) throw new Error('同期キーが違います');
   if (!r.ok) throw new Error(`サーバーエラー ${r.status}`);
+  await r.text();
   return true;
 }

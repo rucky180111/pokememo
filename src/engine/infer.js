@@ -1,11 +1,11 @@
 // 行動順の観測から、相手の素早さ (性格補正×SP、スカーフの有無) を絞り込む。
 import {dex, speciesName} from './dex.js';
-import {finalSpeed, movePriority, currentSpecies} from './calc.js';
+import {finalSpeed, movePriority, currentSpecies, grounded} from './calc.js';
 import {effSpeed, SPE_COMBOS, speFromCombo} from './assume.js';
 import {clone, buildOf, condOf, megaEvolve, sendOut, commitTurn, SPEED_CHANGING, defaultAbilityResolver} from './battle.js';
 
 const SPEED_ABILITIES = new Set(['chlorophyll', 'swiftswim', 'sandrush', 'slushrush', 'surgesurfer', 'unburden', 'quickfeet']);
-const ORDER_ABILITIES = new Set(['quickdraw', 'stall', 'prankster', 'galewings']);
+const ORDER_ABILITIES = new Set(['quickdraw', 'stall', 'prankster', 'galewings', 'triage', 'myceliummight']);
 const ALL = '1'.repeat(SPE_COMBOS);
 const NONE = '0'.repeat(SPE_COMBOS);
 
@@ -52,7 +52,9 @@ export function inferSpeeds(b, draft, opts = {}) {
     if (!abilityKnown && possible.some(x => SPEED_ABILITIES.has(x) || ORDER_ABILITIES.has(x))) continue;
     if (possible.some(x => x === 'quickdraw' || x === 'stall')) continue;
     const oAb = abilityKnown ? possible[0] : '';
+    if (oAb === 'myceliummight' && dex.moves[o.a.move]?.c === 'Z') continue;
     const itemKnown = !!ob.item || oc.itemGone;
+    if (!itemKnown && field.terrain === 'Grassy' && o.a.move === 'grassyglide') continue;
     const scarfBranches = s.mega ? [false] : itemKnown ? [!oc.itemGone && ob.item === 'choicescarf'] : [false, true];
     if (itemKnown && !oc.itemGone && ob.item === 'quickclaw') continue;
 
@@ -74,10 +76,11 @@ export function inferSpeeds(b, draft, opts = {}) {
       const first = Math.min(m.idx, o.idx);
       if (speedChangeBefore(first)) continue;
       const myAb = res(sim, 'me', m.a.mon);
+      if (myAb === 'myceliummight' && dex.moves[m.a.move]?.c === 'Z') continue;
       if (myAb === 'quickdraw' || myAb === 'stall' || (!mc.itemGone && mb.item === 'quickclaw')) continue;
       const grassy = field.terrain === 'Grassy';
-      const pm = movePriority(m.a.move, myAb, {hpFull: mc.hp >= 100, grassyTerrain: grassy});
-      const po = movePriority(o.a.move, oAb, {hpFull: oc.hp >= 100, grassyTerrain: grassy});
+      const pm = movePriority(m.a.move, myAb, {hpFull: mc.hp >= 100, grassyTerrain: grassy && grounded({build: mb, cond: mc}, {field})});
+      const po = movePriority(o.a.move, oAb, {hpFull: oc.hp >= 100, grassyTerrain: grassy && grounded({build: ob, cond: oc}, {field})});
       if (pm !== po) continue;
       const my = finalSpeed({build: mb, cond: mc}, {format: sim.format, field, side: sim.state.sides.me});
       const oppFirst = o.idx < m.idx;

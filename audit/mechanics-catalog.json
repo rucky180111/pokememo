@@ -1974,7 +1974,8 @@
           "onModifyPriority"
         ],
         "engineReferences": [
-          "src/engine/calc.js"
+          "src/engine/calc.js",
+          "src/engine/infer.js"
         ]
       },
       "grassyterrain": {
@@ -2443,6 +2444,7 @@
         "volatile": "ingrain",
         "engineReferences": [
           "src/engine/battle.js",
+          "src/engine/calc.js",
           "src/engine/flow.js"
         ]
       },
@@ -3396,9 +3398,7 @@
         "reference": true,
         "calculatorEntry": true,
         "hooks": [],
-        "engineReferences": [
-          "src/engine/infer-dmg.js"
-        ]
+        "engineReferences": []
       },
       "powerwhip": {
         "name": "パワーウィップ",
@@ -3418,6 +3418,7 @@
         "volatile": "protect",
         "engineReferences": [
           "src/engine/battle.js",
+          "src/engine/calc.js",
           "src/engine/flow.js",
           "src/engine/infer-hp-effects.js"
         ]
@@ -3818,6 +3819,7 @@
           "src/engine/flow.js",
           "src/engine/infer-dmg.js",
           "src/engine/infer-hp-effects.js",
+          "src/engine/infer.js",
           "src/engine/predict.js",
           "src/engine/shot.js",
           "src/engine/teamdiag.js",
@@ -4533,9 +4535,7 @@
         "reference": true,
         "calculatorEntry": true,
         "hooks": [],
-        "engineReferences": [
-          "src/engine/infer-dmg.js"
-        ]
+        "engineReferences": []
       },
       "stormthrow": {
         "name": "やまあらし",
@@ -5869,7 +5869,6 @@
           "onSourceAfterFaint"
         ],
         "engineReferences": [
-          "src/engine/battle.js",
           "src/engine/calc.js",
           "src/engine/flow.js"
         ]
@@ -6406,6 +6405,7 @@
         ],
         "engineReferences": [
           "src/engine/battle.js",
+          "src/engine/calc.js",
           "src/engine/flow.js",
           "src/engine/infer-hp-effects.js"
         ]
@@ -6426,7 +6426,6 @@
         "calculatorEntry": true,
         "hooks": [],
         "engineReferences": [
-          "src/engine/battle.js",
           "src/engine/calc.js",
           "src/engine/flow.js",
           "src/engine/teamdiag.js"
@@ -6507,7 +6506,9 @@
         "hooks": [
           "onModifyMove"
         ],
-        "engineReferences": []
+        "engineReferences": [
+          "src/engine/calc.js"
+        ]
       },
       "magicbounce": {
         "name": "マジックミラー",
@@ -7200,6 +7201,7 @@
         "engineReferences": [
           "src/engine/battle.js",
           "src/engine/board.js",
+          "src/engine/calc.js",
           "src/engine/teamdiag.js"
         ]
       },
@@ -7936,8 +7938,7 @@
           "onAfterSubDamage"
         ],
         "engineReferences": [
-          "src/engine/battle.js",
-          "src/engine/flow.js",
+          "src/engine/calc.js",
           "src/engine/teamdiag.js"
         ]
       },
@@ -8778,7 +8779,9 @@
           "onEffectiveness",
           "onModifySpe"
         ],
-        "engineReferences": []
+        "engineReferences": [
+          "src/engine/calc.js"
+        ]
       },
       "kangaskhanite": {
         "name": "ガルーラナイト",

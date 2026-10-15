@@ -3,7 +3,7 @@ import {dex} from './dex.js';
 import {activeCount} from './battle.js';
 
 const inc = (o, k, n = 1) => { o[k] = (o[k] || 0) + n; };
-export const realBattles = (battles, {format, teamId} = {}) => battles.filter(b => !b.deleted && b.kind !== 'sim' && (!format || b.format === format) && (!teamId || b.teamId === teamId));
+export const realBattles = (battles, {format, teamId, since} = {}) => battles.filter(b => !b.deleted && b.kind !== 'sim' && (!format || b.format === format) && (!teamId || b.teamId === teamId) && (!since || (b.date || new Date(b.createdAt || 0).toISOString().slice(0, 10)) >= since));
 export const sortCounts = o => Object.entries(o).sort((a, b) => b[1] - a[1]);
 export const pct = (n, d) => (d ? Math.round((n / d) * 1000) / 10 : 0);
 
@@ -45,14 +45,17 @@ export function oppSpeciesStats(battles, speciesId, filter = {}) {
  * 戻り値: {n, moves: {id: 回数}, switches: {交代先: 回数}, turn1: {...同形式, 1ターン目のみ}}
  */
 export function matchupActions(battles, oppSpecies, mySpecies, filter = {}) {
-  const mk = () => ({n: 0, moves: {}, switches: {}, mega: 0});
+  const mk = () => ({n: 0, moves: {}, switches: {}, mega: 0, battles: 0, cant: 0});
   const out = {...mk(), turn1: mk()};
   for (const b of realBattles(battles, filter)) {
+    const counted = new Set();
     for (const t of b.turns || []) {
       for (const a of t.acts || []) {
         if (a.side !== 'opp' || a.sp !== oppSpecies) continue;
         if (mySpecies && !(a.vs || []).includes(mySpecies)) continue;
         for (const o of t.n === 1 ? [out, out.turn1] : [out]) {
+          if (a.type === 'move' && a.flags?.cant) { o.cant++; continue; }
+          if ((a.type === 'switch' || (a.type === 'move' && a.move)) && !counted.has(o)) { o.battles++; counted.add(o); }
           if (a.type === 'switch') { o.n++; inc(o.switches, a.toSp || '?'); }
           else if (a.type === 'move' && a.move) { o.n++; inc(o.moves, a.move); if (a.mega) o.mega++; }
         }
@@ -71,7 +74,7 @@ export function myActions(battles, mySpecies, oppSpecies, filter = {}) {
         if (a.side !== 'me' || a.sp !== mySpecies) continue;
         if (oppSpecies && !(a.vs || []).includes(oppSpecies)) continue;
         if (a.type === 'switch') { out.n++; inc(out.switches, a.toSp || '?'); }
-        else if (a.type === 'move' && a.move) { out.n++; inc(out.moves, a.move); }
+        else if (a.type === 'move' && a.move && !a.flags?.cant) { out.n++; inc(out.moves, a.move); }
       }
     }
   }

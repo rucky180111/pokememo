@@ -1,6 +1,6 @@
 // 盤面の状態から、ダメージ表・素早さ比較など「いま知りたい情報」をまとめて計算する。
 import {dex} from './dex.js';
-import {calcDamage, finalSpeed, currentSpecies, currentAbility, defaultHits, newCond, movePriority} from './calc.js';
+import {calcDamage, finalSpeed, currentSpecies, currentAbility, defaultHits, newCond, movePriority, grounded} from './calc.js';
 import {oppView, oppCond, speedOutlook} from './assume.js';
 import {condOf, buildOf, other, faintedCount, totalFainted, defaultAbilityResolver} from './battle.js';
 import {fitBuild} from './estimate.js';
@@ -55,15 +55,8 @@ export function boardContext(b, usage) {
     const bd = build(side, i);
     return bd ? currentAbility(bd, cond(side, i)) : '';
   };
-  // 盤面への自動反映用: 推定は使用率が十分高いときだけ使う
-  const strictAbility = (bb, side, i) => {
-    if (side === 'me') return defaultAbilityResolver(bb, side, i);
-    const known = defaultAbilityResolver(bb, side, i);
-    if (known) return known;
-    const v = views[i];
-    const top = v?.abilities?.[0];
-    return top && top[1] >= 0.6 ? top[0] : '';
-  };
+  // 計算上の想定と記録を分ける。使用率が高くても未判明の特性で盤面を変えない。
+  const strictAbility = defaultAbilityResolver;
   return {b, usage, views, build, cond, ability, strictAbility, megaBlocked};
 }
 
@@ -209,7 +202,7 @@ export function attackTable(ctx, atkSide, atkIdx, opts = {}) {
   return {
     side: atkSide, idx: atkIdx, active: atkActive,
     species: currentSpecies(aBuild, aCond0), ability: aAbility,
-    moves: moves.map(m => ({...m, hits: opts.hits?.[m.id] || defaultHits(m.id, aAbility), priority: movePriority(m.id, aAbility, {hpFull: (aCond0.hp ?? 100) >= 100, grassyTerrain: st.field.terrain === 'Grassy'})})),
+    moves: moves.map(m => ({...m, hits: opts.hits?.[m.id] || defaultHits(m.id, aAbility), priority: movePriority(m.id, aAbility, {hpFull: (aCond0.hp ?? 100) >= 100, grassyTerrain: st.field.terrain === 'Grassy' && grounded({build: aBuild, cond: aCond0}, {field: st.field})})})),
     targets,
   };
 }
