@@ -13,7 +13,8 @@ const SIDE_JA = {me: '自分', opp: '相手'};
 const FLAGS = [['reflect', 'リフレクター'], ['lightScreen', 'ひかりのかべ'], ['auroraVeil', 'オーロラベール'], ['tailwind', 'おいかぜ'], ['sr', 'ステルスロック']];
 export const STATUS_OPTS = [['brn', 'やけど'], ['par', 'まひ'], ['psn', 'どく'], ['tox', 'もうどく'], ['slp', 'ねむり'], ['frz', 'こおり']];
 // 変化技で必ず入る状態異常 (無効だったら外す)
-export const STATUS_MOVE = {willowisp: 'brn', thunderwave: 'par', glare: 'par', stunspore: 'par', nuzzle: 'par', toxic: 'tox', poisonpowder: 'psn', toxicthread: 'psn', spore: 'slp', sleeppowder: 'slp', hypnosis: 'slp', sing: 'slp', darkvoid: 'slp', lovelykiss: 'slp', grasswhistle: 'slp'};
+export {STATUS_MOVE} from '../engine/flow.js';
+import {STATUS_MOVE} from '../engine/flow.js';
 // 発動すると無くなる持ち物
 const CONSUMED = new Set(['focussash', 'whiteherb', 'powerherb', 'airballoon', 'weaknesspolicy', 'mentalherb', 'redcard', 'ejectbutton', 'ejectpack', 'throatspray', 'boosterenergy', 'roomservice', 'adrenalineorb', 'absorbbulb', 'cellbattery', 'luminousmoss', 'snowball', 'normalgem', 'covertcloak']);
 export const consumable = id => /berry$/.test(id || '') || /gem$/.test(id || '') || CONSUMED.has(id);

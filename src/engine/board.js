@@ -140,7 +140,7 @@ export function attackTable(ctx, atkSide, atkIdx, opts = {}) {
   const allies = aliveActives(b, atkSide).filter(i => i !== atkIdx);
   const allyAb = allies.map(i => ctx.ability(atkSide, i));
   const anyActiveAb = [...aliveActives(b, 'me').map(i => ctx.ability('me', i)), ...aliveActives(b, 'opp').map(i => ctx.ability('opp', i))];
-  const defList = (defSide === 'me' ? b.my : b.opp).map((_, i) => i).filter(i => !condOf(b, defSide, i)?.fainted && ctx.build(defSide, i));
+  const defList = (defSide === 'me' ? b.my : b.opp).map((_, i) => i).filter(i => (opts.includeFainted || !condOf(b, defSide, i)?.fainted) && ctx.build(defSide, i));
   const defActives = st.sides[defSide].active;
   defList.sort((x, y) => (defActives.includes(y) ? 1 : 0) - (defActives.includes(x) ? 1 : 0) || x - y);
 

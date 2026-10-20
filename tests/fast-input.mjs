@@ -87,6 +87,7 @@ try {
     }
     {
       await page.getByRole('tab', {name:'ダメージ', exact:true}).click();
+      await page.locator('.damage-manual > summary').click();
       const h = page.locator('.dl-st').first();
       const point = h.getByLabel('Hの能力Pt', {exact:true});
       const initialPoint = Number(await point.inputValue());

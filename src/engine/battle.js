@@ -465,6 +465,7 @@ export function applyMoveEffects(b, act, opts = {}) {
   if (move === 'reflect' && setSideFlag(b, side, 'reflect', true, {side, mon})) log.push(`${who}のリフレクター`);
   if (move === 'lightscreen' && setSideFlag(b, side, 'lightScreen', true, {side, mon})) log.push(`${who}のひかりのかべ`);
   if (move === 'auroraveil' && st.field.weather === 'Snow' && setSideFlag(b, side, 'auroraVeil', true, {side, mon})) log.push(`${who}のオーロラベール`);
+  if (move === 'auroraveil' && st.field.weather !== 'Snow') log.push('オーロラベール: 天候がゆきではないため失敗');
   if (move === 'tailwind' && setSideFlag(b, side, 'tailwind', true)) log.push(`${who}のおいかぜ`);
   if (move === 'trickroom') { setFieldFlag(b, 'trickRoom', !st.field.trickRoom); log.push(`トリックルーム${st.field.trickRoom ? '発動' : '解除'}`); }
   if (move === 'gravity' && setFieldFlag(b, 'gravity', true)) log.push('じゅうりょく発動');

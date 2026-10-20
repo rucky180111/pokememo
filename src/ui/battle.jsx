@@ -8,10 +8,10 @@ import {useApp, Sheet, Picker, Seg, TypeChip, Empty, Confirm, cx, rate} from './
 import {MonEditor} from './teams.jsx';
 import {SelectTab} from './select.jsx';
 import {Arena, OppStatTable} from './arena.jsx';
-import {DamageLab} from './dmglab.jsx';
+import {DamageOverview} from './damage-overview.jsx';
 import {TurnBar, FieldBar} from './play.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
-import {DamageTab, PredictTab} from './analysis.jsx';
+import {PredictTab} from './analysis.jsx';
 import {BattleLog} from './turn.jsx';
 
 const TABS = [['setup', '選出'], ['board', '盤面'], ['dmg', 'ダメージ'], ['log', 'ログ'], ['stat', '傾向']];
@@ -61,7 +61,7 @@ export function BattleScreen({id}) {
     switch (t) {
       case 'setup': return <SelectTab {...props} />;
       case 'board': return <Arena {...props} wide={wide} />;
-      case 'dmg': return <div class="page-in damage-workspace"><DamageLab {...props} /><details class="damage-matrix"><summary>全体のダメージ表</summary><DamageTab {...props} /></details></div>;
+      case 'dmg': return <div class="page-in damage-workspace"><DamageOverview {...props} /></div>;
       case 'log': return <LogTab {...props} />;
       case 'stat': return <div class="page-in"><PredictTab {...props} /></div>;
       default: return null;
@@ -85,7 +85,7 @@ export function BattleScreen({id}) {
       </div>
       {tab !== 'setup' && <div class="battle-field"><FieldBar battle={battle} /></div>}
       <div class="battle-body" ref={bodyRef}>{visited.map(t => <div key={t} hidden={tab !== t}>{body(t)}</div>)}</div>
-      <div class="arena-turnbar" hidden={tab === 'setup'}><TurnBar {...props} /></div>
+      <div class="arena-turnbar" hidden={tab === 'setup' || tab === 'dmg'}><TurnBar {...props} /></div>
       {confirm && <Confirm title="対戦を削除" message="この対戦の記録を削除します。元に戻せません。" okLabel="削除する" danger
         onOk={async () => { await store.deleteBattle(battle.id); nav('#/battles'); }} onClose={() => setConfirm(false)} />}
     </div>

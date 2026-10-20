@@ -5,6 +5,27 @@ import moveEffects from '../generated/move-effects.json' with {type: 'json'};
 import {inferHpEffects} from './infer-hp-effects.js';
 
 export const FORCE_MOVES = new Set(['dragontail', 'circlethrow', 'roar', 'whirlwind']);
+export const STATUS_MOVE = {willowisp:'brn', thunderwave:'par', glare:'par', stunspore:'par', nuzzle:'par', toxic:'tox', poisonpowder:'psn', toxicthread:'psn', spore:'slp', sleeppowder:'slp', hypnosis:'slp', sing:'slp', darkvoid:'slp', lovelykiss:'slp', grasswhistle:'slp'};
+function inflictStatus(b, target, src, st, move, log) {
+  const c = condOf(b, target.side, target.mon), bd = buildOf(b, target.side, target.mon);
+  if (!c || c.fainted || c.status) return false;
+  const types = typesOf(bd, c), ab = defaultAbilityResolver(b, target.side, target.mon);
+  const bypass = ['moldbreaker','teravolt','turboblaze'].includes(defaultAbilityResolver(b, src.side, src.mon));
+  const has = ids => !bypass && ids.includes(ab);
+  const onGround = grounded({build:{...bd,item:activeItem(b,target.side,target.mon)},cond:c}, {field:b.state.field});
+  const blocked = has(['purifyingsalt','comatose']) || (st === 'slp' && sleepBlocked(b,target.side,target.mon,bypass ? () => '' : defaultAbilityResolver)) ||
+    (st === 'brn' && (types.includes('Fire') || has(['waterveil','waterbubble']))) ||
+    (st === 'par' && (types.includes('Electric') || has(['limber']) || (move === 'thunderwave' && types.includes('Ground')))) ||
+    (['psn','tox'].includes(st) && ((types.includes('Poison') || types.includes('Steel')) && defaultAbilityResolver(b,src.side,src.mon) !== 'corrosion' || has(['immunity','pastelveil']))) ||
+    (st === 'frz' && (types.includes('Ice') || has(['magmaarmor']))) ||
+    (b.state.field.terrain === 'Misty' && onGround) ||
+    (['spore','sleeppowder','poisonpowder','stunspore'].includes(move) && (types.includes('Grass') || has(['overcoat']) || activeItem(b,target.side,target.mon) === 'safetygoggles'));
+  if (blocked) { log.push(`${moveName(move)}: 状態異常は無効`); return false; }
+  c.status = st; c.toxicCounter = 1; c.statusKey = ''; c.statusCant = 0;
+  log.push(`${target.side === 'me' ? '自分' : '相手'}の${speciesName(bd.species)}は${STATUS_JA[st]}になった`);
+  syncStatus(b,target,src,st,log);
+  return true;
+}
 // シンクロ: どく・まひ・やけどにされると、相手も同じ状態異常に (判明している特性のみ)
 function syncStatus(b, holder, src, st, log) {
   if (!['psn', 'tox', 'par', 'brn'].includes(st) || defaultAbilityResolver(b, holder.side, holder.mon) !== 'synchronize') return;
@@ -480,11 +501,10 @@ export function addAct(b, input, usage) {
     // 攻撃した側のHPの変化 (いのちのたま・反動・ゴツゴツメット・さめはだ・吸収)
     if (!failed && tgt && tgt.side !== side && input.selfFx?.length) attackerHpEffects(b, {side, mon, tgt, move: a.move, fx: input.selfFx, hpAfter: input.atkHpAfter ?? input.observedHp?.find(h => h.side === side && h.mon === mon)?.hpAfter, tgtBefore: hpBeforeHit, a}, log);
     // 追加効果・変化技で相手が状態異常になった
-    if (!failed && tgt && input.inflict && !condOf(b, tgt.side, tgt.mon).fainted && !bounced) {
-      const tc2 = condOf(b, tgt.side, tgt.mon);
-      tc2.status = input.inflict; tc2.toxicCounter = 1; a.inflict = input.inflict;
-      log.push(`${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}は${STATUS_JA[input.inflict]}になった`);
-      syncStatus(b, tgt, {side, mon}, input.inflict, log);
+    const inflict = input.inflict ?? STATUS_MOVE[a.move];
+    if (!failed && tgt && inflict) {
+      const recipient = bounced ? {side,mon} : tgt, source = bounced ? tgt : {side,mon};
+      if (inflictStatus(b,recipient,source,inflict,a.move,log)) a.inflict = inflict;
     }
     if (!failed && defItem && input.defItem.consumed !== false && tgt) {
       condOf(b, tgt.side, tgt.mon).itemGone = true;

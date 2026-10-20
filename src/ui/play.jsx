@@ -8,7 +8,7 @@ import {dex, speciesName, itemName, abilityName, moveName, statsOf, STAT_JA, STA
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility, typesOf} from '../engine/calc.js';
 import {condOf, buildOf, other, turnNumber, PIVOT_MOVES, faintedCount, pickCount, defaultAbilityResolver} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
-import {scenarioBuild} from '../engine/estimate.js';
+import {damageRange} from '../engine/damage-range.js';
 import {revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, editAct, reopenLastTurn, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
 import {speedOutlook} from '../engine/assume.js';
 import {finalSpeed} from '../engine/calc.js';
@@ -33,18 +33,10 @@ const benchOf = (b, side) => {
 };
 
 /** ダメージの予想: 相手が受ける側なら耐久の 想定/無振り/全振り、相手が攻める側なら火力の 想定/無振り/全振り */
-function predict(battle, ctx, side, mon, tgt, move, scen, crit) {
+function predictAll(ctx, side, mon, tgt, move, crit) {
   if (!tgt || !dex.moves[move]) return null;
-  let c = ctx;
-  const oppIdx = side === 'opp' ? mon : tgt.mon;
-  const opp = battle.opp[oppIdx];
-  if (scen !== 'base' && opp) {
-    const base = ctx.build('opp', oppIdx);
-    const sid = currentSpecies(base, ctx.cond('opp', oppIdx));
-    const kind = side === 'me' ? (scen === 'min' ? 'bulkMin' : 'bulkMax') : (scen === 'min' ? 'powMin' : 'powMax');
-    c = {...ctx, build: (s, i) => (s === 'opp' && i === oppIdx ? scenarioBuild(opp, base, sid, kind, dex.moves[move].c) : ctx.build(s, i))};
-  }
-  return attackTable(c, side, mon, {crit, only: {def: tgt.mon, move}})?.targets[0]?.results[move] || null;
+  const range = damageRange(ctx, side, mon, tgt.mon, move, {crit});
+  return {base: range, min: range?.lowResult || range, max: range?.highResult || range};
 }
 
 // 攻撃した側のHPの変化で、確実に起きるもの (分かっている持ち物・特性・技の効果)
@@ -111,10 +103,10 @@ export function PlayBoard({battle, ctx, mut, usage, toast, setSheet}) {
     toast(last || okMsg || '記録しました');
   };
   // 技を選んでいるときのダメージ予想 (相手のHPバーと右側の両方で使う)
-  // 3通り (想定・無振り・全振り) をまとめて計算し、選んでいるものをHPバーに出す
+  // 配分候補全体と両端の配分をまとめて計算し、選んでいるものをHPバーに出す
   const preds = useMemo(() => {
     if (act?.kind !== 'move' || !act.tgt || dex.moves[act.move]?.c === 'Z') return null;
-    return Object.fromEntries(['base', 'min', 'max'].map(k => [k, predict(battle, vctx, act.side, act.mon, act.tgt, act.move, k, act.crit)]));
+    return predictAll(vctx, act.side, act.mon, act.tgt, act.move, act.crit);
   }, [vctx, act?.kind, act?.side, act?.mon, act?.move, act?.crit, act?.tgt?.mon]);
   const pred = preds ? preds[act.scen] : null;
   const p = {battle, ctx: vctx, mut, usage, toast, act, setAct, commit, setSheet, pred, preds, megaPrev, setMegaPrev};
@@ -201,6 +193,7 @@ function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, co
 }
 
 function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, targeted, done, setSheet, megaPrev, setMegaPrev, benchControls, actionArea}) {
+  const sd = battle.state.sides[side];
   const build = ctx.build(side, mon);
   const raw0 = condOf(battle, side, mon);
   const raw = megaPrev && !raw0.fainted ? {...raw0, forme: megaPrev} : raw0;
@@ -235,12 +228,12 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
       <div class="pl-head"><div class="pl-title">
         <span class="pl-owner">{SIDE_JA[side]}</span><Sprite id={sid} size={32} />
         <button class="pl-name" onClick={() => setSheet({side, idx: mon})}>{s.j}</button>
-        <span class="types">{typesOf(build, raw).map(t => <TypeChip type={t} small />)}</span>
-        {raw.status && <span class="tag bad">{ST_JA[raw.status]}</span>}
-        <MegaButtons battle={battle} side={side} mon={mon} mut={mut} usage={usage} preview={megaPrev} setPreview={setMegaPrev} />
         {raw.transformed && <span class="tag accent">へんしん中</span>}
         {zoro && !raw.transformed && <button class="btn ghost sm" onClick={() => setAskZoro(true)} title="イリュージョンの正体がゾロアークだったとき">正体は{speciesName(zoro.o.species)}</button>}
-      </div>{benchControls}</div>
+      </div>{benchControls}<div class="pl-form-controls">
+        <MegaButtons battle={battle} side={side} mon={mon} mut={mut} usage={usage} preview={megaPrev} setPreview={setMegaPrev} />
+        <span class="types">{typesOf(build, raw).map(t => <TypeChip type={t} small />)}</span>
+      </div></div>
       {askZoro && <Confirm title="イリュージョンの正体" message={`いま場にいる${speciesName(battle.opp[mon].species)}は、${speciesName(zoro.o.species)}のイリュージョンでしたか？ 化けていた間の記録を${speciesName(zoro.o.species)}に付け替えて入れ直します。${speciesName(battle.opp[mon].species)}は選出の最後のポケモンとして記録します。`} okLabel="付け替える" onOk={reveal} onClose={() => setAskZoro(false)} />}
       <div class="pl-info">
         {side === 'opp'
@@ -258,6 +251,12 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
         {raw.disguiseBroken && <span class="tag">ばけのかわ はがれた</span>}
       </div>
       <HpBar side={side} mon={mon} battle={battle} raw={raw} max={myMax} targeted={targeted} mut={mut} usage={usage} />
+      <div class="pl-conditions">
+        <select aria-label={`${SIDE_JA[side]}の状態異常`} class="input sm" value={raw.status || ''} onChange={e => mut(b => addEvent(b,{kind:'status',side,mon,status:e.currentTarget.value},usage))}>
+          <option value="">状態異常なし</option>{STATUS_OPTS.map(([id,label]) => <option value={id}>{label}</option>)}
+        </select>
+        {FLAGS.slice(0,3).map(([key,label]) => <button class={cx('chip sm',sd[key] && 'on')} aria-pressed={!!sd[key]} title={label} onClick={() => mut(b => addEvent(b,{kind:'side',side,key,value:!sd[key]},usage))}>{label}</button>)}
+      </div>
       <div class="pl-body">
         <div class="scroll-x">{side === 'opp' ? <OppStatTable battle={battle} idx={mon} forme={megaPrev} onBoosts={raw.fainted ? null : setBoosts} /> : <MyStatTable build={build} raw={raw} sid={sid} onBoosts={raw.fainted ? null : setBoosts} />}</div>
         {side === 'opp' && <details class="pl-speed-detail"><summary>素早さの比較</summary><SpeedBox battle={battle} ctx={ctx} usage={usage} mon={mon} raw={raw} /></details>}
@@ -527,7 +526,7 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
     return out;
   });
   const secOn = x => act.secFx.some(y => JSON.stringify(y) === JSON.stringify(x.e));
-  const scenLabels = side === 'me' ? [['base', '想定'], ['min', '耐久無振り'], ['max', '耐久全振り']] : [['base', '想定'], ['min', '火力無振り'], ['max', '火力全振り']];
+  const scenLabels = [['base', preds?.base?.rangeMode === 'assumed' ? '想定配分' : '候補全体'], ['min', '最小側の配分'], ['max', '最大側の配分']];
   const selectedOutcome = outcome(r, tgtHp, tgtMax);
   return (
     <div class="pl-act move">
@@ -598,10 +597,10 @@ export function outcome(r, hp, max) {
   const cur = r.defHP || 0;
   const rolls = (r.rolls || []).filter(Number.isFinite);
   let ko = '', koLabel;
-  if (cur > 0 && r.min >= cur) { ko = 'sure'; koLabel = '確定でひんし'; }
-  else if (cur > 0 && r.max >= cur) {
+  if (cur > 0 && (r.rangeMode === 'candidates' ? r.minPct >= hp : r.min >= cur)) { ko = 'sure'; koLabel = '確定でひんし'; }
+  else if (cur > 0 && (r.rangeMode === 'candidates' ? r.maxPct >= hp : r.max >= cur)) {
     const p = rolls.length === 16 ? rolls.filter(x => x >= cur).length / 16 : null; // 連続技は1発ずつの乱数なので割合は出さない
-    ko = 'maybe'; koLabel = `乱数でひんし${p != null ? ` (${Math.round(p * 1000) / 10}%)` : ''}`;
+    ko = 'maybe'; koLabel = r.rangeMode === 'candidates' ? '配分・乱数によってひんし' : `乱数でひんし${p != null ? ` (${Math.round(p * 1000) / 10}%)` : ''}`;
   } else koLabel = r.koText || '';
   return {from: max ? `${Math.round((max * hp) / 100)}` : `${dispOf(hp)}%`, to: lo === hi ? show(lo) : `${show(lo)}〜${show(hi)}`, ko, koLabel};
 }
