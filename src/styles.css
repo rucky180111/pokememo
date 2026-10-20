@@ -1391,3 +1391,6 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .tl-effect { display: flex; align-items: baseline; gap: 5px; width: 100%; font-size: 12px; line-height: 1.5; }
 .log-kind { display: inline-block; flex-shrink: 0; padding: 1px 5px; border-radius: 4px; background: var(--surface2); color: var(--muted); font-size: 10px; font-weight: 600; }
 .tl-system { display: flex; gap: 6px; padding: 6px 10px; margin: 5px 6%; border-radius: 6px; background: var(--surface2); font-size: 12px; line-height: 1.5; }
+.pr-example { font-size: 12px; background: var(--chip, #8881); padding: 6px 8px; border-radius: 6px; overflow-x: auto; margin: 4px 0 8px; }
+.pr-help h5 { margin: 8px 0 4px; font-size: 13px; }
+.pr-csv-help { margin: 0 0 6px; padding-left: 1.2em; font-size: 13px; line-height: 1.5; }

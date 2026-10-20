@@ -10,7 +10,7 @@
 //   ゴーストタイプ                  … ゴーストタイプがいる (「〇〇タイプ」でタイプ指定)
 //   エースバーン / グソクムシャ+ガブリアス … / で区切ると「どちらかの条件を満たす」
 //   * (または空)                     … どれにも当てはまらないとき (既定)
-// 一括入力の1行:  条件 => 先発, 2体目, 3体目 # メモ (勝率など)
+// 一括入力の1行:  条件,先発,2体目,3体目
 import {dex, TYPE_JA, baseSpeciesId} from './dex.js';
 
 const norm = s => String(s || '').normalize('NFKC').replace(/[\s　・]/g, '').replace(/[ぁ-ゖ]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60)).toLowerCase();
@@ -133,25 +133,35 @@ export function teamSpecies(name, teamMons) {
   return loose.length === 1 ? loose[0].species : null;
 }
 
-// 一括入力: 1行 = 「条件 => ポケモン, ポケモン, ポケモン # メモ」。teamMons の名前で選出を引く
+// 一括入力: CSV のように 1行 = 「条件,先発,2体目,3体目」。タブ区切り (表計算から貼り付け) でもよい。
+// 1行目が「条件,…」なら見出しとして飛ばす。前の書き方「条件 => A, B, C # メモ」も読める (メモは捨てる)
+export const RULES_HEADER = '条件,先発,2体目,3体目';
 export function parseRulesText(text, teamMons) {
   const rules = [], errors = [];
   String(text || '').split(/\r?\n/).forEach((line, n) => {
-    const raw = line.trim();
+    const raw = line.split(/\s*[#＃]/)[0].trim();
     if (!raw || raw.startsWith('//')) return;
-    const [body, ...memo] = raw.split(/\s*[#＃]\s*/);
-    const m = /^(.*?)\s*(?:=>|＝＞|→)\s*(.+)$/.exec(body);
-    if (!m) { errors.push(`${n + 1}行目: 「=>」で条件と選出を区切ってください`); return; }
-    const cond = m[1].trim() || '*';
+    let cond, names;
+    const m = /^(.*?)\s*(?:=>|＝＞|→)\s*(.+)$/.exec(raw);
+    if (m) { cond = m[1]; names = m[2].split(/\s*(?:,|、|，|→|->)\s*/); }
+    else {
+      const cells = raw.split(raw.includes('\t') ? /\t/ : /\s*[,、，]\s*/).map(c => c.trim().replace(/^"(.*)"$/, '$1'));
+      if (n === 0 && /^条件$/.test(cells[0])) return; // 見出し
+      if (cells.length < 2) { errors.push(`${n + 1}行目: 「条件,先発,2体目,3体目」の形で書いてください`); return; }
+      [cond, ...names] = cells;
+      names = names.slice(0, 3);
+    }
+    cond = String(cond || '').trim() || '*';
     const pc = parseCond(cond);
     pc.errors.forEach(e => errors.push(`${n + 1}行目: ${e}`));
     const pick = [];
-    for (const nm of m[2].split(/\s*(?:,|、|，|→|->)\s*/).filter(Boolean)) {
+    for (const nm of names.filter(Boolean)) {
       const sid = teamSpecies(nm, teamMons);
       if (!sid) errors.push(`${n + 1}行目: 「${nm}」は構築にいません`);
       else pick.push(sid);
     }
-    rules.push({cond, pick, note: memo.join(' # ').trim()});
+    if (!names.filter(Boolean).length) errors.push(`${n + 1}行目: 選出が入っていません`);
+    rules.push({cond, pick});
   });
   return {rules, errors};
 }
@@ -159,5 +169,5 @@ export function parseRulesText(text, teamMons) {
 // ルール一覧 → 一括入力の文字列 (書き出し用)
 export function rulesToText(rules) {
   const nm = id => dex.species[id]?.j || id;
-  return (rules || []).map(r => `${r.cond || '*'} => ${(r.pick || []).map(nm).join(', ')}${r.note ? ` # ${r.note}` : ''}`).join('\n');
+  return [RULES_HEADER, ...(rules || []).map(r => [r.cond || '*', ...(r.pick || []).map(nm)].join(','))].join('\n');
 }
