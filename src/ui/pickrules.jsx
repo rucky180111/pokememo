@@ -43,13 +43,40 @@ function PickIcons({pick}) {
 const HELP = [
   ['ルカリオ', 'ルカリオがいる'],
   ['A+B', 'AとBの両方がいる'],
-  ['A+B|C', 'Aがいて、BかCがいる'],
+  ['A|B', 'AかBのどちらかがいる'],
+  ['A+B|C', 'Aがいて、BかCがいる (| が先にまとまる)'],
   ['A-B', 'Aがいて、Bはいない'],
-  ['2体以上:A|B|C', '並べたうち2体以上'],
+  ['2体以上:A|B|C', '並べたうち2体以上がいる'],
   ['ゴーストタイプ', 'そのタイプがいる'],
-  ['A / B+C', 'どちらかの条件'],
-  ['*', 'どれにも当てはまらないとき'],
+  ['A / B+C', '/ の左右どちらかの条件を満たす'],
+  ['*', 'どれにも当てはまらないとき (いちばん下に置く)'],
 ];
+// まとめて入力 (CSV) の書き方
+const CSV_HELP = [
+  '1行に1ルール。列は「条件,先発,2体目,3体目」の順 (区切りはカンマ)。',
+  '上の行ほど優先。相手の6体を上から順に調べ、最初に当てはまった行の3体を出します。',
+  '1行目に見出し「条件,先発,2体目,3体目」があれば読み飛ばします (なくてもよい)。',
+  '表計算ソフト (スプレッドシート・Numbers・Excel) からコピーした表 (タブ区切り) もそのまま貼れます。',
+  '条件の名前はポケモンの正式名で書きます。リージョンフォームは「ガラルヤドキング」「ヤドキング(ガラル)」のどちらでも可。メガシンカの名前は元のポケモンとして扱います。',
+  '選出の名前はこの構築のポケモン。「ガブZ」「ゴリラ」のような略し方でも、構築の中で1体に決まれば読めます。',
+  '選出は1〜3体。2体だけ書いた行は、選出画面で残り1体を自分で選びます。',
+  '# より後ろと、// で始まる行は無視します (コメント用)。',
+  '名前の間違いや構築にいないポケモンがあると、どの行が悪いかを出して置き換えません。',
+];
+
+function HelpBody() {
+  return <>
+    <h5>条件の書き方</h5>
+    <dl>{HELP.map(([k, v]) => <><dt><code>{k}</code></dt><dd>{v}</dd></>)}</dl>
+    <h5>まとめて入力 (CSV) の書き方</h5>
+    <ul class="pr-csv-help">{CSV_HELP.map(t => <li>{t}</li>)}</ul>
+    <pre class="pr-example">{`条件,先発,2体目,3体目
+フシギバナ,ガブZ,サーフゴー,エンペルト
+ルカリオ+ミミッキュ|ギルガルド,ゴリランダー,ガブZ,ドドゲザン
+2体以上:ドヒドイデ|アーマーガア|ブラッキー,サーフゴー,ガブZ,ドドゲザン
+*,エンペルト,ガブZ,ゴリランダー`}</pre>
+  </>;
+}
 
 // 構築の画面: ルールの一覧 (上が優先)
 export function PickRulesEditor({team, save}) {
@@ -62,8 +89,8 @@ export function PickRulesEditor({team, save}) {
   return (
     <div class="pick-rules">
       <p class="hint">上から順に調べ、最初に当てはまった行の3体を選出画面に出します。左が先発。行を押すと編集できます。</p>
-      <details class="pr-help"><summary>条件の書き方</summary>
-        <dl>{HELP.map(([k, v]) => <><dt><code>{k}</code></dt><dd>{v}</dd></>)}</dl>
+      <details class="pr-help"><summary>書き方のルール</summary>
+        <HelpBody />
       </details>
       <ol class="pr-list">
         {rules.map((r, i) => {
@@ -118,11 +145,8 @@ export function PickRulesEditor({team, save}) {
       {bulk != null && (
         <Sheet title="選出ルールをまとめて入力" onClose={() => setBulk(null)}>
           <div class="pad">
-            <p class="hint">CSVの形で1行に1ルール。上の行ほど優先。表計算ソフトからの貼り付け (タブ区切り) でも読めます。</p>
-            <pre class="pr-example">{`条件,先発,2体目,3体目
-フシギバナ,ガブZ,サーフゴー,エンペルト
-ルカリオ+ミミッキュ|ギルガルド,ゴリランダー,ガブZ,ドドゲザン
-*,エンペルト,ガブZ,ゴリランダー`}</pre>
+            <p class="hint">CSVの形で1行に1ルール (条件,先発,2体目,3体目)。上の行ほど優先。</p>
+            <details class="pr-help"><summary>書き方のルール</summary><HelpBody /></details>
             <textarea class="input pr-bulk" rows={14} spellcheck={false} value={bulk} onInput={e => setBulk(e.currentTarget.value)} />
             {bulkErr.length > 0 && <ul class="warn">{bulkErr.map(e => <li>{e}</li>)}</ul>}
             <div class="btnrow pad-s">

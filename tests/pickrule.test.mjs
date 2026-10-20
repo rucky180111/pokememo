@@ -59,6 +59,11 @@ test('CSV・タブ区切りで読める (見出しは飛ばす)', () => {
   const tsv = parseRulesText(csv.replace(/,/g, '\t'), team);
   assert.deepEqual(tsv, a);
   assert.equal(parseRulesText('ルカリオ,', team).errors.length, 1); // 選出なし
+  // 書き方のルールに載せた例・略し方・リージョンの書き方・コメント
+  const ex = parseRulesText('2体以上:ドヒドイデ|アーマーガア|ブラッキー,サーフゴー,ガブZ,ドドゲザン\nヤドキング(ガラル),ゴリラ,ガブZ # コメント\n// 無視\nガラルヤドキング,サーフゴー,ガブZ', team);
+  assert.deepEqual(ex.errors, []);
+  assert.equal(ex.rules.length, 3);
+  assert.deepEqual(ex.rules[1].pick, ['rillaboom', 'garchomp']);
 });
 
 test('当てはまった選出を手持ちの番号に直す (並び順どおり・先頭が先発)', () => {
