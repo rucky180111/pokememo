@@ -46,6 +46,7 @@ try {
  saved=await page.evaluate(id=>window.__pokememo.store.battle(id),sap.id);assert.equal(saved.state.mons.opp[0].hp,70);assert.ok(Math.abs(saved.state.mons.me[0].hp-80/153*100)<1e-9);
  await page.getByRole('button',{name:'1つ戻す',exact:true}).click();
  await mine.locator('.pl-mv',{hasText:'やどりぎのタネ'}).click();await mine.getByRole('button',{name:'記録',exact:true}).click();
+ await page.locator('.tb-hp-inputs summary').click();
  await page.getByLabel('自分 オリーヴァのターン終了後HP',{exact:true}).fill('60');
  await page.screenshot({path:'e2e-out/observed-end-hp-ipad.png'});
  await page.getByRole('button',{name:'未入力のまま次へ',exact:true}).click();await page.getByRole('button',{name:'次のターンへ',exact:true}).click();

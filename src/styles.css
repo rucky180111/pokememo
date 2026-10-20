@@ -1307,3 +1307,60 @@ select.pl-dd { appearance: none; -webkit-appearance: none; padding-right: 22px; 
 .pr-fb { font-size: 11px; padding: 2px 5px; border-radius: 6px; background: var(--chip, #8882); white-space: nowrap; }
 .pr-mon.lead .pr-fb { font-weight: 700; }
 .pr-mon:has(.pr-fb) .tag { position: static; transform: none; margin-left: 2px; }
+/* iPad: タップ連打をズームに変えず、ピンチによる拡大は保つ。 */
+button, input, select, summary, .pl-hp { touch-action: manipulation; }
+/* 天候は上空、フィールドは足元として同時に見分けられる。 */
+.battle { --sky: transparent; --ground: transparent; background: linear-gradient(var(--sky), transparent 55%), linear-gradient(0deg, var(--ground), transparent 65%); }
+.weather-Rain { --sky: #347fb52b; }
+.weather-Sun { --sky: #ffc34338; }
+.weather-Sand { --sky: #ba974d38; }
+.weather-Snow { --sky: #94c7e238; }
+.terrain-Grassy { --ground: #62ad4838; }
+.terrain-Electric { --ground: #e7cc3c38; }
+.terrain-Psychic { --ground: #c270ae38; }
+.terrain-Misty { --ground: #d8a3d838; }
+.battle-field .pl-field { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.battle-field .pl-field > span { padding: 3px 6px; border-radius: 6px; }
+.weather-Rain .pl-field > span:nth-child(2) { background: #347fb52b; }
+.weather-Sun .pl-field > span:nth-child(2) { background: #ffc34338; }
+.weather-Sand .pl-field > span:nth-child(2) { background: #ba974d38; }
+.weather-Snow .pl-field > span:nth-child(2) { background: #94c7e238; }
+.terrain-Grassy .pl-field > span:nth-child(3) { background: #62ad4838; }
+.pl-field b.on { font-size: 14px; color: var(--text); }
+.weather-Rain .battle-field { background: repeating-linear-gradient(115deg, transparent 0 14px, #5597c533 14px 16px, transparent 16px 28px); padding: 3px 0; }
+.weather-Snow .battle-field { background: radial-gradient(circle, #8bb6ce66 1px, transparent 2px) 0 0 / 12px 12px; padding: 3px 0; }
+.terrain-Grassy .pl { background-image: linear-gradient(0deg, #5f9e3126, transparent 45px), repeating-linear-gradient(70deg, transparent 0 8px, #5f9e3140 8px 10px, transparent 10px 14px); background-size: 100% 50px, 100% 9px; background-position: bottom; background-repeat: no-repeat; }
+.tb-hp-inputs, .tb-order { width: 100%; }
+.tb-hp-inputs summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
+.tb-order .input { width: 100%; min-width: 0; font-size: 12px; }
+.cant-direct { margin: 4px 0; }
+@media (min-width: 980px) {
+  .battle.board-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 210px; column-gap: 6px; align-items: start; }
+  .board-workspace > .battle-head, .board-workspace > .tabs, .board-workspace > .battle-field { grid-column: 1 / -1; }
+  .board-workspace > .battle-body { grid-column: 1; min-width: 0; }
+  .board-workspace > .arena-turnbar { grid-column: 2; grid-row: 4; position: sticky; top: 8px; bottom: auto; margin: 6px 6px 0 0; max-height: calc(100dvh - 150px); overflow-y: auto; }
+  .board-workspace .arena-turnbar .turnbar { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
+  .board-workspace .arena-turnbar .tb-auto { display: block; font-size: 11px; }
+  .board-workspace .arena-turnbar .tb-status { flex-wrap: wrap; flex: none; }
+  .board-workspace .arena-turnbar .tb-end { order: -1; min-height: 44px; }
+  .board-workspace .arena-turnbar .tb-maybe { flex-basis: auto; }
+  .board-workspace .play { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+  .board-workspace .pl { min-width: 0; }
+  .board-workspace .pl-main { display: grid; grid-template-rows: 40px 28px 32px 180px 245px minmax(0, 1fr); height: 570px; min-height: 570px; gap: 3px; }
+  .board-workspace .pl-head, .board-workspace .pl-info { overflow: auto; }
+  .board-workspace .pl-body { height: 180px; min-height: 0; overflow-y: auto; }
+  .board-workspace .pl .pl-lower { height: 245px; min-height: 245px; }
+  .board-workspace .pl-action-column { height: 245px; overflow-y: auto; scrollbar-gutter: stable; }
+  .board-workspace .pl-act.move > * { order: 6; flex-shrink: 0; }
+  .board-workspace .pl-act.move > .pa-h { order: 0; }
+  .board-workspace .pl-act.move > .pa-outcomes { order: 1; }
+  .board-workspace .pl-act.move > .toggle { order: 2; }
+  .board-workspace .pl-act.move > .pa-hp { order: 3; }
+  .board-workspace .pl-act.move > .step-range { order: 4; }
+  .board-workspace .pl-act.move > .btnrow { order: 5; }
+  .board-workspace .pl .pl-moves { grid-template-rows: repeat(4, 44px); }
+  .board-workspace .pl .pl-mv { height: 44px; }
+  .board-workspace .pl-head .pl-bmon { width: 26px; }
+  .board-workspace .pl-name { font-size: 14px; }
+  .board-workspace .observed-hp { flex-wrap: wrap; }
+}

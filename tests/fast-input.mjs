@@ -83,7 +83,7 @@ try {
       check(Math.abs(boxes[0].y - boxes[1].y) < 2 && boxes[0].x < boxes[1].x, true, '自分と相手を横並びで確認できる');
       const record = await mine.locator('.pl-act .btnrow').boundingBox();
       const footer = await page.locator('.arena-turnbar').boundingBox();
-      check(record.y + record.height <= footer.y, true, 'iPad横ではHPの記録ボタンまでスクロールせず表示');
+      check(record.y + record.height <= viewport.height - 54 && footer.x > boxes[1].x, true, 'iPad横ではHPの記録ボタンが画面内にあり、終了欄が右端');
     }
     {
       await page.getByRole('tab', {name:'ダメージ', exact:true}).click();

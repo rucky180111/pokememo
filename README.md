@@ -70,6 +70,8 @@ git push -u origin main
 
 [全体レビューと90戦の比較検証](SYSTEM_REVIEW.md) / [技・特性・持ち物の対応範囲](MECHANICS_AUDIT.md)
 
+[対戦入力・ターン終了処理の改善](END_TURN_REVIEW.md): 技不明の行動不能、回復後HP、定数処理順と途中HPからの推定、iPadの固定枠・右端の終了操作に対応しています。
+
 ### コマンド
 
 必要ライブラリ: `@smogon/calc` (ダメージ計算)、`preact` (画面)、`esbuild` (ビルド)、`playwright` (動作確認)。

@@ -101,6 +101,20 @@ export function endTurn(b, usage, opts = {}) {
       sim.opp.forEach((o, i) => { if (JSON.stringify(o.speOk || null) !== before[i] && b.opp[i]) { b.opp[i].speOk = o.speOk; b.opp[i].scarfLikely = o.scarfLikely; } });
     } catch { /* 絞り込めなくても記録は続ける */ }
   }
+  // ターン終了時の処理の順番 (先に処理されたほうが速い) から素早さを絞り込む
+  if (opts.resFirst === 'me' || opts.resFirst === 'opp') {
+    try {
+      const fm = (sd) => b.state.sides[sd].active.find(i => i != null && !condOf(b, sd, i)?.fainted);
+      const first = opts.resFirst, second = other(first);
+      if (fm(first) != null && fm(second) != null) {
+        const sim = clone(b);
+        const acts = [{type: 'move', side: first, mon: fm(first), move: 'bodyslam', flags: {}}, {type: 'move', side: second, mon: fm(second), move: 'bodyslam', flags: {}}];
+        const before = sim.opp.map(o => JSON.stringify(o.speOk || null));
+        log.push(...inferSpeeds(sim, {acts}, {resolveAbility: res, residual: true}).map(x => `ターン終了時の処理の順番から ${x}`));
+        sim.opp.forEach((o, i) => { if (JSON.stringify(o.speOk || null) !== before[i] && b.opp[i]) { b.opp[i].speOk = o.speOk; b.opp[i].scarfLikely = o.scarfLikely; } });
+      }
+    } catch { /* 絞り込めなくても続ける */ }
+  }
   const entered = new Set(t.acts.filter(a => a.toSp).map(a => `${a.side}${a.to}`));
   for (const side of ['me', 'opp']) for (const i of b.state.sides[side].active) {
     if (i == null || condOf(b, side, i).fainted || entered.has(`${side}${i}`)) continue;
@@ -157,20 +171,6 @@ export function endTurn(b, usage, opts = {}) {
     if (!f[key] || f.since?.[key] == null) continue;
     const n = t.n - f.since[key] + 1;
     void n; void base; void ext; void label;
-  }
-  // ターン終了時の処理の順番 (先に処理されたほうが速い) から素早さを絞り込む
-  if (opts.resFirst === 'me' || opts.resFirst === 'opp') {
-    try {
-      const fm = (sd) => b.state.sides[sd].active.find(i => i != null && !condOf(b, sd, i)?.fainted);
-      const first = opts.resFirst, second = other(first);
-      if (fm(first) != null && fm(second) != null) {
-        const sim = clone(b);
-        const acts = [{type: 'move', side: first, mon: fm(first), move: 'tackle', flags: {}}, {type: 'move', side: second, mon: fm(second), move: 'tackle', flags: {}}];
-        const before = sim.opp.map(o => JSON.stringify(o.speOk || null));
-        log.push(...inferSpeeds(sim, {acts}, {resolveAbility: res}).map(x => `ターン終了時の処理の順番から ${x}`));
-        sim.opp.forEach((o, i) => { if (JSON.stringify(o.speOk || null) !== before[i] && b.opp[i]) { b.opp[i].speOk = o.speOk; b.opp[i].scarfLikely = o.scarfLikely; } });
-      }
-    } catch { /* 絞り込めなくても続ける */ }
   }
   // やどりぎのタネで吸い取った量 (自分の回復量) から、相手の最大HP → HPの能力ポイントが分かる
   for (const h of opts.hpFacts || []) {
@@ -390,6 +390,7 @@ export function addAct(b, input, usage) {
           const os = dex.species[b.opp[oppIdx].species];
           const iopt = {crit: a.flags.crit, itemUnknown: !b.opp[oppIdx].item, abilityUnknown: !b.opp[oppIdx].ability && os.ab.length > 1, atLeast: sash || knockedOut, ...(heal && !knockedOut && side === 'me' ? {tol: 2} : {}),
             hits: input.hits ? {[a.move]: input.hits} : undefined};
+          if (side === 'me' && input.postResidual && !heal && Number.isInteger(before)) iopt.damageByHP = damageBeforeResidual(b, tgt.mon, before, input.postResidual);
           let r;
           if (side === 'opp') {
             const tb = buildOf(b, 'me', myIdx);
@@ -1011,7 +1012,7 @@ export function residualCandidates(b, usage) {
       // 処理は順番に起きる (例: すなあらしで減ってから たべのこしで回復) ので、確実なものはHPを進めながら候補を作る
       // HPを「わからない」で飛ばした攻撃を受けていたら、満タンでない前提で候補を出す
       const unknownHit = (openTurn(b)?.acts || []).some(x => x.hpUnknown && x.target?.side === side && x.target?.mon === mon);
-      let simHp = unknownHit ? 50 : cond.hp;
+      let simHp = unknownHit || cond.hpUnknown ? 50 : cond.hp;
       const blocked = (cond.healBlock || 0) >= (openTurn(b)?.n ?? turnNumber(b));
       const push = (key, checked) => {
         if (residualNeedsHP(b, side, mon, key)) {
@@ -1072,6 +1073,7 @@ export function residualCandidates(b, usage) {
  */
 export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete = false, finalHp = {}, resFirst, expiry = [], moody = []} = {}) {
   let t = ensureTurn(b);
+  finalHp = {...Object.fromEntries(t.acts.filter(a => a.in?.endHp).map(a => [`${a.in.endHp.side}${a.in.endHp.mon}`, a.in.endHp.hpAfter])), ...finalHp};
   const log = [];
   // 「わからない」で飛ばした攻撃のHPを、ターン終了後のHPから逆算して入れ直す
   let changed = false;
@@ -1080,10 +1082,20 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete
     const side = k.startsWith('me') ? 'me' : 'opp', mon = Number(k.replace(/^(me|opp)/, ''));
     if (residual.some(r => r.side === side && r.mon === mon && residualNeedsHP(b, side, mon, r.key))) continue;
     const act = [...t.acts].reverse().find(a => a.type === 'move' && a.in?.hpUnknown && a.target?.side === side && a.target?.mon === mon);
-    if (!act) continue;
-    let h = val;
-    for (const r of [...residual].reverse()) if (r.side === side && r.mon === mon) { const d = residualDelta(b, side, mon, r.key, Math.max(1, h)); if (d) h -= d.pct; }
-    act.in = {...act.in, hpAfter: Math.max(0.1, Math.min(100, h)), exact: side === 'me'};
+    if (!act || val <= 0) continue;
+    // 回復が頭打ちになった場合は攻撃直後のHPを一意に復元できない。
+    if (val >= 100 && residual.some(r => r.side === side && r.mon === mon && residualFrac(b, side, mon, r.key) > 0)) continue;
+    let h = val, ambiguous = false;
+    for (const r of [...residual].reverse()) if (r.side === side && r.mon === mon) {
+      const f = residualFrac(b, side, mon, r.key);
+      if ((f > 0 && h >= 100 - 1e-9) || (f < 0 && h <= 0)) { ambiguous = true; break; }
+      // 後のHPで変化量をクリップしない。残HP10でも、直前に29減った可能性がある。
+      const mx = maxHPOf(b, side, mon), c = condOf(b, side, mon);
+      const delta = r.key === 'tox' ? -Math.max(1, Math.floor(mx / 16)) * Math.min(15, c.toxicCounter || 1) : Math.max(1, Math.floor(mx * Math.abs(f))) * Math.sign(f);
+      h -= side === 'me' ? delta / mx * 100 : f * 100;
+    }
+    if (ambiguous || h <= 0 || h > 100 + 1e-9) continue;
+    act.in = {...act.in, hpAfter: Math.max(0.1, Math.min(100, h)), exact: side === 'me', ...(side === 'opp' ? {postResidual: {after: val, steps: residual.filter(r => r.side === side && r.mon === mon).map(r => stepOf(b, side, mon, r.key))}} : {})};
     delete act.in.hpUnknown;
     changed = true;
   }
@@ -1110,7 +1122,13 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete
     if (!c || c.fainted || c.hpUnknown || !steps.length || steps.some(x => !x) || !Number.isInteger(c.hp)) continue;
     hpFacts.push({opp: mon, d0: c.hp, d1: Math.round(val), steps});
   }
-  for (const r of residual) log.push(...addEvent(b, {kind: 'residual', side: r.side, mon: r.mon, key: r.key}, usage));
+  for (const r of residual) {
+    const c = condOf(b, r.side, r.mon), step = stepOf(b, r.side, r.mon, r.key);
+    const measured = r.side === 'opp' && Number.isInteger(r.hpAfter) && r.hpAfter >= 0 && r.hpAfter <= 100;
+    if (measured && c && !c.hpUnknown && Number.isInteger(c.hp) && step) hpFacts.push({opp: r.mon, d0: c.hp, d1: r.hpAfter, steps: [step]});
+    log.push(...addEvent(b, {kind: 'residual', side: r.side, mon: r.mon, key: r.key}, usage));
+    if (measured && c) log.push(...addEvent(b, {kind: 'hp', side: r.side, mon: r.mon, hpAfter: r.hpAfter, note: `${RESIDUAL_JA[r.key]}の直後に確認`}, usage));
+  }
   // 入力されたターン終了後のHPと計算が合わなければ、入力のほうに合わせる
   for (const [k, val] of Object.entries(finalHp)) {
     if (val == null || !Number.isFinite(val)) continue;
@@ -1317,6 +1335,25 @@ function stepHp(step, h, max) {
     case 'halfround': return h - Math.round(max / 2);
     default: return h;
   }
+}
+
+// 回復込みの表示を、最大HPの各候補で実数のダメージ範囲へ戻す。
+// 相手の回復量を仮定した最大HPで決めず、切り捨て・表示幅を含めて逆算する。
+function damageBeforeResidual(b, mon, before, {after, steps}) {
+  if (!Number.isInteger(after) || !steps?.length || steps.some(s => !s)) return undefined;
+  const sid = currentSpecies(b.opp[mon], condOf(b, 'opp', mon));
+  return Array.from({length: 33}, (_, sp) => {
+    const max = statsOf(sid, [sp, 0, 0, 0, 0, 0], 'Serious')[0];
+    const lo = before === 100 ? max : before === 1 ? 1 : Math.ceil(before * max / 100);
+    const hi = before === 100 ? max : Math.min(max, Math.ceil((before + 1) * max / 100) - 1);
+    let low = Infinity, high = -Infinity;
+    for (let hp = 1; hp <= hi; hp++) {
+      let result = hp;
+      for (const step of steps) result = Math.max(0, stepHp(step, result, max));
+      if (dispPct(result, max) === after) { low = Math.min(low, Math.max(0, lo - hp)); high = Math.max(high, hi - hp); }
+    }
+    return Number.isFinite(low) ? [low, high] : null;
+  });
 }
 
 /**

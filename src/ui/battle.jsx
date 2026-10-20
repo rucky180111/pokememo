@@ -68,7 +68,7 @@ export function BattleScreen({id}) {
     }
   };
   return (
-    <div class="battle">
+    <div class={cx('battle', tab === 'board' && 'board-workspace', `weather-${battle.state.field.weather || 'none'}`, `terrain-${battle.state.field.terrain || 'none'}`)}>
       <div class="battle-head">
         <button class="btn ghost" onClick={() => nav('#/battles')} aria-label="対戦一覧へ">‹</button>
         <div class="battle-title">

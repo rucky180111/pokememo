@@ -49,14 +49,14 @@ export function inferSpeeds(b, draft, opts = {}) {
     const s = dex.species[sid];
     const abilityKnown = !!ob.ability || s.ab.length === 1 || !!s.mega;
     const possible = abilityKnown ? [res(sim, 'opp', oi)] : s.ab;
-    if (!abilityKnown && possible.some(x => SPEED_ABILITIES.has(x) || ORDER_ABILITIES.has(x))) continue;
-    if (possible.some(x => x === 'quickdraw' || x === 'stall')) continue;
+    if (!abilityKnown && possible.some(x => SPEED_ABILITIES.has(x) || (!opts.residual && ORDER_ABILITIES.has(x)))) continue;
+    if (!opts.residual && possible.some(x => x === 'quickdraw' || x === 'stall')) continue;
     const oAb = abilityKnown ? possible[0] : '';
     if (oAb === 'myceliummight' && dex.moves[o.a.move]?.c === 'Z') continue;
     const itemKnown = !!ob.item || oc.itemGone;
     if (!itemKnown && field.terrain === 'Grassy' && o.a.move === 'grassyglide') continue;
     const scarfBranches = s.mega ? [false] : itemKnown ? [!oc.itemGone && ob.item === 'choicescarf'] : [false, true];
-    if (itemKnown && !oc.itemGone && ob.item === 'quickclaw') continue;
+    if (!opts.residual && itemKnown && !oc.itemGone && ob.item === 'quickclaw') continue;
 
     let plain = target.speOk?.plain ?? ALL, scarf = target.speOk?.scarf ?? ALL;
     // 持ち物がなくなった (はたきおとす等): それまで「スカーフあり/なし」で分けていた候補を1本にまとめる
@@ -77,14 +77,14 @@ export function inferSpeeds(b, draft, opts = {}) {
       if (speedChangeBefore(first)) continue;
       const myAb = res(sim, 'me', m.a.mon);
       if (myAb === 'myceliummight' && dex.moves[m.a.move]?.c === 'Z') continue;
-      if (myAb === 'quickdraw' || myAb === 'stall' || (!mc.itemGone && mb.item === 'quickclaw')) continue;
+      if (!opts.residual && (myAb === 'quickdraw' || myAb === 'stall' || (!mc.itemGone && mb.item === 'quickclaw'))) continue;
       const grassy = field.terrain === 'Grassy';
       const pm = movePriority(m.a.move, myAb, {hpFull: mc.hp >= 100, grassyTerrain: grassy && grounded({build: mb, cond: mc}, {field})});
       const po = movePriority(o.a.move, oAb, {hpFull: oc.hp >= 100, grassyTerrain: grassy && grounded({build: ob, cond: oc}, {field})});
-      if (pm !== po) continue;
+      if (!opts.residual && pm !== po) continue;
       const my = finalSpeed({build: mb, cond: mc}, {format: sim.format, field, side: sim.state.sides.me});
       const oppFirst = o.idx < m.idx;
-      const tr = !!field.trickRoom;
+      const tr = !opts.residual && !!field.trickRoom;
       const consistent = e => (oppFirst !== tr ? e >= my : e <= my);
       const filt = (mask, isScarf) => {
         let out = '';

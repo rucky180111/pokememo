@@ -109,7 +109,7 @@ function summarize(ctx, oppIdx, stat, mask) {
  */
 export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts = {}) {
   if (!inferable(moveId)) return null;
-  if (!opts.atLeast && (!(before > after) || after <= 0)) return null;
+  if (!opts.damageByHP && !opts.atLeast && (!(before > after) || after <= 0)) return null;
   const tol = opts.tol ?? 1;
   const stat = dex.moves[moveId].c === 'P' || ['psyshock', 'psystrike', 'secretsword'].includes(moveId) ? 'def' : 'spd';
   const si = STAT_KEYS.indexOf(stat);
@@ -141,7 +141,8 @@ export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts =
     for (let c = 0; c < SPE_COMBOS; c++) {
       const r = rolls(c);
       // atLeast: 「少なくとも lost% は入った」(きあいのタスキで耐えた = 本来は倒れていた)
-      const ok = !!r && (r[1] / maxHP) * 100 >= lost - tol && (opts.atLeast || (r[0] / maxHP) * 100 <= lost + tol)
+      const bounds = opts.damageByHP?.[h];
+      const ok = !!r && (opts.damageByHP ? !!bounds && r[1] >= bounds[0] && r[0] <= bounds[1] : (r[1] / maxHP) * 100 >= lost - tol && (opts.atLeast || (r[0] / maxHP) * 100 <= lost + tol))
         && (!opts.damageRange || (r[1] >= opts.damageRange[0] && (opts.atLeast || r[0] <= opts.damageRange[1])));
       mask += ok ? '1' : '0';
       if (ok) { count++; hLo = Math.min(hLo, h); hHi = Math.max(hHi, h); const v = statValue(bs[si], comboSP(c), comboMod(c), false); dLo = Math.min(dLo, v); dHi = Math.max(dHi, v); }
