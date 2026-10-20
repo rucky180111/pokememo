@@ -1401,3 +1401,5 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .tl-bubble .tl-act.selectable{position:relative;padding-left:34px}
 .tl-bubble .tl-act.selected{background:color-mix(in srgb,var(--accent,#60a5fa) 22%,transparent);box-shadow:inset 0 0 0 2px var(--accent,#60a5fa)}
 .log-check{position:absolute;left:9px;top:12px;font-size:20px;line-height:1}
+.brow.battle-selected{background:color-mix(in srgb,var(--accent,#60a5fa) 18%,transparent);box-shadow:inset 0 0 0 2px var(--accent,#60a5fa)}
+.battle-check{font-size:24px;line-height:1}
