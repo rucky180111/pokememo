@@ -83,7 +83,7 @@ export function BattleScreen({id}) {
           <button role="tab" aria-selected={tab === k} class={cx(tab === k && 'on')} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
-      {tab !== 'setup' && <div class="battle-field"><FieldBar battle={battle} /></div>}
+      {tab !== 'setup' && <div class="battle-field"><FieldBar battle={battle} mut={mut} usage={usage} /></div>}
       <div class="battle-body" ref={bodyRef}>{visited.map(t => <div key={t} hidden={tab !== t}>{body(t)}</div>)}</div>
       <div class="arena-turnbar" hidden={tab === 'setup' || tab === 'dmg'}><TurnBar {...props} /></div>
       {confirm && <Confirm title="対戦を削除" message="この対戦の記録を削除します。元に戻せません。" okLabel="削除する" danger

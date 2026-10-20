@@ -122,16 +122,29 @@ export function PlayBoard({battle, ctx, mut, usage, toast, setSheet}) {
   );
 }
 
-export function FieldBar({battle}) {
+export function FieldBar({battle, mut, usage}) {
   const f = battle.state.field;
   const W = Object.fromEntries(WEATHERS), T = Object.fromEntries(TERRAINS);
   const now = turnNumber(battle);
   const age = k => (f[k] && f.since?.[k] != null ? <small class="muted"> {Math.max(1, now - f.since[k] + 1)}T目</small> : null);
+  const change = (key, value) => {
+    if (f[key] !== value) mut?.(b => addEvent(b, {kind:'field',side:'me',key,value}, usage));
+  };
   return (
     <div class="pl-field">
       <span class="tag strong">{now}ターン目</span>
-      <span class="field-weather">{({Rain:'☔', Sun:'☀', Sand:'◌', Snow:'❄'})[f.weather] || ''} 天候 <b class={cx(f.weather && 'on')}>{W[f.weather || '']}</b>{age('weather')}</span>
-      <span class="field-terrain">{({Grassy:'🌿', Electric:'⚡', Psychic:'🔮', Misty:'☁'})[f.terrain] || ''} フィールド <b class={cx(f.terrain && 'on')}>{f.terrain ? `${T[f.terrain]}フィールド` : 'なし'}</b>{age('terrain')}</span>
+      <div class="field-editor">
+        <label class="field-weather field-select">{({Rain:'☔', Sun:'☀', Sand:'◌', Snow:'❄'})[f.weather] || ''} 天候 <b class={cx(f.weather && 'on')}>{W[f.weather || '']}</b>{age('weather')}<span aria-hidden="true">▾</span>
+          <select aria-label="天候を変更" value={f.weather || ''} disabled={!mut} onChange={e => change('weather',e.currentTarget.value)}>{WEATHERS.map(([id,label]) => <option value={id}>{label}</option>)}</select>
+        </label>
+        {mut && f.weather && <button class="field-clear" aria-label="天候を解除" onClick={() => change('weather','')}>×</button>}
+      </div>
+      <div class="field-editor">
+        <label class="field-terrain field-select">{({Grassy:'🌿', Electric:'⚡', Psychic:'🔮', Misty:'☁'})[f.terrain] || ''} フィールド <b class={cx(f.terrain && 'on')}>{f.terrain ? `${T[f.terrain]}フィールド` : 'なし'}</b>{age('terrain')}<span aria-hidden="true">▾</span>
+          <select aria-label="フィールドを変更" value={f.terrain || ''} disabled={!mut} onChange={e => change('terrain',e.currentTarget.value)}>{TERRAINS.map(([id,label]) => <option value={id}>{id ? `${label}フィールド` : label}</option>)}</select>
+        </label>
+        {mut && f.terrain && <button class="field-clear" aria-label="フィールドを解除" onClick={() => change('terrain','')}>×</button>}
+      </div>
       {f.trickRoom && <span class="tag accent">トリックルーム{age('trickRoom')}</span>}
       {f.gravity && <span class="tag accent">じゅうりょく</span>}
       {f.magicRoom && <span class="tag accent">マジックルーム</span>}
