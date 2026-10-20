@@ -861,16 +861,40 @@ export function replay(b, usage, opts = {}) {
   return true;
 }
 
-/** ti ターン目の ai 番目の行動を input に置き換える (null で削除)。置き換え後、全体を入れ直す。 */
+/** 複数の記録をまとめて削除し、残った記録から一度だけ再計算する。 */
+export function deleteActs(b, selections, usage) {
+  if (!selections?.length || !canReplay(b)) return false;
+  const keys = new Set();
+  const fromActs = [];
+  for (const {ti, ai} of selections) {
+    if (!Number.isInteger(ti) || !Number.isInteger(ai) || !b.turns[ti]?.acts[ai]) return false;
+    keys.add(`${ti}:${ai}`);
+  }
+  b.turns = b.turns.filter((t, ti) => {
+    const affected = t.acts.some((_, ai) => keys.has(`${ti}:${ai}`));
+    t.acts = t.acts.filter((a, ai) => {
+      if (!keys.has(`${ti}:${ai}`)) return true;
+      if (a.side === 'opp' && a.type === 'move') fromActs.push(a.move);
+      return false;
+    });
+    // このターンの観測HPから導いた制約は、削除前の盤面に依存する。
+    if (affected && t.end) {
+      delete t.end.hpFacts;
+      delete t.end.confirmedHP;
+    }
+    return t.acts.length > 0 || !t.open;
+  });
+  return replay(b, usage, {fromActs});
+}
+
+/** ti ターン目の ai 番目の行動を input に置き換える (null で削除)。 */
 export function editAct(b, ti, ai, input, usage) {
+  if (input == null) return deleteActs(b, [{ti, ai}], usage);
   const t = b.turns[ti];
   if (!t || !t.acts[ai] || !canReplay(b)) return false;
   const was = t.acts[ai];
   const fromActs = was.side === 'opp' && was.type === 'move' ? [was.move] : [];
-  if (input == null) t.acts.splice(ai, 1);
-  else t.acts[ai] = {...t.acts[ai], in: inputCopy(input)};
-  // 空になった入力途中のターンは消す
-  if (!t.acts.length && t.open) b.turns.splice(ti, 1);
+  t.acts[ai] = {...t.acts[ai], in: inputCopy(input)};
   return replay(b, usage, {fromActs});
 }
 

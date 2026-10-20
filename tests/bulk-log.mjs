@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {chromium} from 'playwright';
+import {serve} from './serve.mjs';
+import {newTeam,newBuild,newBattle,newOpp,normalizeBattle,sendOut} from '../src/engine/battle.js';
+import {addAct,endTurn} from '../src/engine/flow.js';
+const {server,url}=await serve();let browser;
+try {
+ browser=await chromium.launch();const page=await browser.newPage({viewport:{width:1180,height:820}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.route('https://play.pokemonshowdown.com/**',r=>r.fulfill({contentType:'image/png',body:fs.readFileSync(new URL('../docs/icon-192.png',import.meta.url))}));await page.goto(url);await page.waitForSelector('.bottomnav');
+ const t=newTeam();t.mons=[{...newBuild('charizard'),moves:['flamethrower']}];const b=newBattle({team:t});b.opp=[newOpp('pelipper')];normalizeBattle(b);sendOut(b,'me',0,0);sendOut(b,'opp',0,0);addAct(b,{side:'opp',mon:0,type:'move',move:'surf',sameTurn:true});addAct(b,{side:'me',mon:0,type:'move',move:'flamethrower',sameTurn:true});endTurn(b);addAct(b,{side:'opp',mon:0,type:'move',move:'protect',sameTurn:true});await page.evaluate(b=>window.__pokememo.store.saveBattle(b),b);await page.goto(`${url}#/battle/${b.id}`);await page.getByRole('tab',{name:'ログ',exact:true}).click();
+ const log=page.locator('.battle-log');await log.getByRole('button',{name:'まとめて選択',exact:true}).click();await log.locator('.tl-act').first().click();assert.equal(await page.locator('.sheet').count(),0);assert.equal(await log.locator('.tl-act.selected').count(),1);await log.getByRole('button',{name:'選択を終了',exact:true}).click();assert.equal(await log.locator('.tl-act').count(),3);
+ await log.getByRole('button',{name:'まとめて選択',exact:true}).click();await log.getByRole('button',{name:'このターンを選択',exact:true}).first().click();assert.equal(await log.locator('.tl-act.selected').count(),2);await log.getByRole('button',{name:'選択した2件を削除',exact:true}).click();assert.equal(await log.locator('.tl-act').count(),1);let saved=await page.evaluate(id=>window.__pokememo.store.battle(id),b.id);assert.deepEqual(saved.opp[0].moves,['protect']);
+ await log.getByRole('button',{name:'まとめて選択',exact:true}).click();await log.getByRole('button',{name:'全選択',exact:true}).click();await log.getByRole('button',{name:'選択を解除',exact:true}).click();assert.ok(await log.getByRole('button',{name:'選択した0件を削除',exact:true}).isDisabled());await log.getByRole('button',{name:'全選択',exact:true}).click();await log.getByRole('button',{name:'選択した1件を削除',exact:true}).click();assert.equal(await log.locator('.tl-act').count(),0);saved=await page.evaluate(id=>window.__pokememo.store.battle(id),b.id);assert.deepEqual(saved.opp[0].moves,[]);assert.deepEqual(errors,[]);console.log('ok iPad: 複数選択・キャンセル・ターン選択・全選択・選択解除・削除後の技情報再計算');
+} finally {await browser?.close();server.close();}

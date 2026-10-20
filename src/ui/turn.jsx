@@ -6,7 +6,7 @@ import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../eng
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engine/calc.js';
 import {megaTarget, buildOf, condOf, other, PIVOT_MOVES} from '../engine/battle.js';
 import {RECOIL, HALF_RECOIL, DRAIN, SELF_FX_JA, FORCE_MOVES} from '../engine/flow.js';
-import {addEvent, openTurn, actLine, canReplay, editAct, reopenLastTurn, dispOf} from '../engine/flow.js';
+import {addEvent, openTurn, actLine, canReplay, editAct, deleteActs, reopenLastTurn, dispOf} from '../engine/flow.js';
 import {Picker, Sheet, Seg, Toggle, Sprite, cx} from './common.jsx';
 
 const SIDE_JA = {me: '自分', opp: '相手'};
@@ -54,28 +54,53 @@ function MonBtn({battle, side, mon, on, onClick}) {
 /** バトルログ (タップで修正)。右の「ログ・メモ」タブに置く */
 export function BattleLog({battle, ctx, mut, usage, toast, notes}) {
   const [edit, setEdit] = useState(null); // {ti, ai}
+  const [selecting, setSelecting] = useState(false);
+  const [selection, setSelection] = useState({version: '', keys: []});
+  const version = JSON.stringify([battle.id, battle.turns.map(t => [t.n, t.open, t.acts, t.end])]);
+  const selected = selection.version === version ? selection.keys : [];
+  const allKeys = battle.turns.flatMap((t, ti) => t.acts.map((_, ai) => `${ti}:${ai}`));
+  const toggle = keys => setSelection({version, keys: keys.every(k => selected.includes(k)) ? selected.filter(k => !keys.includes(k)) : [...new Set([...selected, ...keys])]});
+  const removeSelected = () => {
+    let removed = false;
+    mut(b => {
+      const current = JSON.stringify([b.id, b.turns.map(t => [t.n, t.open, t.acts, t.end])]);
+      if (current === version) removed = deleteActs(b, selected.map(k => { const [ti, ai] = k.split(':').map(Number); return {ti, ai}; }), usage);
+    });
+    if (removed) { setSelection({version: '', keys: []}); setSelecting(false); toast(`${selected.length}件のログを削除しました`); }
+    else toast('ログが更新されています。選び直してください');
+  };
   const tlRef = useRef(null);
   const nActs = battle.turns.reduce((a, t) => a + t.acts.length, 0);
   useEffect(() => { const el = tlRef.current; if (el) el.scrollTop = el.scrollHeight; }, [nActs, battle.turns.length]);
   const editable = canReplay(battle);
-  const double = battle.format === 'double';
   return (
     <div class="battle-log">
       <h3>バトルログ {editable && battle.turns.length > 0 && <small class="muted">(タップして修正)</small>}</h3>
+      {editable && nActs > 0 && <div class="log-select-tools">
+        <button class="btn ghost sm" onClick={() => { setSelecting(!selecting); setSelection({version, keys: []}); }}>{selecting ? '選択を終了' : 'まとめて選択'}</button>
+        {selecting && <>
+          <button class="btn ghost sm" onClick={() => setSelection({version, keys: allKeys})}>全選択</button>
+          <button class="btn ghost sm" disabled={!selected.length} onClick={() => setSelection({version, keys: []})}>選択を解除</button>
+          <button class="btn danger sm" disabled={!selected.length} onClick={removeSelected}>選択した{selected.length}件を削除</button>
+          <small class="muted">選んだ記録とその効果を削除し、盤面・推定を再計算します。</small>
+        </>}
+      </div>}
       <div class="tl" ref={tlRef}>
         {!battle.turns.length && <p class="muted">下のターン入力で、自分の行動を選んでから、動いた順に記録します。記録した順番は行動順として、相手の素早さの推定に使います。</p>}
         {battle.turns.map((t, ti) => (
           <div class="tl-turn" key={t.n}>
             <div class="tl-n">— ターン {t.n}{t.open ? ' (入力中)' : ''}{t.incomplete && ' (未入力あり)'} —</div>
+            {selecting && t.acts.length > 0 && <button class="btn ghost sm log-turn-select" aria-pressed={t.acts.every((_, ai) => selected.includes(`${ti}:${ai}`))} onClick={() => toggle(t.acts.map((_, ai) => `${ti}:${ai}`))}>このターンを選択</button>}
             {logGroups(battle, t).map((group, gi) => <div class={cx('tl-group', group.side)} key={gi}>
               <span class="tl-avatar">{group.species ? <Sprite id={group.species} size={38} /> : <span aria-label="場">◈</span>}<small>{SIDE_JA[group.side] || '場'}</small></span>
-              <div class="tl-bubble">{group.actions.map(({a, ai, kind, text, effects}) => <button class={cx('tl-act', a.side, a.type === 'event' && 'ev', a.kind === 'residual' && 'res')} disabled={!editable} onClick={() => setEdit({ti, ai})}>
+              <div class="tl-bubble">{group.actions.map(({a, ai, kind, text, effects}) => <button class={cx('tl-act', a.side, a.type === 'event' && 'ev', a.kind === 'residual' && 'res', selecting && 'selectable', selecting && selected.includes(`${ti}:${ai}`) && 'selected')} aria-pressed={selecting ? selected.includes(`${ti}:${ai}`) : undefined} disabled={!editable} onClick={() => selecting ? toggle([`${ti}:${ai}`]) : setEdit({ti, ai})}>
+                {selecting && <span class="log-check" aria-hidden="true">{selected.includes(`${ti}:${ai}`) ? '☑' : '☐'}</span>}
                 <span class="log-kind">{kind}</span><span class="tl-body">{text}</span>
                 {effects.map(e => <span class="tl-effect"><span class="log-kind">{e.kind}</span><span>{e.text}</span></span>)}
               </button>)}</div>
             </div>)}
             {remainingTurnEffects(t).map(e => <div class="tl-system"><span class="log-kind">{e.kind}</span><span>{e.text}</span></div>)}
-            {!t.open && ti === battle.turns.length - 1 && editable && (
+            {!selecting && !t.open && ti === battle.turns.length - 1 && editable && (
               <button class="btn ghost sm tl-reopen" onClick={() => { mut(b => { reopenLastTurn(b, usage); }); toast('ターン終了を取り消しました。行動を追加できます'); }}>このターンに行動を追加する</button>
             )}
             {notes && <input class="input log-note" placeholder="このターンのメモ" value={t.note || ''} onChange={e => mut(b => { b.turns[ti].note = e.currentTarget.value; })} />}
