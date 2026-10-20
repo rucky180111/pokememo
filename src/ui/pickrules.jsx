@@ -2,7 +2,43 @@
 import {useMemo, useState} from 'preact/hooks';
 import {speciesName} from '../engine/dex.js';
 import {parseCond, matchRule, pickIndexes, parseRulesText, rulesToText} from '../engine/pickrule.js';
-import {Sheet, Sprite, cx} from './common.jsx';
+import {Sheet, Sprite, TypeChip, cx} from './common.jsx';
+
+// 条件をアイコンで表示: ポケモンはアイコン、タイプはタイプ表示。+ は「かつ」、| は「か」、/ は「または」
+export function CondIcons({cond}) {
+  const c = typeof cond === 'string' ? parseCond(cond) : cond;
+  if (c.any) return <span class="pr-cond"><span class="pr-any">どれにも当てはまらないとき</span></span>;
+  if (!c.alts.length) return <span class="pr-cond muted">(条件なし)</span>;
+  const atom = a => a.type ? <TypeChip type={a.type} small />
+    : <span class="pr-mon" title={speciesName(a.show)}><Sprite id={a.show} size={30} fallback={<span class="pr-fb">{speciesName(a.show)}</span>} /></span>;
+  return (
+    <span class="pr-cond">
+      {c.alts.map((terms, ai) => <>
+        {ai > 0 && <span class="pr-op pr-or">または</span>}
+        {terms.map((t, ti) => <>
+          {ti > 0 && <span class="pr-op">＋</span>}
+          <span class={cx('pr-term', t.neg && 'neg', t.any.length > 1 && 'multi')}>
+            {t.any.length > 1 && <span class="pr-min">{t.min > 1 ? `${t.min}体以上` : 'どれか'}</span>}
+            {t.any.map(atom)}
+            {t.neg && <span class="pr-neg">いない</span>}
+          </span>
+        </>)}
+      </>)}
+    </span>
+  );
+}
+
+// 選出3体をアイコンで (左が先発)
+function PickIcons({pick}) {
+  return (
+    <span class="pr-picks">
+      {(pick || []).filter(Boolean).map((id, k) => <>
+        {k > 0 && <span class="pr-op sm">→</span>}
+        <span class={cx('pr-mon', k === 0 && 'lead')} title={speciesName(id)}><Sprite id={id} size={34} fallback={<span class="pr-fb">{speciesName(id)}</span>} />{k === 0 && <span class="tag">先発</span>}</span>
+      </>)}
+    </span>
+  );
+}
 
 const HELP = [
   ['ルカリオ', 'ルカリオがいる'],
@@ -22,19 +58,38 @@ export function PickRulesEditor({team, save}) {
   const [bulkErr, setBulkErr] = useState([]);
   const upd = fn => save(t => { t.pickRules = t.pickRules || []; fn(t.pickRules); });
   const mons = team.mons;
+  const [editing, setEditing] = useState(-1);
   return (
     <div class="pick-rules">
-      <p class="hint">上から順に調べ、最初に当てはまった行の3体を選出画面に出します。左が先発。</p>
+      <p class="hint">上から順に調べ、最初に当てはまった行の3体を選出画面に出します。左が先発。行を押すと編集できます。</p>
       <details class="pr-help"><summary>条件の書き方</summary>
         <dl>{HELP.map(([k, v]) => <><dt><code>{k}</code></dt><dd>{v}</dd></>)}</dl>
       </details>
       <ol class="pr-list">
         {rules.map((r, i) => {
           const c = parseCond(r.cond);
+          if (editing !== i) return (
+            <li class="pr-row view" key={i}>
+              <span class="pr-no num">{i + 1}</span>
+              <button class="pr-view" onClick={() => setEditing(i)} aria-label={`ルール${i + 1}を編集`}>
+                <CondIcons cond={c} />
+                <span class="pr-arrow">⇒</span>
+                <PickIcons pick={r.pick} />
+                {r.note && <span class="pr-note-v muted">{r.note}</span>}
+                {c.errors.length > 0 && <span class="pr-err">{c.errors.join(' / ')}</span>}
+              </button>
+              <div class="pr-tools">
+                <button class="btn ghost sm" disabled={i === 0} onClick={() => upd(l => { [l[i - 1], l[i]] = [l[i], l[i - 1]]; })} aria-label="上へ">↑</button>
+                <button class="btn ghost sm" disabled={i === rules.length - 1} onClick={() => upd(l => { [l[i + 1], l[i]] = [l[i], l[i + 1]]; })} aria-label="下へ">↓</button>
+                <button class="btn ghost sm" onClick={() => setEditing(i)} aria-label="編集">✎</button>
+              </div>
+            </li>
+          );
           return (
             <li class="pr-row" key={i}>
               <span class="pr-no num">{i + 1}</span>
               <div class="pr-body">
+                <CondIcons cond={c} />
                 <input class="input" placeholder="条件 (例: ルカリオ+ミミッキュ|ギルガルド)" value={r.cond} onChange={e => upd(l => { l[i].cond = e.currentTarget.value; })} />
                 {c.errors.length > 0 && <div class="pr-err">{c.errors.join(' / ')}</div>}
                 <div class="pr-pick">
@@ -51,14 +106,15 @@ export function PickRulesEditor({team, save}) {
               <div class="pr-tools">
                 <button class="btn ghost sm" disabled={i === 0} onClick={() => upd(l => { [l[i - 1], l[i]] = [l[i], l[i - 1]]; })} aria-label="上へ">↑</button>
                 <button class="btn ghost sm" disabled={i === rules.length - 1} onClick={() => upd(l => { [l[i + 1], l[i]] = [l[i], l[i + 1]]; })} aria-label="下へ">↓</button>
-                <button class="btn ghost sm" onClick={() => upd(l => { l.splice(i, 1); })} aria-label="削除">×</button>
+                <button class="btn ghost sm" onClick={() => { upd(l => { l.splice(i, 1); }); setEditing(-1); }} aria-label="削除">×</button>
+                <button class="btn primary sm" onClick={() => setEditing(-1)} aria-label="編集を閉じる">完了</button>
               </div>
             </li>
           );
         })}
       </ol>
       <div class="btnrow pad-s">
-        <button class="btn" onClick={() => upd(l => { l.push({cond: '', pick: [], note: ''}); })}>＋ ルールを追加</button>
+        <button class="btn" onClick={() => { upd(l => { l.push({cond: '', pick: [], note: ''}); }); setEditing(rules.length); }}>＋ ルールを追加</button>
         <button class="btn ghost" onClick={() => { setBulk(rulesToText(rules)); setBulkErr([]); }}>まとめて入力・書き出し</button>
       </div>
       {bulk != null && (
@@ -94,7 +150,7 @@ export function PickRuleHint({team, battle, started, onApply}) {
   const same = idx.length && idx.every((x, k) => battle.pick.me[k] === x) && battle.pick.me.length === idx.length;
   return (
     <div class="box pr-hint">
-      <h4>選出ルール <span class="num">{hit.index + 1}</span> <span class="muted">{hit.rule.cond || '*'}{opp.length < 6 ? ` (相手${opp.length}/6体で判定)` : ''}</span></h4>
+      <h4>選出ルール <span class="num">{hit.index + 1}</span> <CondIcons cond={hit.rule.cond} />{opp.length < 6 && <span class="muted"> (相手{opp.length}/6体で判定)</span>}</h4>
       <div class="pr-hint-row">
         <ol class="pr-hint-pick">
           {idx.map((mi, k) => (

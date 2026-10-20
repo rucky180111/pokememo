@@ -1283,3 +1283,27 @@ select.pl-dd { appearance: none; -webkit-appearance: none; padding-right: 22px; 
 .pr-hint-pick li { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
 .pr-hint-pick li + li::before { content: '→'; color: var(--muted); margin-right: 6px; font-weight: 400; }
 .pr-hint-pick .tag { font-size: 11px; background: var(--accent); color: var(--accent-text); border-radius: 5px; padding: 0 5px; }
+
+/* 選出ルールのアイコン表示 */
+.pr-cond, .pr-picks { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; vertical-align: middle; }
+.pr-term { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 1px; max-width: 100%; }
+.pr-term.multi { border: 1px dashed var(--line, #8884); border-radius: 8px; padding: 0 4px; }
+.pr-term.neg .pr-mon, .pr-term.neg .type { opacity: .45; filter: grayscale(1); }
+.pr-neg { font-size: 11px; color: var(--bad); margin-left: 2px; }
+.pr-min { font-size: 11px; font-weight: 600; margin-right: 3px; }
+.pr-op { font-size: 12px; color: var(--muted, #888); }
+.pr-op.sm { font-size: 11px; }
+.pr-or { padding: 0 4px; font-weight: 600; }
+.pr-any { font-size: 13px; }
+.pr-mon { position: relative; display: inline-flex; align-items: center; }
+.pr-mon .tag { position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); font-size: 9px; padding: 0 3px; white-space: nowrap; }
+.pr-row.view { align-items: center; }
+.pr-view { all: unset; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; padding: 4px 0; }
+.pr-view:focus-visible { outline: 2px solid var(--accent, #48f); border-radius: 6px; }
+.pr-arrow { color: var(--muted, #888); }
+.pr-note-v { font-size: 12px; flex-basis: 100%; }
+.pr-body > .pr-cond { margin-bottom: 4px; }
+.pr-hint h4 .pr-cond { margin-left: 6px; }
+.pr-fb { font-size: 11px; padding: 2px 5px; border-radius: 6px; background: var(--chip, #8882); white-space: nowrap; }
+.pr-mon.lead .pr-fb { font-weight: 700; }
+.pr-mon:has(.pr-fb) .tag { position: static; transform: none; margin-left: 2px; }

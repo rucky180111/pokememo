@@ -50,10 +50,10 @@ export function parseCond(text) {
   const atom = raw => {
     const s = raw.trim();
     const t = /^(.+?)タイプ$/.exec(s);
-    if (t && TYPE_BY_JA[norm(t[1])]) return {type: TYPE_BY_JA[norm(t[1])]};
+    if (t && TYPE_BY_JA[norm(t[1])]) return {type: TYPE_BY_JA[norm(t[1])], name: s};
     const ids = resolveAll(s);
     if (!ids.length) { errors.push(`「${s}」が見つかりません`); return null; }
-    return {species: ids};
+    return {species: ids, show: resolveSpecies(s), name: s};
   };
   const alts = src.split(/\s*(?:\/|／|\bor\b)\s*/).filter(Boolean).map(clause => {
     const terms = [];

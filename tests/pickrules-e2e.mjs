@@ -24,6 +24,8 @@ const idb = (page, fn, arg) => page.evaluate(([src, a]) => new Promise((res, rej
 for (const [vw, name] of [[{width: 390, height: 844}, 'phone'], [{width: 1180, height: 820}, 'tablet']]) {
   const ctx = await browser.newContext({viewport: vw, locale: 'ja-JP'});
   const page = await ctx.newPage();
+  // 外部の画像は取れないので、アイコンは色つきの丸で代用して見た目を確かめる
+  await ctx.route('https://play.pokemonshowdown.com/**', r => r.fulfill({contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="16" fill="#6a8"/></svg>'}));
   page.on('pageerror', e => errors.push(`[${name}] ${e.message}`));
   page.on('console', m => { if (m.type() === 'error' && !/play\.pokemonshowdown|Failed to load resource/.test(m.text())) errors.push(`[${name}] console: ${m.text()}`); });
   await page.goto(url);
@@ -43,7 +45,13 @@ for (const [vw, name] of [[{width: 390, height: 844}, 'phone'], [{width: 1180, h
   await page.screenshot({path: `${out}/pickrules-editor-${name}.png`, fullPage: true});
   // 並べ替え: 2行目を上へ
   await page.locator('.pr-row').nth(1).getByRole('button', {name: '上へ'}).click();
-  check((await page.locator('.pr-row').nth(0).locator('input').first().inputValue()) === 'ゴリランダー', `${name}: 並べ替え`);
+  check((await page.locator('.pr-row').nth(0).locator('.pr-cond .pr-mon').first().getAttribute('title')) === 'ゴリランダー', `${name}: 並べ替え`);
+  check(await page.locator('.pr-row.view .pr-cond img, .pr-row.view .pr-cond .pr-mon').count() > 19, `${name}: 条件がアイコンで出る`);
+  // 行を押すと編集欄が開き、完了で閉じる
+  await page.locator('.pr-row').nth(0).locator('.pr-view').click();
+  check((await page.locator('.pr-row').nth(0).locator('input').first().inputValue()) === 'ゴリランダー', `${name}: 編集欄が開く`);
+  await page.getByRole('button', {name: '編集を閉じる'}).click();
+  check(await page.locator('.pr-row:not(.view)').count() === 0, `${name}: 完了で閉じる`);
   await page.locator('.pr-row').nth(1).getByRole('button', {name: '上へ'}).click();
   // 対戦を始めて、相手6体を入れる
   await page.getByRole('button', {name: '対戦を記録'}).click();
@@ -55,6 +63,7 @@ for (const [vw, name] of [[{width: 390, height: 844}, 'phone'], [{width: 1180, h
   await page.waitForSelector('.pr-hint');
   const txt = await page.locator('.pr-hint').innerText();
   check(/選出ルール\s*4/.test(txt) && /ゴリランダー/.test(txt) && /先発/.test(txt), `${name}: ルカリオ+ゴーストで4行目が出る`);
+  check(await page.locator('.pr-hint .pr-cond .pr-mon').count() >= 1, `${name}: 選出画面の条件もアイコン`);
   await page.getByRole('button', {name: 'この選出にする'}).click();
   await page.waitForTimeout(200);
   const order = await page.locator('.sel-mon.on').evaluateAll(els => els.map(e => [e.querySelector('.no').textContent, e.querySelector('.nm').textContent]).sort());

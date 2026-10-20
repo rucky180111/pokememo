@@ -193,12 +193,12 @@ export function spriteIds(id) {
   else ids.push(toID(n));
   return [...new Set(ids)];
 }
-export function Sprite({id, size = 40, class: cls}) {
+export function Sprite({id, size = 40, class: cls, fallback = null}) {
   const app = useApp();
   const on = app?.store?.state?.settings?.sprites !== false;
   const ids = useMemo(() => spriteIds(id), [id]);
   const [k, setK] = useState(0);
   useEffect(() => setK(0), [id]);
-  if (!on || !ids.length || k >= ids.length) return null;
+  if (!on || !ids.length || k >= ids.length) return fallback;
   return <img class={cx('sprite', cls)} src={`https://play.pokemonshowdown.com/sprites/gen5/${ids[k]}.png`} width={size} height={size} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onError={() => setK(k + 1)} />;
 }
