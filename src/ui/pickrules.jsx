@@ -75,7 +75,6 @@ export function PickRulesEditor({team, save}) {
                 <CondIcons cond={c} />
                 <span class="pr-arrow">⇒</span>
                 <PickIcons pick={r.pick} />
-                {r.note && <span class="pr-note-v muted">{r.note}</span>}
                 {c.errors.length > 0 && <span class="pr-err">{c.errors.join(' / ')}</span>}
               </button>
               <div class="pr-tools">
@@ -100,7 +99,6 @@ export function PickRulesEditor({team, save}) {
                       {mons.map(m => <option value={m.species}>{speciesName(m.species)}</option>)}
                     </select>
                   ))}
-                  <input class="input pr-note" placeholder="メモ (勝率など)" value={r.note || ''} onChange={e => upd(l => { l[i].note = e.currentTarget.value; })} />
                 </div>
               </div>
               <div class="pr-tools">
@@ -114,14 +112,18 @@ export function PickRulesEditor({team, save}) {
         })}
       </ol>
       <div class="btnrow pad-s">
-        <button class="btn" onClick={() => { upd(l => { l.push({cond: '', pick: [], note: ''}); }); setEditing(rules.length); }}>＋ ルールを追加</button>
+        <button class="btn" onClick={() => { upd(l => { l.push({cond: '', pick: []}); }); setEditing(rules.length); }}>＋ ルールを追加</button>
         <button class="btn ghost" onClick={() => { setBulk(rulesToText(rules)); setBulkErr([]); }}>まとめて入力・書き出し</button>
       </div>
       {bulk != null && (
         <Sheet title="選出ルールをまとめて入力" onClose={() => setBulk(null)}>
           <div class="pad">
-            <p class="hint">1行に1ルール。<code>条件 =&gt; 先発, 2体目, 3体目 # メモ</code></p>
-            <textarea class="input pr-bulk" rows={14} value={bulk} onInput={e => setBulk(e.currentTarget.value)} />
+            <p class="hint">CSVの形で1行に1ルール。上の行ほど優先。表計算ソフトからの貼り付け (タブ区切り) でも読めます。</p>
+            <pre class="pr-example">{`条件,先発,2体目,3体目
+フシギバナ,ガブZ,サーフゴー,エンペルト
+ルカリオ+ミミッキュ|ギルガルド,ゴリランダー,ガブZ,ドドゲザン
+*,エンペルト,ガブZ,ゴリランダー`}</pre>
+            <textarea class="input pr-bulk" rows={14} spellcheck={false} value={bulk} onInput={e => setBulk(e.currentTarget.value)} />
             {bulkErr.length > 0 && <ul class="warn">{bulkErr.map(e => <li>{e}</li>)}</ul>}
             <div class="btnrow pad-s">
               <button class="btn" onClick={() => setBulk(null)}>取消</button>
@@ -157,7 +159,6 @@ export function PickRuleHint({team, battle, started, onApply}) {
             <li class={cx(k === 0 && 'lead')}><Sprite id={battle.my[mi].species} size={32} />{speciesName(battle.my[mi].species)}{k === 0 && <span class="tag">先発</span>}</li>
           ))}
         </ol>
-        {hit.rule.note && <span class="muted">{hit.rule.note}</span>}
         {!started && idx.length > 0 && <button class={cx('btn sm', same ? 'ghost' : 'primary')} disabled={same} onClick={() => onApply(idx)}>{same ? 'この選出になっています' : 'この選出にする'}</button>}
       </div>
     </div>

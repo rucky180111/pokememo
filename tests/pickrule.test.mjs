@@ -41,12 +41,24 @@ test('一括入力の表を読み、上位34構築すべてで想定どおりの
   assert.deepEqual(errors, []);
   assert.equal(rules.length, 19);
   assert.deepEqual(rules[2].pick, ['garchomp', 'dragonite', 'kingambit']);
-  assert.equal(rules[0].note, '96%');
+  assert.equal(rules[0].note, undefined); // メモは持たない
   for (const c of cases) assert.equal(matchRule(rules, c.opp).index + 1, c.rule, c.name);
   // 書き出し → 読み直しで同じ内容
   const again = parseRulesText(rulesToText(rules), team);
   assert.deepEqual(again.errors, []);
-  assert.deepEqual(again.rules.map(r => [r.cond, r.pick, r.note]), rules.map(r => [r.cond, r.pick, r.note]));
+  assert.deepEqual(again.rules, rules);
+  assert.ok(rulesToText(rules).startsWith('条件,先発,2体目,3体目\n'));
+});
+
+test('CSV・タブ区切りで読める (見出しは飛ばす)', () => {
+  const csv = '条件,先発,2体目,3体目\nルカリオ+ミミッキュ|ギルガルド,ゴリランダー,ガブZ,ドドゲザン\n*,エンペルト,ガブZ,ゴリランダー';
+  const a = parseRulesText(csv, team);
+  assert.deepEqual(a.errors, []);
+  assert.equal(a.rules.length, 2);
+  assert.deepEqual(a.rules[0], {cond: 'ルカリオ+ミミッキュ|ギルガルド', pick: ['rillaboom', 'garchomp', 'kingambit']});
+  const tsv = parseRulesText(csv.replace(/,/g, '\t'), team);
+  assert.deepEqual(tsv, a);
+  assert.equal(parseRulesText('ルカリオ,', team).errors.length, 1); // 選出なし
 });
 
 test('当てはまった選出を手持ちの番号に直す (並び順どおり・先頭が先発)', () => {

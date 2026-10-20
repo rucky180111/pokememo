@@ -1364,3 +1364,4 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
   .board-workspace .pl-name { font-size: 14px; }
   .board-workspace .observed-hp { flex-wrap: wrap; }
 }
+.pr-example { font-size: 12px; background: var(--chip, #8881); padding: 6px 8px; border-radius: 6px; overflow-x: auto; margin: 4px 0 8px; }
