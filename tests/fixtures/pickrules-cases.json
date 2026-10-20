@@ -1,0 +1,410 @@
+[
+ {
+  "name": "1位 リザYガルーラ",
+  "opp": [
+   "charizard",
+   "kangaskhan",
+   "hatterene",
+   "basculegion",
+   "hippowdon",
+   "hydreigon"
+  ],
+  "rule": 19
+ },
+ {
+  "name": "2位 カバルカZカイリュー",
+  "opp": [
+   "hippowdon",
+   "lucario",
+   "dragonite",
+   "mimikyu",
+   "aegislashshield",
+   "basculegion"
+  ],
+  "rule": 4
+ },
+ {
+  "name": "3位 カバ+グソク+キラフロル",
+  "opp": [
+   "hippowdon",
+   "indeedee",
+   "corviknight",
+   "golisopod",
+   "glimmora",
+   "primarina"
+  ],
+  "rule": 19
+ },
+ {
+  "name": "4位 カバルカZイダイ",
+  "opp": [
+   "hippowdon",
+   "lucario",
+   "basculegion",
+   "meowscarada",
+   "archaludon",
+   "charizard"
+  ],
+  "rule": 4
+ },
+ {
+  "name": "5位 マスカルカZグロス",
+  "opp": [
+   "meowscarada",
+   "lucario",
+   "basculegion",
+   "hippowdon",
+   "metagross",
+   "rotomheat"
+  ],
+  "rule": 4
+ },
+ {
+  "name": "11位 グロスガブZサフゴ",
+  "opp": [
+   "metagross",
+   "garchomp",
+   "primarina",
+   "mimikyu",
+   "gholdengo",
+   "hippowdon"
+  ],
+  "rule": 17
+ },
+ {
+  "name": "53位 カバマンダ(あばれる)",
+  "opp": [
+   "salamence",
+   "hippowdon",
+   "gholdengo",
+   "primarina",
+   "floetteeternal",
+   "metagross"
+  ],
+  "rule": 6
+ },
+ {
+  "name": "58位 マンダマフォ総大将",
+  "opp": [
+   "salamence",
+   "delphox",
+   "primarina",
+   "kingambit",
+   "pawmot",
+   "ninetalesalola"
+  ],
+  "rule": 9
+ },
+ {
+  "name": "75位 ガブZゴリエンペ(ミラー)",
+  "opp": [
+   "empoleon",
+   "salamence",
+   "gholdengo",
+   "garchomp",
+   "rillaboom",
+   "scizor"
+  ],
+  "rule": 1
+ },
+ {
+  "name": "81位 マンダ風船サフゴ",
+  "opp": [
+   "salamence",
+   "gholdengo",
+   "orthworm",
+   "primarina",
+   "hippowdon",
+   "raichu"
+  ],
+  "rule": 8
+ },
+ {
+  "name": "100位 イエカメ",
+  "opp": [
+   "indeedee",
+   "blastoise",
+   "garchomp",
+   "lucario",
+   "vanilluxe",
+   "primarina"
+  ],
+  "rule": 4
+ },
+ {
+  "name": "155位 フロルカイリュールカZ",
+  "opp": [
+   "glimmora",
+   "dragonite",
+   "lucario",
+   "raichu",
+   "umbreon",
+   "primarina"
+  ],
+  "rule": 5
+ },
+ {
+  "name": "62位 ライチュウYサイクル",
+  "opp": [
+   "raichu",
+   "dragonite",
+   "umbreon",
+   "glimmora",
+   "gholdengo",
+   "scizor"
+  ],
+  "rule": 11
+ },
+ {
+  "name": "67位 受けループ",
+  "opp": [
+   "toxapex",
+   "skarmory",
+   "tyranitar",
+   "slowkinggalar",
+   "charizard",
+   "meganium"
+  ],
+  "rule": 10
+ },
+ {
+  "name": "156位 フラエッテ+ミミロップ",
+  "opp": [
+   "floetteeternal",
+   "lopunny",
+   "gholdengo",
+   "corviknight",
+   "samurotthisui",
+   "garchomp"
+  ],
+  "rule": 12
+ },
+ {
+  "name": "142位 グソクヌメルドン",
+  "opp": [
+   "goodrahisui",
+   "hippowdon",
+   "golisopod",
+   "charizard",
+   "baxcalibur",
+   "glimmora"
+  ],
+  "rule": 19
+ },
+ {
+  "name": "140位 グソクガブスカーフ",
+  "opp": [
+   "golisopod",
+   "garchomp",
+   "greninja",
+   "corviknight",
+   "charizard",
+   "baxcalibur"
+  ],
+  "rule": 15
+ },
+ {
+  "name": "6位 メガカイリュー+ブリ",
+  "opp": [
+   "dragonite",
+   "archaludon",
+   "basculegion",
+   "lucario",
+   "rillaboom",
+   "primarina"
+  ],
+  "rule": 2
+ },
+ {
+  "name": "7位 エッテ+ガブZ受け",
+  "opp": [
+   "floetteeternal",
+   "hippowdon",
+   "toxapex",
+   "garchomp",
+   "samurotthisui",
+   "gholdengo"
+  ],
+  "rule": 19
+ },
+ {
+  "name": "12位 スカーフサフゴ+エッテ",
+  "opp": [
+   "gholdengo",
+   "hippowdon",
+   "floetteeternal",
+   "golisopod",
+   "samurotthisui",
+   "charizard"
+  ],
+  "rule": 19
+ },
+ {
+  "name": "24位 リザYグロスロトム",
+  "opp": [
+   "charizard",
+   "metagross",
+   "garchomp",
+   "corviknight",
+   "primarina",
+   "rotomwash"
+  ],
+  "rule": 19
+ },
+ {
+  "name": "28位 リザXガブZハッサム",
+  "opp": [
+   "charizard",
+   "garchomp",
+   "primarina",
+   "mimikyu",
+   "scizor",
+   "slowkinggalar"
+  ],
+  "rule": 13
+ },
+ {
+  "name": "31位 風船サフゴ+エスバ",
+  "opp": [
+   "gholdengo",
+   "cinderace",
+   "metagross",
+   "garchomp",
+   "hippowdon",
+   "mimikyu"
+  ],
+  "rule": 15
+ },
+ {
+  "name": "44位 3メガ(ガブZグソクマンダ)",
+  "opp": [
+   "garchomp",
+   "golisopod",
+   "salamence",
+   "hippowdon",
+   "primarina",
+   "gholdengo"
+  ],
+  "rule": 9
+ },
+ {
+  "name": "47位 ゲンガーイエッサンブラッキー",
+  "opp": [
+   "gengar",
+   "indeedee",
+   "umbreon",
+   "primarina",
+   "golisopod",
+   "garchomp"
+  ],
+  "rule": 14
+ },
+ {
+  "name": "57位 エッテゲンガー",
+  "opp": [
+   "floetteeternal",
+   "corviknight",
+   "garchomp",
+   "samurotthisui",
+   "indeedee",
+   "gengar"
+  ],
+  "rule": 19
+ },
+ {
+  "name": "71位 ルカZアブソルZ",
+  "opp": [
+   "lucario",
+   "absol",
+   "garchomp",
+   "gyarados",
+   "ninetalesalola",
+   "glimmora"
+  ],
+  "rule": 5
+ },
+ {
+  "name": "73位 ルカリオ+ヌメルゴン",
+  "opp": [
+   "lucario",
+   "hippowdon",
+   "mimikyu",
+   "goodrahisui",
+   "greninja",
+   "cinderace"
+  ],
+  "rule": 3
+ },
+ {
+  "name": "103位 カバマンダ毒菱ゲコ",
+  "opp": [
+   "salamence",
+   "aegislashshield",
+   "greninja",
+   "hippowdon",
+   "archaludon",
+   "clefable"
+  ],
+  "rule": 9
+ },
+ {
+  "name": "113位 メガセグ+ミミイダイ",
+  "opp": [
+   "baxcalibur",
+   "mimikyu",
+   "basculegion",
+   "lucario",
+   "rillaboom",
+   "gholdengo"
+  ],
+  "rule": 2
+ },
+ {
+  "name": "137位 ラグアブソルZ",
+  "opp": [
+   "swampert",
+   "absol",
+   "ninetalesalola",
+   "garchomp",
+   "rotomheat",
+   "gengar"
+  ],
+  "rule": 16
+ },
+ {
+  "name": "172位 クエスルカZカイリュー",
+  "opp": [
+   "espathra",
+   "lucario",
+   "dragonite",
+   "glimmora",
+   "swampert",
+   "vanilluxe"
+  ],
+  "rule": 4
+ },
+ {
+  "name": "178位 ドドゲザンマンダエッテ",
+  "opp": [
+   "kingambit",
+   "salamence",
+   "rotomwash",
+   "swampert",
+   "floetteeternal",
+   "cinderace"
+  ],
+  "rule": 7
+ },
+ {
+  "name": "いかたろう ギャラ+ピクシー",
+  "opp": [
+   "gyarados",
+   "hippowdon",
+   "archaludon",
+   "clefable",
+   "hydreigon",
+   "mimikyu"
+  ],
+  "rule": 18
+ }
+]

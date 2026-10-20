@@ -7,6 +7,7 @@ import {oppSpeciesStats, similarTeams, leadsOf, matchupMatrix} from '../engine/p
 import {useApp, Picker, TypeChip, Sprite, cx, rate} from './common.jsx';
 import {MonEditor} from './teams.jsx';
 import {OppSheet} from './battle.jsx';
+import {PickRuleHint} from './pickrules.jsx';
 
 // 素早さの目安 (最速・準速・無振り・最遅)。スカーフはかっこで
 const speLine = sid => {
@@ -109,6 +110,9 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
           </div>
         </div>
       )}
+
+      <PickRuleHint team={battle.teamId ? store.team(battle.teamId) : null} battle={battle} started={battle.state.sides.me.active.some(x => x != null)}
+        onApply={idx => mut(b => { b.pick.me = idx.slice(0, nPick); })} />
 
       <div class="sel-head">
         <h3>自分の選出 <span class="muted">{battle.pick.me.length}/{nPick}・タップした順。先頭{nLead}体が初手</span></h3>

@@ -7,6 +7,7 @@ import {teamRecord, realBattles} from '../engine/predict.js';
 import {TeamReport} from './stats.jsx';
 import {ShotImport} from './shot-import.jsx';
 import {TeamDiagnosis} from './teamdiag.jsx';
+import {PickRulesEditor} from './pickrules.jsx';
 
 // 調整メモの並び (優先順位)
 const spOrderOf = b => { const o = (b.spOrder || []).filter(k => STAT_KEYS.includes(k)); return [...o, ...STAT_KEYS.filter(k => !o.includes(k))]; };
@@ -159,9 +160,10 @@ export function TeamEditor({id}) {
           <input class="input" value={team.name} onChange={e => save(t => { t.name = e.currentTarget.value; })} />
         </label>
       </div>
-      <Seg value={view} options={[['mons', 'ポケモン'], ['diag', '構築診断'], ['report', `戦績と分析${nReal ? ` (${nReal}戦)` : ''}`]]} onChange={setView} />
+      <Seg value={view} options={[['mons', 'ポケモン'], ['rules', `選出ルール${team.pickRules?.length ? ` (${team.pickRules.length})` : ''}`], ['diag', '構築診断'], ['report', `戦績と分析${nReal ? ` (${nReal}戦)` : ''}`]]} onChange={setView} />
       {view === 'report' && <div class="team-report"><TeamReport teamId={team.id} /></div>}
       {view === 'diag' && <div class="team-report"><TeamDiagnosis team={team} /></div>}
+      {view === 'rules' && <PickRulesEditor team={team} save={save} />}
       {view === 'mons' && <>
       {warnings.length > 0 && <ul class="warn">{warnings.map(w => <li>{w}</li>)}</ul>}
 
