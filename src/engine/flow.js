@@ -66,7 +66,7 @@ function sleepBlocked(b, side, i, res) {
 }
 // マジックミラーではね返る変化技
 const BOUNCE = new Set(['stealthrock', 'spikes', 'toxicspikes', 'stickyweb', 'yawn', 'taunt', 'encore', 'thunderwave', 'willowisp', 'toxic', 'glare', 'spore', 'sleeppowder', 'stunspore', 'hypnosis', 'leechseed', 'partingshot', 'charm', 'faketears', 'scaryface', 'screech', 'roar', 'whirlwind', 'trick', 'switcheroo', 'soak', 'magicpowder', 'trickortreat', 'forestscurse', 'nobleroar', 'tickle', 'stringshot', 'cottonspore', 'disable', 'torment', 'embargo', 'healblock', 'confuseray', 'swagger', 'sweetkiss', 'teeterdance', 'gastroacid', 'worryseed', 'simplebeam', 'entrainment', 'skillswap', 'poisonpowder', 'lovelykiss', 'sing', 'grasswhistle', 'darkvoid', 'yawn', 'defog', 'memento', 'babydolleyes', 'playnice', 'venomdrench', 'tearfullook', 'captivate', 'meanlook', 'block', 'spiderweb']);
-import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA, WEATHER_ABILITY, TERRAIN_ABILITY, maxHPOf, activeItem, healHP, unknownHP} from './battle.js';
+import {clone, other, buildOf, condOf, sendOut, megaEvolve, applyMoveEffects, applyBoosts, setHP, turnNumber, UNDO_DEPTH, defaultAbilityResolver, applyEntryAbility, setWeather, setTerrain, setSideFlag, setFieldFlag, WEATHER_JA, TERRAIN_JA, WEATHER_ABILITY, TERRAIN_ABILITY, maxHPOf, activeItem, healHP, unknownHP} from './battle.js';
 import {boardContext} from './board.js';
 import {inferFromTaken, inferFromDealt, applyInference, inferable, applyHpConstraint} from './infer-dmg.js';
 import {inferSpeeds} from './infer.js';
@@ -762,7 +762,7 @@ export function addEvent(b, ev, usage) {
     return [text, ...log];
   }
   else if (ev.kind === 'status') { cond.status = ev.status || ''; cond.toxicCounter = 1; text = STATUS_JA[ev.status || '']; }
-  else if (ev.kind === 'ability') { if (side === 'opp') build.ability = ev.ability; text = `特性 ${abilityName(ev.ability)} 判明`; }
+  else if (ev.kind === 'ability') { if (side === 'opp') build.ability = ev.ability; text = ev.ability ? `特性 ${abilityName(ev.ability)} ${ev.activate ? '発動' : '判明'}` : '特性を不明に戻す'; if (ev.activate && b.state.sides[side].active.includes(mon) && !cond.fainted) applyEntryAbility(b, side, mon, {log, resolveAbility: defaultAbilityResolver}); }
   else if (ev.kind === 'mega') { megaEvolve(b, side, mon, ev.forme || null, {log, resolveAbility: res}); text = 'メガシンカ'; }
   else if (ev.kind === 'field') {
     if (ev.key === 'weather') { setWeather(b, ev.value); text = ev.value ? `天候: ${WEATHER_JA[ev.value]}` : '天候が元に戻った'; }

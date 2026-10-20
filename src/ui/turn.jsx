@@ -1,5 +1,6 @@
 // バトルログ (タップで修正) と、記録の修正フォーム・その他の変化・メガシンカのボタン。
 // 入力そのものは盤面 (play.jsx) で行う。修正すると最初の状態から全ターンを入れ直す。
+import {logGroups, remainingTurnEffects} from '../engine/log.js';
 import {useEffect, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engine/calc.js';
@@ -66,14 +67,14 @@ export function BattleLog({battle, ctx, mut, usage, toast, notes}) {
         {battle.turns.map((t, ti) => (
           <div class="tl-turn" key={t.n}>
             <div class="tl-n">— ターン {t.n}{t.open ? ' (入力中)' : ''}{t.incomplete && ' (未入力あり)'} —</div>
-            {t.acts.map((a, ai) => (
-              <button class={cx('tl-act', a.side, a.type === 'event' && 'ev', a.kind === 'residual' && 'res')} disabled={!editable} onClick={() => setEdit({ti, ai})}>
-                <span class="tl-who">{a.sp && a.side ? <Sprite id={a.sp} size={30} /> : null}<span>{a.kind === 'boosts' ? '能力' : SIDE_JA[a.side] || '場'}</span></span>
-                <span class="tl-body">{actLine(battle, a)}</span>
-                {(a.auto || []).map(x => <span class="tl-auto">{x}</span>)}
-              </button>
-            ))}
-            {(t.auto || []).filter(x => !t.acts.some(a => (a.auto || []).includes(x))).map(x => <div class="tl-auto">{x}</div>)}
+            {logGroups(battle, t).map((group, gi) => <div class={cx('tl-group', group.side)} key={gi}>
+              <span class="tl-avatar">{group.species ? <Sprite id={group.species} size={38} /> : <span aria-label="場">◈</span>}<small>{SIDE_JA[group.side] || '場'}</small></span>
+              <div class="tl-bubble">{group.actions.map(({a, ai, kind, text, effects}) => <button class={cx('tl-act', a.side, a.type === 'event' && 'ev', a.kind === 'residual' && 'res')} disabled={!editable} onClick={() => setEdit({ti, ai})}>
+                <span class="log-kind">{kind}</span><span class="tl-body">{text}</span>
+                {effects.map(e => <span class="tl-effect"><span class="log-kind">{e.kind}</span><span>{e.text}</span></span>)}
+              </button>)}</div>
+            </div>)}
+            {remainingTurnEffects(t).map(e => <div class="tl-system"><span class="log-kind">{e.kind}</span><span>{e.text}</span></div>)}
             {!t.open && ti === battle.turns.length - 1 && editable && (
               <button class="btn ghost sm tl-reopen" onClick={() => { mut(b => { reopenLastTurn(b, usage); }); toast('ターン終了を取り消しました。行動を追加できます'); }}>このターンに行動を追加する</button>
             )}
@@ -485,7 +486,7 @@ export function EventForm({battle, mut, usage, toast}) {
           {BOOST_KEYS.map(k => <button class={cx('chip', ev.stat === k && 'on')} onClick={() => setEv({...ev, stat: k})}>{{atk: 'こうげき', def: 'ぼうぎょ', spa: 'とくこう', spd: 'とくぼう', spe: 'すばやさ'}[k]}</button>)}
           {ev.stat && [-2, -1, 1, 2].map(d => <button class="chip add" onClick={() => addEv({delta: d})}>{d > 0 ? `+${d}` : d}</button>)}
         </div>}
-        {ev.kind === 'ability' && <div class="chips">{dex.species[list[mon].species].ab.map(a => <button class="chip" onClick={() => addEv({ability: a})}>{abilityName(a)}</button>)}</div>}
+        {ev.kind === 'ability' && <div class="chips">{dex.species[list[mon].species].ab.map(a => <button class="chip" onClick={() => addEv({ability: a, activate: true})}>{abilityName(a)}</button>)}</div>}
         {ev.kind === 'faint' && <div class="chips"><button class="chip" onClick={() => addEv()}>ひんしになった</button></div>}
         {ev.kind === 'field' && <>
           <div class="chips"><span class="muted">天候:</span>{WEATHERS.map(([k, l]) => <button class={cx('chip', battle.state.field.weather === k && 'on')} onClick={() => addEv({key: 'weather', value: k})}>{l}</button>)}</div>
@@ -522,12 +523,11 @@ export function MegaButtons({battle, side, mon, mut, usage, preview, setPreview}
     const on = preview === fm;
     const suffix = formes.length > 1 ? (/[XYZＸＹＺ]$/.exec(speciesName(fm))?.[0] || '') : '';
     return (
-      <button class={cx('btn mega-btn sm', on && 'on')} title={setPreview ? `${speciesName(fm)}の数値を確認 (もう一度押すと戻る)` : `${speciesName(fm)}にメガシンカした`}
+      <button class={cx('btn mega-btn sm', on && 'on')} aria-pressed={on} title={setPreview ? `${speciesName(fm)}の数値を確認 (もう一度押すと戻る)` : `${speciesName(fm)}にメガシンカした`}
         onClick={() => (setPreview ? setPreview(on ? null : fm) : record(fm))}>
-        メガ{suffix}{on ? ' 確認中' : ''}
+        メガ{suffix}{on ? ' ON' : ' OFF'}
       </button>
     );
   })}
-  {setPreview && preview && <button class="chip sm" title="技を記録するときにも自動で記録されます" onClick={() => { record(preview); setPreview(null); }}>メガシンカを記録</button>}
   </>;
 }

@@ -104,7 +104,7 @@ export function PlayBoard({battle, ctx, mut, usage, toast, setSheet}) {
     let log = [];
     const mk = act && act.kind === 'move' ? `${act.side}${act.mon}` : null;
     const fm = mk ? megaPrev[mk] : null;
-    mut(b => { if (fm) addEvent(b, {kind: 'mega', side: act.side, mon: act.mon, forme: fm}, usage); log = fn(b) || []; autoHazards(b, usage); });
+    mut(b => { log = fn(b, fm) || []; autoHazards(b, usage); });
     if (mk && fm) setMegaPrev(m => ({...m, [mk]: null}));
     setAct(null);
     const last = log.filter(Boolean).slice(-1)[0];
@@ -138,8 +138,8 @@ export function FieldBar({battle}) {
   return (
     <div class="pl-field">
       <span class="tag strong">{now}ターン目</span>
-      <span>{({Rain:'☔', Sun:'☀', Sand:'◌', Snow:'❄'})[f.weather] || ''} 天候 <b class={cx(f.weather && 'on')}>{W[f.weather || '']}</b>{age('weather')}</span>
-      <span>{({Grassy:'🌿', Electric:'⚡', Psychic:'🔮', Misty:'☁'})[f.terrain] || ''} フィールド <b class={cx(f.terrain && 'on')}>{T[f.terrain || '']}</b>{age('terrain')}</span>
+      <span class="field-weather">{({Rain:'☔', Sun:'☀', Sand:'◌', Snow:'❄'})[f.weather] || ''} 天候 <b class={cx(f.weather && 'on')}>{W[f.weather || '']}</b>{age('weather')}</span>
+      <span class="field-terrain">{({Grassy:'🌿', Electric:'⚡', Psychic:'🔮', Misty:'☁'})[f.terrain] || ''} フィールド <b class={cx(f.terrain && 'on')}>{f.terrain ? `${T[f.terrain]}フィールド` : 'なし'}</b>{age('terrain')}</span>
       {f.trickRoom && <span class="tag accent">トリックルーム{age('trickRoom')}</span>}
       {f.gravity && <span class="tag accent">じゅうりょく</span>}
       {f.magicRoom && <span class="tag accent">マジックルーム</span>}
@@ -249,11 +249,11 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
         {opp?.item && !raw.itemGone && consumable(opp.item) && <button class="chip sm" onClick={() => { mut(b => { addEvent(b, {kind: 'item', side, mon, item: opp.item, consumed: true}, usage); }); toast(`${itemName(opp.item)}を使った`); }}>使った</button>}
         {side === 'me' && build.item && !raw.itemGone && consumable(build.item) && <button class="chip sm" onClick={() => { mut(b => { addEvent(b, {kind: 'item', side, mon, item: build.item, consumed: true}, usage); }); toast(`${itemName(build.item)}を使った`); }}>使った</button>}
         {abCands
-          ? <select class="pl-dd unk" value="" onChange={e => setOpp(o => { o.ability = e.currentTarget.value; })}>
+          ? <select class="pl-dd unk" value="" title="発動を確認した特性を選択" onChange={e => { const ability = e.currentTarget.value; mut(b => addEvent(b, {kind: 'ability', side, mon, ability, activate: true}, usage)); }}>
               <option value="">特性 {abCands.map(([a, r]) => `${abilityName(a)}${r ? ` ${Math.round(r * 100)}%` : ''}`).join(' / ')}</option>
               {s.ab.map(a => <option value={a}>{abilityName(a)}</option>)}
             </select>
-          : <span class="pl-dd static" onClick={() => side === 'opp' && !s.mega && setOpp(o => { o.ability = ''; })} title={side === 'opp' && !s.mega ? '押すと不明に戻す' : ''}>{abilityName(abil) || '特性なし'}</span>}
+          : <span class="pl-dd static" onClick={() => side === 'opp' && !s.mega && mut(b => addEvent(b, {kind: 'ability', side, mon, ability: ''}, usage))} title={side === 'opp' && !s.mega ? '押すと不明に戻す' : ''}>{abilityName(abil) || '特性なし'}</span>}
         {raw.types?.length ? <span class="tag accent">タイプ変化</span> : null}
         {raw.disguiseBroken && <span class="tag">ばけのかわ はがれた</span>}
       </div>
@@ -468,7 +468,7 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
   const missingResultHp = hpTargets.some(t => act.resultHp?.[hpKey(t)] == null);
   const record = extra => {
     const observed = extra.miss || extra.cant || extra.protect ? [] : observedHp;
-    commit(b => addAct(b, {...base, ...extra, ...(observed.length ? {observedHp: observed} : {})}, usage));
+    commit((b, forme) => addAct(b, {...base, ...extra, ...(forme ? {mega: true, megaForme: forme} : {}), ...(observed.length ? {observedHp: observed} : {})}, usage));
   };
   const hpInputs = hpTargets.map(t => <ObservedHP key={hpKey(t)} battle={battle} target={t} compact={hpTargets.length === 1 && t.side === side && t.mon === mon} value={act.resultHp?.[hpKey(t)]} onChange={value => set({resultHp: {...act.resultHp, [hpKey(t)]: value}})} />);
   // ふかしのこぶし・かんつうドリル: 接触技はまもるを貫いて 1/4 のダメージ (チャンピオンズ)

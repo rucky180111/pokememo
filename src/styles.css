@@ -1364,3 +1364,30 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
   .board-workspace .pl-name { font-size: 14px; }
   .board-workspace .observed-hp { flex-wrap: wrap; }
 }
+.battle .field-weather, .battle .field-terrain { display: inline-flex; align-items: center; gap: 5px; border: 2px solid var(--border); font-size: 13px; font-weight: 700; padding: 5px 10px; }
+.battle .field-weather b, .battle .field-terrain b { font-size: 17px; }
+.weather-Rain .field-weather { background: #c9e5fa !important; border-color: #3982b8; color: #153d5b; }
+.weather-Sun .field-weather { background: #fff0b4 !important; border-color: #d29a28; color: #5e3e0d; }
+.weather-Sand .field-weather { background: #ead7b4 !important; border-color: #ab8244; color: #513d1d; }
+.weather-Snow .field-weather { background: #e0f2ff !important; border-color: #80b7d5; color: #24526b; }
+.terrain-Grassy .field-terrain { background: #d6efc8 !important; border-color: #689d41; color: #284d1a; }
+.terrain-Electric .field-terrain { background: #fff1a1 !important; border-color: #bba02f; color: #564600; }
+.terrain-Psychic .field-terrain { background: #efc8e6 !important; border-color: #ab599a; color: #56234b; }
+.terrain-Misty .field-terrain { background: #ecd9fa !important; border-color: #a27bc2; color: #543269; }
+.field-weather b.on, .field-terrain b.on { color: inherit; }
+.weather-Rain .battle-field { background: repeating-linear-gradient(112deg, #7bb4dd42 0 3px, #d1e5f533 3px 22px); }
+.weather-Sun .battle-field { background: radial-gradient(ellipse at 10% 0, #ffcf6388, transparent 70%); }
+.terrain-Grassy .battle-field { border-bottom: 4px solid #78ad52; }
+.battle-log .tl-group { display: flex; align-items: flex-start; gap: 7px; width: 88%; margin: 8px 0; }
+.battle-log .tl-group.me { flex-direction: row-reverse; margin-left: auto; }
+.battle-log .tl-group.opp { margin-right: auto; }
+.battle-log .tl-group.field { width: 94%; margin-left: auto; margin-right: auto; }
+.tl-avatar { flex: 0 0 40px; display: flex; flex-direction: column; align-items: center; font-size: 22px; }
+.tl-avatar small { font-size: 10px; color: var(--muted); }
+.tl-bubble { flex: 1; min-width: 0; border: 1px solid var(--border); border-left: 3px solid var(--opp); background: var(--surface); border-radius: 10px; overflow: hidden; }
+.tl-group.me .tl-bubble { border-left: 1px solid var(--border); border-right: 3px solid var(--me); background: var(--accent-soft); }
+.battle-log .tl-bubble .tl-act { width: 100%; margin: 0; border: 0; border-radius: 0; border-bottom: 1px solid var(--border); padding: 8px; gap: 5px; background: transparent; }
+.battle-log .tl-bubble .tl-act:last-child { border-bottom: 0; }
+.tl-effect { display: flex; align-items: baseline; gap: 5px; width: 100%; font-size: 12px; line-height: 1.5; }
+.log-kind { display: inline-block; flex-shrink: 0; padding: 1px 5px; border-radius: 4px; background: var(--surface2); color: var(--muted); font-size: 10px; font-weight: 600; }
+.tl-system { display: flex; gap: 6px; padding: 6px 10px; margin: 5px 6%; border-radius: 6px; background: var(--surface2); font-size: 12px; line-height: 1.5; }
