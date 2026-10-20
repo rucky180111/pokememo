@@ -1,7 +1,7 @@
 // 選出ルール: 構築の画面で編集し、対戦の選出画面で「今回はどのルールか」を出す
 import {useMemo, useState} from 'preact/hooks';
 import {speciesName} from '../engine/dex.js';
-import {parseCond, matchRule, pickIndexes, parseRulesText, rulesToText} from '../engine/pickrule.js';
+import {parseCond, decidePick, pickIndexes, parseRulesText, rulesToText} from '../engine/pickrule.js';
 import {Sheet, Sprite, TypeChip, cx} from './common.jsx';
 
 // 条件をアイコンで表示: ポケモンはアイコン、タイプはタイプ表示。+ は「かつ」、| は「か」、/ は「または」
@@ -28,14 +28,18 @@ export function CondIcons({cond}) {
   );
 }
 
-// 選出3体をアイコンで (左が先発)
-function PickIcons({pick}) {
+// 選出をアイコンで (左が先発)。空いている枠は「他の行で決める」、出さないポケモンは×つき
+function PickIcons({pick, ban}) {
+  const p = pick || [];
+  const mon = (id, k) => <span class={cx('pr-mon', k === 0 && 'lead')} title={speciesName(id)}><Sprite id={id} size={34} fallback={<span class="pr-fb">{speciesName(id)}</span>} />{k === 0 && <span class="tag">先発</span>}</span>;
   return (
     <span class="pr-picks">
-      {(pick || []).filter(Boolean).map((id, k) => <>
+      {p.map((id, k) => <>
         {k > 0 && <span class="pr-op sm">→</span>}
-        <span class={cx('pr-mon', k === 0 && 'lead')} title={speciesName(id)}><Sprite id={id} size={34} fallback={<span class="pr-fb">{speciesName(id)}</span>} />{k === 0 && <span class="tag">先発</span>}</span>
+        {id ? mon(id, k) : <span class="pr-slot" title="ほかの行で決める">{k === 0 ? '先発は下の行' : '空き'}</span>}
       </>)}
+      {p.filter(Boolean).length < 3 && p.length > 0 && <span class="pr-op sm">…</span>}
+      {(ban || []).map(id => <span class="pr-mon pr-ban" title={`${speciesName(id)}を出さない`}><Sprite id={id} size={30} fallback={<span class="pr-fb">{speciesName(id)}</span>} /><span class="pr-neg">出さない</span></span>)}
     </span>
   );
 }
@@ -54,12 +58,15 @@ const HELP = [
 // まとめて入力 (CSV) の書き方
 const CSV_HELP = [
   '1行に1ルール。列は「条件,先発,2体目,3体目」の順 (区切りはカンマ)。',
-  '上の行ほど優先。相手の6体を上から順に調べ、最初に当てはまった行の3体を出します。',
+  '上の行ほど優先。相手の6体に当てはまる行を上から順に重ねて、3体そろったところで決まります。3体を書いた行に当たれば、その3体がそのまま選出です。',
+  '1体・2体だけの行も書けます。「サーフゴー」なら「この相手にはサーフゴーを出す」、先発の列に書けば「この相手にはこいつが先発」。残りは下の行で埋まります。',
+  '先発の列を空けて書くと (例: ルカリオ,,エンペルト)「出すけど先発は下の行に任せる」。',
+  '名前の前に - を付けると「出さない」(例: ルカリオ,,,,-エンペルト)。当てはまった行のどれかで出さないとされたポケモンは、ほかの行に書いてあっても選びません。',
+  'いちばん下に * の行 (3体) を置くと、必ず3体そろいます。それでも足りないときは構築の並び順で埋め、「自動」と表示します。',
   '1行目に見出し「条件,先発,2体目,3体目」があれば読み飛ばします (なくてもよい)。',
   '表計算ソフト (スプレッドシート・Numbers・Excel) からコピーした表 (タブ区切り) もそのまま貼れます。',
   '条件の名前はポケモンの正式名で書きます。リージョンフォームは「ガラルヤドキング」「ヤドキング(ガラル)」のどちらでも可。メガシンカの名前は元のポケモンとして扱います。',
   '選出の名前はこの構築のポケモン。「ガブZ」「ゴリラ」のような略し方でも、構築の中で1体に決まれば読めます。',
-  '選出は1〜3体。2体だけ書いた行は、選出画面で残り1体を自分で選びます。',
   '# より後ろと、// で始まる行は無視します (コメント用)。',
   '名前の間違いや構築にいないポケモンがあると、どの行が悪いかを出して置き換えません。',
 ];
@@ -71,10 +78,12 @@ function HelpBody() {
     <h5>まとめて入力 (CSV) の書き方</h5>
     <ul class="pr-csv-help">{CSV_HELP.map(t => <li>{t}</li>)}</ul>
     <pre class="pr-example">{`条件,先発,2体目,3体目
-フシギバナ,ガブZ,サーフゴー,エンペルト
-ルカリオ+ミミッキュ|ギルガルド,ゴリランダー,ガブZ,ドドゲザン
-2体以上:ドヒドイデ|アーマーガア|ブラッキー,サーフゴー,ガブZ,ドドゲザン
-*,エンペルト,ガブZ,ゴリランダー`}</pre>
+フシギバナ,ガブZ,ゴリランダー,サーフゴー
+ルカリオ,,,,-エンペルト
+カバルドン,エンペルト
+ボーマンダ,,サーフゴー
+*,ドドゲザン,ガブZ,ゴリランダー`}</pre>
+    <p class="hint">例: 相手がカバルドン+ボーマンダなら エンペルト(先発)→サーフゴー→ドドゲザン。ルカリオ+カバルドンなら エンペルトは出さないので ドドゲザン(先発)→ガブZ→ゴリランダー。フシギバナがいれば1行目の3体。</p>
   </>;
 }
 
@@ -88,7 +97,7 @@ export function PickRulesEditor({team, save}) {
   const [editing, setEditing] = useState(-1);
   return (
     <div class="pick-rules">
-      <p class="hint">上から順に調べ、最初に当てはまった行の3体を選出画面に出します。左が先発。行を押すと編集できます。</p>
+      <p class="hint">上から順に、当てはまった行のポケモンを重ねて3体を決めます (3体の行に当たればその3体)。左が先発。行を押すと編集できます。</p>
       <details class="pr-help"><summary>書き方のルール</summary>
         <HelpBody />
       </details>
@@ -101,7 +110,7 @@ export function PickRulesEditor({team, save}) {
               <button class="pr-view" onClick={() => setEditing(i)} aria-label={`ルール${i + 1}を編集`}>
                 <CondIcons cond={c} />
                 <span class="pr-arrow">⇒</span>
-                <PickIcons pick={r.pick} />
+                <PickIcons pick={r.pick} ban={r.ban} />
                 {c.errors.length > 0 && <span class="pr-err">{c.errors.join(' / ')}</span>}
               </button>
               <div class="pr-tools">
@@ -126,6 +135,14 @@ export function PickRulesEditor({team, save}) {
                       {mons.map(m => <option value={m.species}>{speciesName(m.species)}</option>)}
                     </select>
                   ))}
+                </div>
+                <div class="pr-pick pr-banrow">
+                  <span class="muted">出さない:</span>
+                  {(r.ban || []).map((id, k) => <button class="btn ghost sm" onClick={() => upd(l => { l[i].ban = l[i].ban.filter((x, j) => j !== k); if (!l[i].ban.length) delete l[i].ban; })} aria-label={`${speciesName(id)}を出さないを解除`}>{speciesName(id)} ×</button>)}
+                  <select class="input" aria-label="出さないポケモンを追加" value="" onChange={e => { const v = e.currentTarget.value; if (v) upd(l => { l[i].ban = [...new Set([...(l[i].ban || []), v])]; }); }}>
+                    <option value="">＋ 追加</option>
+                    {mons.filter(m => !(r.ban || []).includes(m.species)).map(m => <option value={m.species}>{speciesName(m.species)}</option>)}
+                  </select>
                 </div>
               </div>
               <div class="pr-tools">
@@ -165,24 +182,29 @@ export function PickRulesEditor({team, save}) {
   );
 }
 
-// 選出画面: 当てはまったルールと、その3体をそのまま選ぶボタン
+// 選出画面: 当てはまったルールを重ねて決めた3体と、そのまま選ぶボタン
 export function PickRuleHint({team, battle, started, onApply}) {
   const rules = team?.pickRules;
   const opp = battle.opp.map(o => o.species);
-  const hit = useMemo(() => matchRule(rules, opp), [rules, opp.join()]);
+  const myIds = battle.my.map(m => m?.species);
+  const hit = useMemo(() => decidePick(rules, opp, myIds), [rules, opp.join(), myIds.join()]);
   if (!rules?.length || !opp.length) return null;
   if (!hit) return <div class="box pr-hint"><h4>選出ルール</h4><p class="hint">当てはまるルールがありません。</p></div>;
-  const idx = pickIndexes(hit.rule.pick, battle.my);
+  const idx = pickIndexes(hit.pick, battle.my);
   const same = idx.length && idx.every((x, k) => battle.pick.me[k] === x) && battle.pick.me.length === idx.length;
+  const one = hit.rows.length === 1 && !hit.auto ? rules[hit.rows[0]] : null;
   return (
     <div class="box pr-hint">
-      <h4>選出ルール <span class="num">{hit.index + 1}</span> <CondIcons cond={hit.rule.cond} />{opp.length < 6 && <span class="muted"> (相手{opp.length}/6体で判定)</span>}</h4>
+      <h4>選出ルール {hit.rows.map(i => <span class="num">{i + 1}</span>)}{one && <CondIcons cond={one.cond} />}{opp.length < 6 && <span class="muted"> (相手{opp.length}/6体で判定)</span>}</h4>
       <div class="pr-hint-row">
         <ol class="pr-hint-pick">
           {idx.map((mi, k) => (
-            <li class={cx(k === 0 && 'lead')}><Sprite id={battle.my[mi].species} size={32} />{speciesName(battle.my[mi].species)}{k === 0 && <span class="tag">先発</span>}</li>
+            <li class={cx(k === 0 && 'lead')}><Sprite id={battle.my[mi].species} size={32} />{speciesName(battle.my[mi].species)}{k === 0 && <span class="tag">先発</span>}
+              {!one && <span class="muted pr-from">{hit.from[k] >= 0 ? `行${hit.from[k] + 1}` : '自動'}</span>}</li>
           ))}
         </ol>
+        {hit.bans.length > 0 && <span class="muted">出さない: {hit.bans.map(speciesName).join('・')}</span>}
+        {hit.auto > 0 && <span class="muted">足りない{hit.auto}体は構築の並び順で埋めました</span>}
         {!started && idx.length > 0 && <button class={cx('btn sm', same ? 'ghost' : 'primary')} disabled={same} onClick={() => onApply(idx)}>{same ? 'この選出になっています' : 'この選出にする'}</button>}
       </div>
     </div>

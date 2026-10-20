@@ -89,3 +89,32 @@ test('n体以上は相手の頭数で数える (同じ1体が複数の名前に�
   assert.ok(m('2体以上:ゴーストタイプ', ['mimikyu', 'gengar']));
   assert.ok(!m('2体以上:ゴーストタイプ', ['mimikyu', 'garchomp']));
 });
+
+test('行を重ねて3体を決める (先発・空き枠・出さない・自動で埋める)', async () => {
+  const {decidePick} = await import('../src/engine/pickrule.js');
+  const ids = team.map(t => t.species);
+  const csv = '条件,先発,2体目,3体目\nフシギバナ,ガブZ,ゴリランダー,サーフゴー\nルカリオ,,,,-エンペルト\nカバルドン,エンペルト\nボーマンダ,,サーフゴー\n*,ドドゲザン,ガブZ,ゴリランダー';
+  const {rules, errors} = parseRulesText(csv, team);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(rules[1], {cond: 'ルカリオ', pick: [], ban: ['empoleon']});
+  assert.deepEqual(rules[3].pick, ['', 'gholdengo']);
+  const d = (opp, r = rules) => decidePick(r, opp, ids);
+  // 3体の行がいちばん上で当たれば、その3体
+  assert.deepEqual(d(['venusaur', 'hippowdon']).pick, ['garchomp', 'rillaboom', 'gholdengo']);
+  // カバ → エンペ先発、マンダ → サーフゴー、残りは既定の先頭 (ドドゲザン)
+  const a = d(['hippowdon', 'salamence']);
+  assert.deepEqual(a.pick, ['empoleon', 'gholdengo', 'kingambit']);
+  assert.deepEqual(a.from, [2, 3, 4]);
+  // ルカリオがいればエンペルトは出さない
+  assert.deepEqual(d(['lucario', 'hippowdon']).pick, ['kingambit', 'garchomp', 'rillaboom']);
+  assert.deepEqual(d(['lucario']).bans, ['empoleon']);
+  // 先発が空 → 下の行の先発、それもなければ最初に入った1体
+  assert.deepEqual(d(['salamence']).pick, ['kingambit', 'gholdengo', 'garchomp']);
+  // * が無くて足りなければ構築の並び順で埋める
+  const r2 = parseRulesText('カバルドン,,サーフゴー', team).rules;
+  const b = d(['hippowdon'], r2);
+  assert.equal(b.pick.length, 3); assert.equal(b.pick[0], 'gholdengo'); assert.equal(b.auto, 2);
+  // 書き出し → 読み直し
+  assert.deepEqual(parseRulesText(rulesToText(rules), team).rules, rules);
+  assert.equal(parseRulesText('ルカリオ,A,B,C,D', team).errors.length > 0, true);
+});

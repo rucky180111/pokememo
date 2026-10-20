@@ -102,11 +102,55 @@ export function matchRule(rules, oppSpecies) {
   return null;
 }
 
+// 当てはまる行を上から順に重ねて3体を決める。
+//   行の1列目 (先発) … 先発がまだ決まっていなければ先発にする (決まっていれば2体目以降に入れる)
+//   行の2・3列目     … 空きがあれば2体目以降に入れる
+//   出さない (-名前) … 当てはまった行のどれかで「出さない」とされたポケモンは、どの行でも選ばない
+// 3体そろった時点で終わり。3体の行がいちばん上で当たれば、これまでどおりその3体になる。
+// 最後まで見ても足りなければ構築の並び順で埋める (auto)。先発が空なら2体目以降の最初を先発にする。
+// teamIds: 自分の構築の種族ID (埋める用)。返り値 {pick:[種族ID], from:[行番号 or -1], rows:[使った行], bans:[種族ID], auto}
+export function decidePick(rules, oppSpecies, teamIds = []) {
+  if (!rules?.length || !oppSpecies?.filter(Boolean).length) return null;
+  const same = (a, b) => a === b || baseSpeciesId(a) === baseSpeciesId(b);
+  const hits = [];
+  rules.forEach((r, i) => { const c = parseCond(r.cond); if (c.errors.length && !c.alts.length && !c.any) return; if (condMatches(c, oppSpecies)) hits.push(i); });
+  if (!hits.length) return null;
+  const bans = [...new Set(hits.flatMap(i => rules[i].ban || []))];
+  const banned = id => bans.some(b => same(b, id));
+  let lead = null, leadFrom = -1;
+  const mem = []; // {id, from}
+  const has = id => (lead && same(lead, id)) || mem.some(m => same(m.id, id));
+  const full = () => (lead ? 1 : 0) + mem.length >= 3;
+  const rows = [];
+  for (const i of hits) {
+    if (lead && full()) break;
+    const pk = rules[i].pick || [];
+    let used = false;
+    pk.forEach((id, k) => {
+      if (!id || banned(id)) return;
+      if (k === 0 && !lead) {
+        const j = mem.findIndex(m => same(m.id, id));
+        if (j >= 0) mem.splice(j, 1);
+        else if (full()) mem.pop(); // 先発を入れるため、いちばん後で入った1体を外す
+        lead = id; leadFrom = i; used = true; return;
+      }
+      if (has(id) || full()) return;
+      mem.push({id, from: i}); used = true;
+    });
+    if (used) rows.push(i);
+  }
+  if (!lead && mem.length) { const m = mem.shift(); lead = m.id; leadFrom = m.from; }
+  const out = lead ? [{id: lead, from: leadFrom}, ...mem] : [...mem];
+  let auto = 0;
+  for (const id of teamIds) { if (out.length >= 3) break; if (!id || banned(id) || out.some(o => same(o.id, id))) continue; out.push({id, from: -1}); auto++; }
+  return {pick: out.map(o => o.id), from: out.map(o => o.from), rows, bans, auto};
+}
+
 // ルールの選出 (種族ID) → 自分の手持ちの番号。同じ種族が2体いれば先の方から
 export function pickIndexes(pick, myMons) {
   const used = new Set();
   const out = [];
-  for (const sid of pick || []) {
+  for (const sid of (pick || []).filter(Boolean)) {
     const i = myMons.findIndex((m, k) => !used.has(k) && m && (m.species === sid || baseSpeciesId(m.species) === baseSpeciesId(sid)));
     if (i >= 0) { used.add(i); out.push(i); }
   }
@@ -149,19 +193,21 @@ export function parseRulesText(text, teamMons) {
       if (n === 0 && /^条件$/.test(cells[0])) return; // 見出し
       if (cells.length < 2) { errors.push(`${n + 1}行目: 「条件,先発,2体目,3体目」の形で書いてください`); return; }
       [cond, ...names] = cells;
-      names = names.slice(0, 3);
     }
     cond = String(cond || '').trim() || '*';
     const pc = parseCond(cond);
     pc.errors.forEach(e => errors.push(`${n + 1}行目: ${e}`));
-    const pick = [];
-    for (const nm of names.filter(Boolean)) {
-      const sid = teamSpecies(nm, teamMons);
-      if (!sid) errors.push(`${n + 1}行目: 「${nm}」は構築にいません`);
-      else pick.push(sid);
+    const pick = [], ban = [];
+    const look = nm => { const sid = teamSpecies(nm, teamMons); if (!sid) errors.push(`${n + 1}行目: 「${nm}」は構築にいません`); return sid; };
+    for (const nm of names.map(x => x.trim())) {
+      const b = /^[-－×!！]\s*(.+)$/.exec(nm);
+      if (b) { const sid = look(b[1]); if (sid) ban.push(sid); continue; }
+      if (pick.length >= 3) { if (nm) errors.push(`${n + 1}行目: 選出は3体までです`); continue; }
+      pick.push(nm ? look(nm) || '' : '');
     }
-    if (!names.filter(Boolean).length) errors.push(`${n + 1}行目: 選出が入っていません`);
-    rules.push({cond, pick});
+    while (pick.length && !pick[pick.length - 1]) pick.pop();
+    if (!names.some(x => x.trim())) errors.push(`${n + 1}行目: 選出が入っていません`);
+    rules.push(ban.length ? {cond, pick, ban} : {cond, pick});
   });
   return {rules, errors};
 }
@@ -169,5 +215,9 @@ export function parseRulesText(text, teamMons) {
 // ルール一覧 → 一括入力の文字列 (書き出し用)
 export function rulesToText(rules) {
   const nm = id => dex.species[id]?.j || id;
-  return [RULES_HEADER, ...(rules || []).map(r => [r.cond || '*', ...(r.pick || []).map(nm)].join(','))].join('\n');
+  return [RULES_HEADER, ...(rules || []).map(r => {
+    const cells = [r.cond || '*', ...(r.pick || []).map(id => (id ? nm(id) : ''))];
+    if (r.ban?.length) { while (cells.length < 4) cells.push(''); cells.push(...r.ban.map(id => '-' + nm(id))); }
+    return cells.join(',');
+  })].join('\n');
 }

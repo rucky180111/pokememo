@@ -70,6 +70,19 @@ for (const [vw, name] of [[{width: 390, height: 844}, 'phone'], [{width: 1180, h
   check(JSON.stringify(order) === JSON.stringify([['1', 'ゴリランダー'], ['2', 'ガブリアス'], ['3', 'ドドゲザン']]), `${name}: この選出にする で順番どおり選ばれる ${JSON.stringify(order)}`);
   check(await page.getByRole('button', {name: 'この選出になっています'}).count() === 1, `${name}: 反映済みの表示`);
   await page.screenshot({path: `${out}/pickrules-select-${name}.png`, fullPage: false});
+  // 1体・先発空きの行を重ねて3体になる
+  await idb(page, 'const g = s.get("team:prtest"); g.onsuccess = () => { const t = g.result; t.pickRules = [{cond: "カバルドン", pick: ["", "gholdengo"]}, {cond: "カイリュー", pick: ["garchomp"]}, {cond: "ルカリオ", pick: [], ban: ["rillaboom"]}, {cond: "*", pick: ["kingambit", "rillaboom", "empoleon"]}]; s.put(t, "team:prtest"); };', null);
+  await page.reload();
+  await page.getByText('選出', {exact: true}).first().click();
+  await page.waitForSelector('.pr-hint');
+  const names = await page.locator('.pr-hint-pick li').evaluateAll(els => els.map(e => e.textContent));
+  check(names.length === 3 && /ガブリアス.*先発/.test(names[0]) && /サーフゴー/.test(names[1]) && /ドドゲザン/.test(names[2]), `${name}: 行を重ねて3体 ${JSON.stringify(names)}`);
+  check(/出さない: ゴリランダー/.test(await page.locator('.pr-hint').innerText()), `${name}: 出さないの表示`);
+  await page.getByRole('button', {name: 'この選出にする'}).click();
+  await page.waitForTimeout(200);
+  const order2 = await page.locator('.sel-mon.on').evaluateAll(els => els.map(e => [e.querySelector('.no').textContent, e.querySelector('.nm').textContent]).sort());
+  check(JSON.stringify(order2) === JSON.stringify([['1', 'ガブリアス'], ['2', 'サーフゴー'], ['3', 'ドドゲザン']]), `${name}: 重ねた3体を選べる ${JSON.stringify(order2)}`);
+  await page.screenshot({path: `${out}/pickrules-stack-${name}.png`, fullPage: false});
   await ctx.close();
 }
 await browser.close();

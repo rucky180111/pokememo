@@ -1481,3 +1481,9 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .field-select:focus-within{outline:2px solid var(--accent);outline-offset:2px}
 .field-select option{color:var(--text);background:var(--surface)}
 .field-clear{border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--muted);font-size:22px;min-width:36px;min-height:36px;line-height:1;touch-action:manipulation}
+.pr-slot { font-size: 11px; padding: 6px 6px; border: 1px dashed var(--line, #8886); border-radius: 8px; color: var(--muted, #888); white-space: nowrap; }
+.pr-ban .sprite, .pr-ban .pr-fb { opacity: .45; filter: grayscale(1); }
+.pr-banrow { align-items: center; flex-wrap: wrap; gap: 4px; }
+.pr-banrow select { width: auto; }
+.pr-from { font-size: 11px; margin-left: 4px; }
+.pr-hint h4 .num + .num { margin-left: 3px; }
