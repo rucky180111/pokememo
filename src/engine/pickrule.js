@@ -74,21 +74,18 @@ export function parseCond(text) {
   return {any: false, alts, errors};
 }
 
-const hit = (a, opp) => (a.type ? opp.some(o => (dex.species[o]?.t || []).includes(a.type)) : a.species.some(id => opp.includes(id)));
-const countHits = (any, opp) => {
-  let n = 0;
-  for (const a of any) {
-    if (a.type) n += opp.filter(o => (dex.species[o]?.t || []).includes(a.type)).length;
-    else if (hit(a, opp)) n++;
-  }
-  return n;
-};
+// 当てはまる相手の頭数 (同じ1体が複数の名前に当たっても1体と数える。メガの姿は元の種族としても見る)
+const countHits = (any, mons) => mons.filter(o => {
+  const ids = [o, baseSpeciesId(o)];
+  const types = dex.species[o]?.t || [];
+  return any.some(a => (a.type ? types.includes(a.type) : a.species.some(id => ids.includes(id))));
+}).length;
 // 相手の種族ID一覧が条件を満たすか
 export function condMatches(cond, oppSpecies) {
   if (cond.any) return true;
-  const opp = [...new Set(oppSpecies.filter(Boolean).flatMap(s => [s, baseSpeciesId(s)]))];
+  const mons = [...new Set(oppSpecies.filter(Boolean))];
   return cond.alts.some(terms => terms.every(t => {
-    const n = countHits(t.any, opp);
+    const n = countHits(t.any, mons);
     return t.neg ? n === 0 : n >= t.min;
   }));
 }

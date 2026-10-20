@@ -62,3 +62,13 @@ test('間違った行はエラーで知らせる', () => {
   const {errors} = parseRulesText('ルカリオ ゴリランダー\nピカチュウッ => ガブZ\nルカリオ => ピカチュウ', team);
   assert.equal(errors.length, 3);
 });
+
+test('n体以上は相手の頭数で数える (同じ1体が複数の名前に当たっても1体)', () => {
+  const m = (c, opp) => condMatches(parseCond(c), opp);
+  // ヤドキング は ヤドキング(ガラル) も指すので、ガラルヤドキング1体で2回数えない
+  assert.ok(!m('2体以上:ガラルヤドキング|ヤドキング|ドヒドイデ', ['slowkinggalar', 'garchomp']));
+  assert.ok(m('2体以上:ガラルヤドキング|ヤドキング|ドヒドイデ', ['slowkinggalar', 'toxapex']));
+  assert.ok(!m('2体以上:メタグロス|ドヒドイデ', ['metagrossmega']));
+  assert.ok(m('2体以上:ゴーストタイプ', ['mimikyu', 'gengar']));
+  assert.ok(!m('2体以上:ゴーストタイプ', ['mimikyu', 'garchomp']));
+});
