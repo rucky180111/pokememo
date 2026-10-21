@@ -3,7 +3,7 @@
 //   技を押す → 残りHPを入力して記録。見逃したHPは不明のまま記録できる。
 //   先に記録したほうが先に動いた扱い。両方が動いたら右端のターン終了。
 //   分かっていること (自分の持ち物・特性、判明した相手の持ち物・特性) は聞き直さずに自動で反映する。
-import {useEffect, useLayoutEffect, useMemo, useState} from 'preact/hooks';
+import {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf, STAT_JA, STAT_KEYS} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility, typesOf, disguiseIntact, defaultHits} from '../engine/calc.js';
 import {condOf, buildOf, other, turnNumber, PIVOT_MOVES, faintedCount, pickCount, defaultAbilityResolver} from '../engine/battle.js';
@@ -155,6 +155,10 @@ export function FieldBar({battle, mut, usage}) {
 
 // ---- 1体ぶんの枠 ----
 function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, commit, setSheet, pred, preds, megaPrev, setMegaPrev}) {
+  const actionRef = useRef(null);
+  useLayoutEffect(() => {
+    if(act?.kind === 'move' && act.side === side && act.mon === mon && actionRef.current) actionRef.current.scrollTop = 0;
+  }, [act?.move,act?.side,act?.mon,act?.tgt?.side,act?.tgt?.mon]);
   const sd = battle.state.sides[side];
   const bench = benchOf(battle, side);
   const live = bench.filter(i => !condOf(battle, side, i)?.fainted);
@@ -198,14 +202,14 @@ function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, co
       <div class="pl-main">
         {empty ? <><div class="pl-head"><span class="pl-empty">{needSend ? (side === 'me' ? '先発を選択' : '相手の先発を選択') : '場にいません'}</span>{benchControls}</div>{actionArea()}</>
           : <MonView side={side} mon={mon} battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} act={act} setAct={setAct} targeted={targeted} done={done} setSheet={setSheet}
-            benchControls={benchControls} actionArea={actionArea}
+            benchControls={benchControls} actionArea={actionArea} actionRef={actionRef}
             megaPrev={megaPrev[`${side}${mon}`] || null} setMegaPrev={fm => setMegaPrev(m => ({...m, [`${side}${mon}`]: fm}))} />}
       </div>
     </section>
   );
 }
 
-function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, targeted, done, setSheet, megaPrev, setMegaPrev, benchControls, actionArea}) {
+function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, targeted, done, setSheet, megaPrev, setMegaPrev, benchControls, actionArea, actionRef}) {
   const sd = battle.state.sides[side];
   const build = ctx.build(side, mon);
   const raw0 = condOf(battle, side, mon);
@@ -290,7 +294,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
           })}
         </div>
 
-      </div><div class="pl-action-column">{actionArea({suggestions})}</div></div>
+      </div><div class="pl-action-column" ref={actionRef}>{actionArea({suggestions})}</div></div>
       <SideState battle={battle} side={side} raw={raw} isMega={isMega} abil={side === 'me' || buildOf(battle, side, mon).ability ? abil : ''} />
       {pick === 'item' && <Picker kind="items" title="相手の持ち物" allowClear clearLabel="不明に戻す" rank={view?.items?.length ? Object.fromEntries(view.items) : null} onClose={() => setPick(null)}
         filter={id => !dex.items[id].ms || !!dex.items[id].ms[opp.species]}
@@ -503,6 +507,8 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
     : foes.map(mon => ({side: other(side), mon}));
   const tgtHp = tgt ? (condOf(battle, tgt.side, tgt.mon)?.hp ?? 100) : 100;
   const tgtMax = tgt?.side === 'me' ? maxHPOf(battle, tgt.mon) : null;
+  const targetValue = tgtMax ? Math.round(tgtMax * (act.hp ?? tgtHp) / 100) : Math.round(act.hp ?? tgtHp);
+  const changeTarget = n => setAct(a => ({...a,hp: Math.max(0,Math.min(tgtMax || 100,n)) / (tgtMax || 100) * 100}));
   const set = patch => setAct(a => ({...a, ...patch}));
   const base = {side, mon, type: 'move', move: act.move, crit: act.crit, sameTurn: true, target: battle.format === 'double' ? tgt : null};
   const disguiseOnly = damaging && tgt && !r?.immune && disguiseIntact(buildOf(battle,tgt.side,tgt.mon),condOf(battle,tgt.side,tgt.mon)) &&
@@ -630,12 +636,13 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
       </div>}
       {act.stage === 'hp' && (!disguiseOnly || act.manualDisguiseHp) && <>
         <div class="pa-quick-fields">
-        <div class="pa-hp"><label>{SIDE_JA[tgt.side]}の残りHP<input class="input num" type="number" inputMode="numeric" min={0} max={tgtMax || 100} placeholder="任意" aria-label="残りHP" value={act.hp == null ? '' : tgtMax ? Math.round(tgtMax * act.hp / 100) : act.hp} onInput={e => { const v = e.currentTarget.value; set({hp: v === '' ? null : Math.max(0, Math.min(100, tgtMax ? Number(v) / tgtMax * 100 : Number(v)))}); }} /></label><span>{tgtMax ? `/${tgtMax}` : '%'}</span><button class="btn sm" onClick={() => set({hp: 0})}>ひんし</button></div>
+        <div class="pa-hp"><label>{SIDE_JA[tgt.side]}の残りHP<input class="input num" type="number" inputMode="numeric" min={0} max={tgtMax || 100} placeholder="任意" aria-label="残りHP" value={act.hp == null ? '' : targetValue} onInput={e => { const v = e.currentTarget.value; set({hp: v === '' ? null : Math.max(0, Math.min(100, tgtMax ? Number(v) / tgtMax * 100 : Number(v)))}); }} /></label><span>{tgtMax ? `/${tgtMax}` : '%'}</span><button class="btn sm" aria-label="残りHPの調整を1減らす" disabled={targetValue <= 0} onClick={() => changeTarget(targetValue-1)}>−</button><button class="btn sm" aria-label="残りHPの調整を1増やす" disabled={targetValue >= (tgtMax || 100)} onClick={() => changeTarget(targetValue+1)}>＋</button></div>
         {hpInputs}
         <small class="hint pa-unknown">分かったHPだけ入力。空欄は未確認で記録します。</small>
         </div>
-        {variableFx ? <details class="pa-fine-adjust"><summary>残りHPをスライダーで調整</summary><StepRange value={tgtMax ? Math.round(tgtMax * (act.hp ?? tgtHp) / 100) : Math.round(act.hp ?? tgtHp)} max={tgtMax || 100} label="残りHPの調整" onChange={n => set({hp: tgtMax ? n / tgtMax * 100 : n})} /></details>
-          : <StepRange value={tgtMax ? Math.round(tgtMax * (act.hp ?? tgtHp) / 100) : Math.round(act.hp ?? tgtHp)} max={tgtMax || 100} label="残りHPの調整" onChange={n => set({hp: tgtMax ? n / tgtMax * 100 : n})} />}
+        {variableFx ? <details class="pa-fine-adjust"><summary>残りHPをスライダーで調整</summary><StepRange buttons={false} value={targetValue} max={tgtMax || 100} label="残りHPの調整" onChange={changeTarget} /></details>
+          : <StepRange buttons={false} value={targetValue} max={tgtMax || 100} label="残りHPの調整" onChange={changeTarget} />}
+        <button class="btn ghost sm pa-faint" onClick={() => set({hp:0})}>ひんし</button>
         {act.pierce && <p class="hint">まもるを貫通 (1/4)</p>}
         {sec.length > 0 && <div class="chips"><span class="muted">追加効果:</span>{sec.map(x => <button class={cx('chip sm', secOn(x) && 'on')} onClick={() => set({secFx: secOn(x) ? act.secFx.filter(y => JSON.stringify(y) !== JSON.stringify(x.e)) : [...act.secFx, x.e]})}>{x.label}</button>)}</div>}
         {tItem && consumable(tItem) && !((tc.healBlock || 0) >= turnNumber(battle) && /berry$/.test(tItem) && tItem !== 'lumberry') && <div class="chips"><button class={cx('chip sm', act.defItem === tItem && 'on')} onClick={() => set({defItem: act.defItem === tItem ? '' : tItem})}>{itemName(tItem)}が発動</button></div>}
