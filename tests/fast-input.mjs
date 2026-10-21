@@ -36,7 +36,7 @@ try {
     check(await mine.getByRole('button', {name:'行動不能', exact:true}).isVisible(), true, '行動不能を通常欄に表示');
     check(await mine.getByRole('button', {name:'まもられた', exact:true}).isVisible(), true, 'まもられたも結果欄に並ぶ');
     check(await hp.inputValue(), '', '技を選ぶと空欄のHP入力がすぐ開く');
-    check(await mine.getByRole('button', {name:'記録', exact:true}).isDisabled(), true, '予測値を未確認のまま保存できない');
+    check(await mine.getByRole('button', {name:'記録', exact:true}).isEnabled(), true, 'HP空欄でも未確認として記録できる');
     check(await mine.locator('.mp-table').isVisible(), true, '入力中も能力表が常時見える');
     check(await mine.getByRole('button', {name:'こうげきを1段階上げる', exact:true}).isVisible(), true, 'ランク操作が常時見える');
     await mine.getByRole('button', {name:'こうげきを1段階上げる', exact:true}).click();
@@ -112,7 +112,7 @@ try {
     await opp.getByRole('button', {name:'残りHPの調整を1増やす', exact:true}).click();
     check(await opp.getByLabel('残りHP', {exact:true}).inputValue(), '100', '自分の残りHPを実数で1増やす');
     await opp.getByLabel('残りHP', {exact:true}).fill('');
-    await opp.getByRole('button', {name:'HP不明で記録'}).click();
+    await opp.getByRole('button', {name:'記録'}).click();
     let saved = await state();
     check(saved.turns[0].acts[1].hpUnknown, true, 'HP不明でも行動を記録');
     check(saved.turns[0].acts[1].hpAfter, undefined, '予測HPを実測として保存しない');
@@ -158,7 +158,7 @@ try {
   await hp.fill('40');
   await panel.locator('.pa-h').getByRole('button', {name:'ゲンガー', exact:true}).click();
   check(await hp.inputValue(), '', 'ダブルの対象変更でHPをリセット');
-  check(await panel.getByRole('button', {name:'記録', exact:true}).isDisabled(), true, '別の対象のHPで記録できない');
+  check(await panel.getByRole('button', {name:'記録', exact:true}).isEnabled(), true, '対象を変更した後も空欄は未確認として記録できる');
   await hp.fill('25');
   await panel.locator('.pa-h').getByRole('button', {name:'ゲンガー', exact:true}).click();
   check(await hp.inputValue(), '25', '同じ対象を押したときはHPを保持');

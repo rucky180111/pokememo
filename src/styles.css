@@ -1493,3 +1493,25 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .pl-info>.pl-dd{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pl-info>.chip{flex-shrink:0}
 .pl-info>.tag{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 任意の観測値と、1つの主操作を近づける。GOV.UK / WCAGの調査: DESIGN_REVIEW.md */
+.pa-quick-fields{display:flex;flex-direction:column;gap:4px;min-width:0}
+.pa-quick-fields .pa-hp{margin:0;gap:4px;flex-wrap:nowrap}
+.pa-quick-fields .pa-hp label{display:flex;flex:1;min-width:0;align-items:center;justify-content:space-between;font-size:11px;gap:3px}
+.pa-quick-fields .pa-hp input{min-height:32px;width:62px;flex-shrink:0}
+.pa-quick-fields .pa-hp .btn{min-width:32px;min-height:32px;padding:3px}
+.pa-quick-fields .pa-unknown{font-size:10px;line-height:1.3}
+.pl-action-column .pa-record{position:sticky;bottom:0;top:0;z-index:3;background:var(--surface);margin:0;padding:3px 0}
+.pl-action-column .pa-record .btn{min-height:44px;font-size:14px;font-weight:700}
+.pl-act.move .pa-fine-adjust{font-size:11px;padding:5px 0}
+.pa-fine-adjust summary{cursor:pointer;min-height:30px;display:flex;align-items:center}
+.pl-action-column .quick-correct{min-height:40px}
+.quick-correction .pa-hp{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.quick-correction .pa-hp .btn,.quick-correction>.btn{min-height:44px;min-width:44px}
+.quick-correction input{min-height:44px;max-width:90px}
+@media(min-width:980px){
+ .board-workspace .pl-act.move>.pa-quick-fields{order:2}
+ .board-workspace .pl-act.move>.pa-record{order:3}
+ .board-workspace .pl-act.move>.step-range{order:4}
+ .board-workspace .pl-act.move>.pa-fine-adjust{order:5}
+ .board-workspace .pl-act.move>.toggle{order:5}
+}

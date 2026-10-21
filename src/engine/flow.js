@@ -921,6 +921,26 @@ export function editAct(b, ti, ai, input, usage) {
   return replay(b, usage, {fromActs});
 }
 
+/** 見逃した行動後HPだけを補正する。別のポケモンの値や予測値は取り込まない。 */
+export function correctActHP(b, ti, ai, observations, usage) {
+  const a = b.turns[ti]?.acts[ai];
+  if (!a?.in || a.type !== 'move' || !canReplay(b) || !observations?.length) return false;
+  const target = a.target || a.in.target;
+  const input = clone(a.in);
+  for (const h of observations) {
+    const actor = h.side === a.side && h.mon === a.mon;
+    const receiver = target && h.side === target.side && h.mon === target.mon;
+    if ((!actor && !receiver) || !Number.isFinite(h.hpAfter) || h.hpAfter < 0 || h.hpAfter > 100) return false;
+    if (receiver) {
+      input.hpAfter = h.hpAfter;
+      delete input.hpUnknown; delete input.endHp; delete input.healedBy; delete input.postResidual;
+    }
+    if (actor) { input.atkHpAfter = h.hpAfter; delete input.selfHpUnknown; }
+    input.observedHp = [...(input.observedHp || []).filter(x => x.side !== h.side || x.mon !== h.mon), {...h}];
+  }
+  return editAct(b, ti, ai, input, usage);
+}
+
 /**
  * イリュージョン (ゾロアーク) の正体が分かった: いま場にいる相手 (化けていた姿) を、最後に場に出たところから
  * ゾロアーク (zIdx) に置き換えて、全体を入れ直す。化けていた間のダメージなどはゾロアークの記録になる。

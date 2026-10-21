@@ -9,7 +9,7 @@ import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility
 import {condOf, buildOf, other, turnNumber, PIVOT_MOVES, faintedCount, pickCount, defaultAbilityResolver} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {damageRange} from '../engine/damage-range.js';
-import {revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, editAct, reopenLastTurn, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
+import {revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, editAct, correctActHP, reopenLastTurn, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
 import {speedOutlook} from '../engine/assume.js';
 import {finalSpeed} from '../engine/calc.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, Confirm, cx, fmtPct, rate} from './common.jsx';
@@ -192,7 +192,7 @@ function Panel({side, mon, slot, battle, ctx, mut, usage, toast, act, setAct, co
           })}
         </div>
   );
-  const actionArea = extra => <ActionArea {...extra} side={side} mon={mon} slot={slot} battle={battle} ctx={ctx} usage={usage} act={mine ? act : null} setAct={setAct} commit={commit} needSend={needSend} waitEnd={waitEnd} done={done} pred={pred} preds={preds} />;
+  const actionArea = extra => <ActionArea {...extra} side={side} mon={mon} slot={slot} battle={battle} ctx={ctx} mut={mut} toast={toast} usage={usage} act={mine ? act : null} setAct={setAct} commit={commit} needSend={needSend} waitEnd={waitEnd} done={done} pred={pred} preds={preds} />;
   return (
     <section class={cx('pl', side, fainted && 'fainted', mine && 'acting')}>
       <div class="pl-main">
@@ -421,7 +421,7 @@ function HpBar({side, mon, battle, raw, max, targeted, mut, usage}) {
 }
 
 // ---- 行動の入力 (技 → HP・結果 → 記録) ----
-function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, needSend, waitEnd, done, pred, preds, suggestions}) {
+function ActionArea({side, mon, slot, battle, ctx, mut, toast, usage, act, setAct, commit, needSend, waitEnd, done, pred, preds, suggestions}) {
   if (waitEnd) return <div class="pl-act hint-box">ターン終了後に交代</div>;
   if (needSend && (!act || act.kind !== 'send')) return <div class="pl-act hint-box">次のポケモンを選択</div>;
   if (act?.kind === 'send') {
@@ -444,7 +444,40 @@ function ActionArea({side, mon, slot, battle, ctx, usage, act, setAct, commit, n
   }
   if (act?.kind === 'move') return <MoveAction side={side} mon={mon} battle={battle} ctx={ctx} usage={usage} act={act} setAct={setAct} commit={commit} r={pred} preds={preds} />;
   if (mon == null) return null;
-  return done ? <div class="pl-act hint-box done">行動済み</div> : <div class="pl-act hint-box"><span>技または交代を選んで記録</span><button class="btn sm cant-direct" onClick={() => commit(b => addAct(b, {side, mon, type: 'move', cant: true, sameTurn: true}, usage))}>行動不能（技不明）</button>{suggestions}</div>;
+  return done ? <RecentActionHP battle={battle} side={side} mon={mon} mut={mut} usage={usage} toast={toast} /> : <div class="pl-act hint-box"><span>技または交代を選んで記録</span><button class="btn sm cant-direct" onClick={() => commit(b => addAct(b, {side, mon, type: 'move', cant: true, sameTurn: true}, usage))}>行動不能（技不明）</button>{suggestions}</div>;
+}
+
+function RecentActionHP({battle, side, mon, mut, usage, toast}) {
+  const [editing,setEditing] = useState(null);
+  const [values,setValues] = useState({});
+  const ti = battle.turns.length - 1, turn = battle.turns[ti];
+  const ai = turn?.acts.findLastIndex(a => a.type === 'move' && a.side === side && a.mon === mon && a.move && !a.flags?.miss && !a.flags?.cant && !a.flags?.protect) ?? -1;
+  const a = turn?.acts[ai];
+  const receiver = a?.target || a?.in?.target;
+  const hpMove = !!(DRAIN[a?.move] || RECOIL[a?.move] || ['strengthsap','painsplit'].includes(a?.move) || a?.in?.selfFx?.length || a?.in?.selfHpUnknown);
+  const targets = [...(receiver && (dex.moves[a?.move]?.c !== 'Z' || a?.move === 'painsplit') ? [receiver] : []), ...(hpMove ? [{side,mon}] : [])];
+  const variableOwn = !!(DRAIN[a?.move] || RECOIL[a?.move] && !HALF_RECOIL.has(a.move) || ['strengthsap','painsplit'].includes(a?.move));
+  const pending = targets.filter(t => {
+    if(a?.in?.observedHp?.some(h => h.side === t.side && h.mon === t.mon)) return false;
+    if(t.side === side && t.mon === mon) return !Number.isFinite(a?.in?.atkHpAfter) && (a?.in?.selfHpUnknown || variableOwn);
+    return a?.in?.hpUnknown || a?.in?.hpAfter == null && !a?.disguiseHit && !a?.in?.endured && a?.in?.defItem?.item !== 'focussash';
+  }).length;
+  const open = () => {setEditing({ti,ai,input:JSON.stringify(a.in)});setValues({});};
+  const save = () => {
+    const observations = targets.flatMap(t => values[`${t.side}${t.mon}`] == null ? [] : [{...t,hpAfter:values[`${t.side}${t.mon}`]}]);
+    let ok = false;
+    mut(b => {if(JSON.stringify(b.turns[editing.ti]?.acts[editing.ai]?.in) === editing.input) ok = correctActHP(b,editing.ti,editing.ai,observations,usage);});
+    if(ok){setEditing(null);toast('行動後HPを補正し、その後の盤面と推定を再計算しました');}
+    else toast('記録が変わっています。一度閉じて選び直してください');
+  };
+  return <div class="pl-act hint-box done"><b>行動済み</b>{a && targets.length > 0 && canReplay(battle) && <>
+    <small>{pending ? `HP ${pending}件が未確認` : moveName(a.move)}</small>
+    <button class="btn sm quick-correct" onClick={open}>直前のHPを補正</button>
+  </>}{editing && <Sheet title={`${moveName(a.move)}の行動後HPを補正`} onClose={() => setEditing(null)}><div class="pad quick-correction">
+    <p class="hint">分かったHPだけ入力してください。この行動の直後の値として記録し直します。</p>
+    {targets.map(t => <ObservedHP key={`${t.side}${t.mon}`} battle={battle} target={t} value={values[`${t.side}${t.mon}`]} onChange={v => setValues(p => ({...p,[`${t.side}${t.mon}`]:v}))} />)}
+    <button class="btn primary" disabled={!Object.values(values).some(v => v != null)} onClick={save}>HPを補正する</button>
+  </div></Sheet>}</div>;
 }
 
 function ObservedHP({battle, target, value, onChange, when = '行動後HP', compact = false}) {
@@ -453,7 +486,7 @@ function ObservedHP({battle, target, value, onChange, when = '行動後HP', comp
   const number = value == null ? null : Math.round(value * max / 100);
   const change = n => onChange(n == null ? null : target.side === 'me' ? Math.max(0, Math.min(max, n)) / max * 100 : Math.max(0, Math.min(100, n)));
   return <div class="pa-hp">
-    <label>{compact ? when : label}<input class="input num" aria-label={label} type="number" inputMode="numeric" min={0} max={max} step={1} placeholder="未入力" value={number ?? ''} onInput={e => change(e.currentTarget.value === '' ? null : Number(e.currentTarget.value))} /></label>
+    <label>{compact ? `${SIDE_JA[target.side]}のHP` : label}<input class="input num" aria-label={label} type="number" inputMode="numeric" min={0} max={max} step={1} placeholder="任意" value={number ?? ''} onInput={e => change(e.currentTarget.value === '' ? null : Number(e.currentTarget.value))} /></label>
     <span>{target.side === 'me' ? `/${max}` : '%'}</span>
     <button class="btn sm" aria-label={`${label}を1減らす`} disabled={number == null || number <= 0} onClick={() => change(number - 1)}>−</button>
     <button class="btn sm" aria-label={`${label}を1増やす`} disabled={number == null || number >= max} onClick={() => change(number + 1)}>＋</button>
@@ -481,7 +514,6 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
   const hpTargets = act.move === 'painsplit' ? [{side, mon}, ...(tgt ? [tgt] : [])] : act.move === 'strengthsap' ? [reflected ? tgt : {side, mon}] : variableFx ? [{side, mon}] : [];
   const hpKey = t => `${t.side}${t.mon}`;
   const observedHp = hpTargets.filter(t => act.resultHp?.[hpKey(t)] != null).map(t => ({...t, hpAfter: act.resultHp[hpKey(t)]}));
-  const missingResultHp = hpTargets.some(t => act.resultHp?.[hpKey(t)] == null);
   const record = extra => {
     const observed = extra.miss || extra.cant || extra.protect ? [] : observedHp;
     commit((b, forme) => addAct(b, {...base, ...extra, ...(forme ? {mega: true, megaForme: forme} : {}), ...(observed.length ? {observedHp: observed} : {})}, usage));
@@ -502,10 +534,10 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
   const tItem = tc && !tc.itemGone ? tb.item : '';
   const save = () => {
     const hp = act.hp == null ? null : Math.max(0, Math.min(100, act.hp));
-    const extra = {hpAfter: act.afterResidual ? undefined : hp ?? undefined, hpUnknown: act.afterResidual || hp == null || undefined, ...(act.afterResidual && hp != null ? {endHp: {...tgt, hpAfter: hp}} : {}), pierce: act.pierce || undefined, secFx: act.secFx.length ? act.secFx : undefined, inflict: act.inflict || '', selfFx: hp == null || act.afterResidual ? [] : sureSelfFx(battle, side, mon, tgt, act.move, hp), exact: tgt.side === 'me'};
+    const extra = {hpAfter: act.afterResidual ? undefined : hp ?? undefined, hpUnknown: act.afterResidual || hp == null || undefined, ...(act.afterResidual && hp != null ? {endHp: {...tgt, hpAfter: hp}} : {}), pierce: act.pierce || undefined, secFx: act.secFx.length ? act.secFx : undefined, inflict: act.inflict || '', selfFx: sureSelfFx(battle, side, mon, tgt, act.move, hp), exact: tgt.side === 'me'};
     const ownHp = observedHp.find(h => h.side === side && h.mon === mon);
     if (ownHp) extra.atkHpAfter = ownHp.hpAfter;
-    if ((hp == null || act.afterResidual) && sureSelfFx(battle, side, mon, tgt, act.move, null).length) extra.selfHpUnknown = true;
+    if ((hp == null || act.afterResidual) && variableFx && !ownHp) extra.selfHpUnknown = true;
     if (act.defItem) extra.defItem = {item: act.defItem, consumed: consumable(act.defItem)};
     if (act.defItem === 'focussash') { extra.endured = true; delete extra.hpAfter; delete extra.hpUnknown; }
     if (PIVOT_MOVES.has(act.move)) extra.to = act.to;
@@ -546,7 +578,11 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
   const scenLabels = [['base', preds?.base?.rangeMode === 'assumed' ? '想定配分' : '候補全体'], ['min', '最小側の配分'], ['max', '最大側の配分']];
   const selectedOutcome = outcome(r, tgtHp, tgtMax);
   return (
-    <div class="pl-act move">
+    <div class={cx('pl-act move',variableFx && 'variable-hp')} onKeyDown={e => {
+      if(e.key === 'Enter' && !e.isComposing && e.target?.type === 'number' && act.stage === 'hp' && !blocked && !disguiseOnly) {
+        e.preventDefault(); if(!e.repeat) save();
+      }
+    }}>
       <div class="pa-h"><span class={cx('mv-bar inline', `t-${mv?.t}`)} /><b>{moveName(act.move)}</b><button class="btn ghost sm pa-cancel" onClick={() => setAct(null)}>取消</button>
         {battle.format === 'double' && targetOptions.length > 1 && !['self', 'allies', 'allySide', 'all', 'foeSide'].includes(mv?.tg) && <span class="chips">{targetOptions.map(t => <button class={cx('chip sm', tgt?.side === t.side && tgt?.mon === t.mon && 'on')} onClick={() => { if (tgt?.side !== t.side || tgt?.mon !== t.mon) set({tgt: t, resultHp: {}, stage: mv?.c === 'Z' || (act.move === 'pollenpuff' && t.side === side) ? 'pick' : 'hp', hp: null, defItem: '', forceTo: null, eject: null, cst: null, secFx: []}); }}>{targetOptions.some(x => x.side === side) && `${t.side === 'me' ? '自分' : '相手'} `}{nameOf(battle, t.side, t.mon)}</button>)}</span>}
       </div>
@@ -584,7 +620,8 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
         : <p class="muted">ひんしのポケモンがいません</p>)}
       {!damaging && PIVOT_MOVES.has(act.move) && <p class="hint">交代先: {act.to != null ? nameOf(battle, side, act.to) : '上から選択'}</p>}
       {act.stage === 'pick' && hpInputs}
-      {act.stage === 'pick' && <div class="btnrow">{hpTargets.length > 0 && <button class="btn" onClick={confirm}>HP不明で記録</button>}<button class="btn primary grow" disabled={missingResultHp || (!damaging && needTo) || (act.move === 'revivalblessing' && dead.length > 0 && act.revive == null)} onClick={confirm}>記録</button></div>}
+      {act.stage === 'pick' && hpTargets.length > 0 && <small class="hint">HPは任意。空欄は未確認として記録し、あとで補正できます。</small>}
+      {act.stage === 'pick' && <div class="btnrow pa-record"><button class="btn primary grow" disabled={(!damaging && needTo) || (act.move === 'revivalblessing' && dead.length > 0 && act.revive == null)} onClick={confirm}>記録</button></div>}
       {act.stage === 'hp' && disguiseOnly && <div class="disguise-record">
         <p>ばけのかわで防がれた場合は、残りHPの入力は不要です。</p>
         <button class="btn primary" disabled={needTo} onClick={() => record({to:act.to,forceTo:act.forceTo,selfFx:sureSelfFx(battle,side,mon,tgt,act.move,null).filter(k => ['lifeorb','helmet','roughskin'].includes(k) || k === 'recoil' && HALF_RECOIL.has(act.move))})}>ばけのかわを記録</button>
@@ -592,10 +629,13 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
         <button class="btn ghost sm" onClick={() => set({manualDisguiseHp:!act.manualDisguiseHp})}>{act.manualDisguiseHp ? 'HP入力を閉じる' : '実際のHPを指定する'}</button>
       </div>}
       {act.stage === 'hp' && (!disguiseOnly || act.manualDisguiseHp) && <>
-        <div class="pa-hp"><label>残りHP<input class="input num" type="number" inputMode="numeric" min={0} max={tgtMax || 100} placeholder="未入力" aria-label="残りHP" value={act.hp == null ? '' : tgtMax ? Math.round(tgtMax * act.hp / 100) : act.hp} onInput={e => { const v = e.currentTarget.value; set({hp: v === '' ? null : Math.max(0, Math.min(100, tgtMax ? Number(v) / tgtMax * 100 : Number(v)))}); }} /></label><span>{tgtMax ? `/${tgtMax}` : '%'}</span><button class="btn sm" onClick={() => set({hp: 0})}>ひんし</button></div>
-        <StepRange value={tgtMax ? Math.round(tgtMax * (act.hp ?? tgtHp) / 100) : Math.round(act.hp ?? tgtHp)} max={tgtMax || 100} label="残りHPの調整" onChange={n => set({hp: tgtMax ? n / tgtMax * 100 : n})} />
+        <div class="pa-quick-fields">
+        <div class="pa-hp"><label>{SIDE_JA[tgt.side]}の残りHP<input class="input num" type="number" inputMode="numeric" min={0} max={tgtMax || 100} placeholder="任意" aria-label="残りHP" value={act.hp == null ? '' : tgtMax ? Math.round(tgtMax * act.hp / 100) : act.hp} onInput={e => { const v = e.currentTarget.value; set({hp: v === '' ? null : Math.max(0, Math.min(100, tgtMax ? Number(v) / tgtMax * 100 : Number(v)))}); }} /></label><span>{tgtMax ? `/${tgtMax}` : '%'}</span><button class="btn sm" onClick={() => set({hp: 0})}>ひんし</button></div>
         {hpInputs}
-        {act.hp == null && <span class="hint pa-unknown">残りHPを入力、または不明で記録</span>}
+        <small class="hint pa-unknown">分かったHPだけ入力。空欄は未確認で記録します。</small>
+        </div>
+        {variableFx ? <details class="pa-fine-adjust"><summary>残りHPをスライダーで調整</summary><StepRange value={tgtMax ? Math.round(tgtMax * (act.hp ?? tgtHp) / 100) : Math.round(act.hp ?? tgtHp)} max={tgtMax || 100} label="残りHPの調整" onChange={n => set({hp: tgtMax ? n / tgtMax * 100 : n})} /></details>
+          : <StepRange value={tgtMax ? Math.round(tgtMax * (act.hp ?? tgtHp) / 100) : Math.round(act.hp ?? tgtHp)} max={tgtMax || 100} label="残りHPの調整" onChange={n => set({hp: tgtMax ? n / tgtMax * 100 : n})} />}
         {act.pierce && <p class="hint">まもるを貫通 (1/4)</p>}
         {sec.length > 0 && <div class="chips"><span class="muted">追加効果:</span>{sec.map(x => <button class={cx('chip sm', secOn(x) && 'on')} onClick={() => set({secFx: secOn(x) ? act.secFx.filter(y => JSON.stringify(y) !== JSON.stringify(x.e)) : [...act.secFx, x.e]})}>{x.label}</button>)}</div>}
         {tItem && consumable(tItem) && !((tc.healBlock || 0) >= turnNumber(battle) && /berry$/.test(tItem) && tItem !== 'lumberry') && <div class="chips"><button class={cx('chip sm', act.defItem === tItem && 'on')} onClick={() => set({defItem: act.defItem === tItem ? '' : tItem})}>{itemName(tItem)}が発動</button></div>}
@@ -606,7 +646,7 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
         {act.eject && <div class="chips"><span class="muted">出てきた:</span>{ejBench.map(i => <button class={cx('chip sm', act.eject.to === i && 'on')} onClick={() => set({eject: {...act.eject, to: i}})}>{nameOf(battle, ejSide, i)}</button>)}</div>}
         {cst.length > 0 && <div class="chips"><span class="muted">接触:</span>{cst.map(x => <button class={cx('chip sm', act.cst?.st === x.st && act.cst?.ab === x.ab && 'on')} onClick={() => set({cst: act.cst?.st === x.st && act.cst?.ab === x.ab ? null : x})}>{abilityName(x.ab)}で{x.l}</button>)}</div>}
         {blocked && <p class="hint warn">{needTo ? '交代先を選択' : '出てきたポケモンを選択'}</p>}
-        <div class="btnrow"><button class="btn" disabled={blocked} onClick={save}>HP不明で記録</button><button class="btn primary grow" disabled={blocked || missingResultHp || (act.hp == null && act.defItem !== 'focussash')} onClick={() => save()}>記録</button></div>
+        <div class="btnrow pa-record"><button class="btn primary grow" disabled={blocked} onClick={() => save()}>記録</button></div>
       </>}
     </div>
   );
@@ -694,7 +734,7 @@ export function TurnBar({battle, ctx, mut, usage, toast, focusSide}) {
       </div>
       {sure.length > 0 && <div class="tb-auto">ターン終了時: {sure.map(c => `${SIDE_JA[c.side]}${c.label}`).join('・')}</div>}
       {(t?.acts || []).filter(a => a.in?.endHp).map(a => <p class="hint tb-staged-hp">{SIDE_JA[a.in.endHp.side]}の終了後HP {Math.round(a.in.endHp.hpAfter)}% を使用</p>)}
-      {t && <details class="tb-hp-inputs"><summary>終了後HPを入力・推定</summary><p class="hint">回復・定数ダメージが終わった後のHP。見逃した攻撃も条件が合えば逆算します。</p>{hpMons.map(c => <ObservedHP key={`${c.side}${c.mon}`} battle={battle} target={c} when="ターン終了後HP" value={endHp[`${c.side}${c.mon}`]} onChange={value => changeEndHp(`${c.side}${c.mon}`, value)} />)}</details>}
+      {t && <details class="tb-hp-inputs"><summary>終了後HPを入力・推定 {hpMons.some(c => condOf(battle,c.side,c.mon).hpUnknown) && <span class="tag">HP未確認 {hpMons.filter(c => condOf(battle,c.side,c.mon).hpUnknown).length}体</span>}</summary><p class="hint">回復・定数ダメージが終わった後のHP。見逃した攻撃も条件が合えば逆算します。</p>{hpMons.map(c => <ObservedHP key={`${c.side}${c.mon}`} battle={battle} target={c} when="ターン終了後HP" value={endHp[`${c.side}${c.mon}`]} onChange={value => changeEndHp(`${c.side}${c.mon}`, value)} />)}</details>}
       {t && battle.format === 'single' && sharedEffects.length > 0 && <label class="field tb-order"><span>同じ処理の順番 → 素早さ推定</span><select class="input" aria-label="終了時の処理順" value={orderAllowed ? orderValue : ''} onChange={e => setResOrder({key: endHpKey, value: e.currentTarget.value})}><option value="">未確認</option>{sharedEffects.flatMap(key => ['me', 'opp'].map(side => <option value={`${key}:${side}`}>{cands.find(c => c.key === key).label}：{SIDE_JA[side]}が先</option>))}</select><small class="hint">異なる種類の処理の前後は比較しません。同速の可能性も残します。</small></label>}
       {t && cands.some(c => c.side === 'opp' && !c.manualHP) && <details class="tb-step-hp"><summary>途中の相手HP → 能力Pt推定</summary><p class="hint">各処理の直後に見えた整数%だけ入力。回復とダメージが相殺されても、途中の変化から最大HPを絞れます。</p>{cands.filter(c => c.side === 'opp' && !c.manualHP && (c.checked || maybe[keyOf(c)])).map(c => <label class="field"><span>{c.label}の直後（%）</span><input type="number" class="input" min="0" max="100" step="1" inputMode="numeric" value={stepHpInput.key === endHpKey ? stepHpInput.values[keyOf(c)] ?? '' : ''} onInput={e => {const v=e.currentTarget.value; setStepHpInput(s => ({key:endHpKey, values:{...(s.key === endHpKey ? s.values : {}), [keyOf(c)]: v === '' ? '' : Math.max(0, Math.min(100, Math.round(Number(v))))}}));}} /></label>)}</details>}
       {unsure.length > 0 && <div class="chips tb-maybe"><span class="muted">起きた?</span>{unsure.map(c => <button class={cx('chip sm', maybe[keyOf(c)] && 'on')} onClick={() => setMaybe({...maybe, [keyOf(c)]: !maybe[keyOf(c)]})}>{SIDE_JA[c.side]} {c.label}</button>)}</div>}
