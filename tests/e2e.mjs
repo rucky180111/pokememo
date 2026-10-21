@@ -185,8 +185,8 @@ check(b.turns[1].acts.some(a => (a.auto || []).some(x => /実数値|説明がつ
 await meP.locator('.pl-mv', {hasText: 'じしん'}).click();
 check(await oppP.locator('.hp-pred').count() === 1, '自分の技でも相手のHPバーに予想');
 await meP.locator('.pa-predictions summary').click();
-await meP.locator('.pa-row', {hasText: '耐久全振り'}).click();
-check(await meP.locator('.pa-row.on', {hasText: '耐久全振り'}).count() === 1, '振り方を切り替えられる');
+await meP.locator('.pa-row', {hasText: '最小側の配分'}).click();
+check(await meP.locator('.pa-row.on', {hasText: '最小側の配分'}).count() === 1, '最小側の配分を確認できる');
 await meP.getByLabel('残りHP', {exact: true}).fill('20');
 await meP.getByRole('button', {name: '記録', exact: true}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
@@ -237,6 +237,7 @@ check(b.state.sides.me.active[0] === 2 && b.state.mons.opp[1].boosts.atk === -1,
 check(b.state.mons.me[2].hp < 100, `ステルスロックのダメージを自動で反映 (${b.state.mons.me[2].hp})`);
 await pane('ダメージ・ログ');
 await page.getByRole('tab', {name:'ダメージ', exact:true}).click();
+await page.locator('.damage-manual > summary').click();
 await page.waitForSelector('.dl');
 await shot(page, 'arena-damage');
 check(await page.locator('.dl-ic.opp').count() >= 3 && await page.locator('.dl-ic.me').count() >= 3, 'ダメージ計算に相手と自分のアイコン');
@@ -275,10 +276,9 @@ check(rows > 5 && allDragon, `技をタイプで絞り込める (${rows}件)`);
 await page.getByRole('button', {name: '閉じる', exact: true}).last().click();
 // 既存の詳細タブ
 await page.getByRole('tab', {name: 'ダメージ'}).click();
-await page.locator('.damage-matrix > summary').click();
-await page.waitForSelector('table.dmg');
-check(await page.locator('table.dmg thead th').count() === 7, 'ダメージ表タブは相手6体ぶん');
-check(await page.locator('table.dmg td .dbar').count() > 0, 'ダメージ表にゲージが出る');
+await page.waitForSelector('.damage-six');
+check(await page.locator('.damage-move').first().locator('.damage-target').count() === 6, 'ダメージ表タブは相手6体ぶん');
+check(await page.locator('.damage-range-bar').count() > 0, 'ダメージ表にゲージが出る');
 await shot(page, 'dmg-tab');
 check(await page.getByRole('tab').count() === 5, '選出・盤面・ダメージ・ログ・傾向を1段に統合');
 await page.getByRole('tab', {name: '盤面'}).click();

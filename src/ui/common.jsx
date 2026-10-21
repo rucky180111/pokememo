@@ -89,7 +89,17 @@ export function Picker({kind, title, onPick, onClose, filter, rank, prefer, pref
     return true;
   };
   const ref = useRef(null);
-  useEffect(() => { ref.current?.focus(); }, []);
+  // タッチ端末は検索欄を押したときだけキーボードを開く。マウス/キーボード端末は従来どおり。
+  const keyboardPointer = () => !navigator.maxTouchPoints && matchMedia('(pointer: fine)').matches && !matchMedia('(any-pointer: coarse)').matches;
+  useEffect(() => { if(keyboardPointer()) ref.current?.focus({preventScroll:true}); }, []);
+  const choose = id => {
+    onPick(id);
+    if(header) {
+      setQ('');
+      if(keyboardPointer()) ref.current?.focus({preventScroll:true});
+      else ref.current?.blur();
+    }
+  };
   const preferSet = useMemo(() => (prefer ? new Set(prefer) : null), [prefer]);
   const list = useMemo(() => {
     let out = search(kind, q, {limit: 0, filter: id => (!filter || filter(id)) && (all || !preferSet || preferSet.has(id)) && typeOk(id)});
@@ -100,11 +110,12 @@ export function Picker({kind, title, onPick, onClose, filter, rank, prefer, pref
   }, [kind, q, all, rank, preferSet, filter, types, cat]);
   return (
     <Sheet title={title} onClose={onClose} tall actions={actions}>
-      {header}
+      <div class="picker-fixed">
+      {header && <div class="picker-selected">{header}</div>}
       <div class="picker-bar">
         <input ref={ref} class="input" type="search" inputMode="search" autocomplete="off" autocapitalize="off" spellcheck={false}
           placeholder="なまえで検索 (ひらがな可)" value={q} onInput={e => setQ(e.currentTarget.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && list[0]) { onPick(list[0].id); if (header) setQ(''); } }} />
+          onKeyDown={e => { if (e.key === 'Enter' && !e.isComposing && list[0]) { e.preventDefault(); choose(list[0].id); } }} />
         {prefer && <label class="check"><input type="checkbox" checked={all} onChange={e => setAll(e.currentTarget.checked)} />{preferLabel || 'すべて表示'}</label>}
       </div>
       {typed && (
@@ -117,10 +128,11 @@ export function Picker({kind, title, onPick, onClose, filter, rank, prefer, pref
           {(types.length > 0 || cat) && <button class="btn ghost sm" onClick={() => { setTypes([]); setCat(''); }}>解除</button>}
         </div>
       )}
+      </div>
       <div class="picker-list">
         {allowClear && !q && <button class="row" onClick={() => onPick('')}><span class="muted">{clearLabel || '(なし / 未設定)'}</span></button>}
         {list.map(e => (
-          <button class="row" key={e.id} onClick={() => { onPick(e.id); if (header) { setQ(''); ref.current?.focus(); } }}>
+          <button class="row" key={e.id} onClick={() => choose(e.id)}>
             {kind === 'species' ? <span class="row-mon"><Sprite id={e.id} size={36} /><MonName id={e.id} /></span> : <span class="nm">{e.j}</span>}
             <span class="row-sub">
               {kind === 'moves' && (() => { const m = dex.moves[e.id]; return <><TypeChip type={m.t} small /><span class="tag">{CAT_JA[m.c]}</span>{m.bp ? <span class="num">{m.bp}</span> : null}{m.pr ? <span class="tag">優先{m.pr > 0 ? '+' : ''}{m.pr}</span> : null}</>; })()}

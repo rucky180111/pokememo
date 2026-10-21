@@ -1515,3 +1515,18 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
  .board-workspace .pl-act.move>.pa-fine-adjust{order:5}
  .board-workspace .pl-act.move>.toggle{order:5}
 }
+/* 候補だけをスクロールし、入力済みの6体と検索欄は常に残す。 */
+.sheet.tall>.sheet-head{flex-shrink:0}
+.sheet.tall>.sheet-body{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+.picker-fixed{flex:0 0 auto;background:var(--surface);z-index:2}
+.picker-fixed .picker-bar{position:static}
+.sheet.tall .picker-list{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.picker-selected .party-hint{margin:2px 0 6px}
+@media(max-height:600px){
+ .picker-fixed .type-filter{flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;padding:4px 8px}
+ .picker-fixed .type-filter>*{flex-shrink:0}
+ .picker-fixed .type-filter>.muted{display:none}
+ .picker-selected .party-slot{min-height:54px}
+ .picker-selected .party-slot .sprite{width:30px!important;height:30px!important}
+ .picker-selected .party-hint{font-size:10px;line-height:1.2}
+}
