@@ -9,7 +9,7 @@ import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility
 import {condOf, buildOf, other, turnNumber, PIVOT_MOVES, faintedCount, pickCount, defaultAbilityResolver} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {damageRange} from '../engine/damage-range.js';
-import {revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, editAct, correctActHP, reopenLastTurn, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
+import {HIT_ABILITIES, hitAbilityAction, revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, editAct, correctActHP, reopenLastTurn, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
 import {speedOutlook} from '../engine/assume.js';
 import {finalSpeed} from '../engine/calc.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, Confirm, cx, fmtPct, rate} from './common.jsx';
@@ -259,11 +259,12 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
         {opp?.item && !raw.itemGone && consumable(opp.item) && <button class="chip sm" onClick={() => { mut(b => { addEvent(b, {kind: 'item', side, mon, item: opp.item, consumed: true}, usage); }); toast(`${itemName(opp.item)}を使った`); }}>使った</button>}
         {side === 'me' && build.item && !raw.itemGone && consumable(build.item) && <button class="chip sm" onClick={() => { mut(b => { addEvent(b, {kind: 'item', side, mon, item: build.item, consumed: true}, usage); }); toast(`${itemName(build.item)}を使った`); }}>使った</button>}
         {side === 'opp'
-          ? <select class={cx('pl-dd',!opp.ability && !actualSpecies.mega && 'unk')} aria-label="相手の特性" value={actualSpecies.mega ? actualSpecies.ab[0] : opp.ability || ''} disabled={!!actualSpecies.mega} title={actualSpecies.mega ? 'メガシンカ後の特性は固定です' : '発動を確認した特性を選択。不明にも戻せます'} onChange={e => { const ability = e.currentTarget.value; mut(b => addEvent(b, {kind: 'ability', side, mon, ability, activate: !!ability}, usage)); }}>
+          ? <select class={cx('pl-dd',!opp.ability && !actualSpecies.mega && 'unk')} aria-label="相手の特性" value={actualSpecies.mega ? actualSpecies.ab[0] : opp.ability || ''} disabled={!!actualSpecies.mega} title={actualSpecies.mega ? 'メガシンカ後の特性は固定です' : '発動を確認した特性を選択。不明にも戻せます'} onChange={e => { const ability = e.currentTarget.value; mut(b => addEvent(b, {kind: 'ability', side, mon, ability, activate: !!ability && !HIT_ABILITIES.has(ability)}, usage)); }}>
               {!actualSpecies.mega && <option value="">特性 不明（選択）</option>}
               {[...new Set([...actualSpecies.ab,opp.ability].filter(Boolean))].map(a => <option value={a}>{abilityName(a)}{actualSpecies.mega ? '（メガ・固定）' : ''}</option>)}
             </select>
           : <span class="pl-dd static">{abilityName(abil) || '特性なし'}</span>}
+        {HIT_ABILITIES.has(side === 'opp' ? opp.ability : abil) && <button class="chip sm ability-activate" aria-label="特性が発動した" disabled={raw.fainted || !hitAbilityAction(battle, side, mon) || hitAbilityAction(battle, side, mon)?.hitAbility === (side === 'opp' ? opp.ability : abil)} title="このターンの直近の被弾に特性の効果を反映" onClick={() => mut(b => addEvent(b, {kind: 'ability', side, mon, ability: side === 'opp' ? opp.ability : abil, activate: true}, usage))}>発動</button>}
         {raw.types?.length ? <span class="tag accent">タイプ変化</span> : null}
         {raw.disguiseBroken && <span class="tag">ばけのかわ はがれた</span>}
       </div>
@@ -593,8 +594,8 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
         {battle.format === 'double' && targetOptions.length > 1 && !['self', 'allies', 'allySide', 'all', 'foeSide'].includes(mv?.tg) && <span class="chips">{targetOptions.map(t => <button class={cx('chip sm', tgt?.side === t.side && tgt?.mon === t.mon && 'on')} onClick={() => { if (tgt?.side !== t.side || tgt?.mon !== t.mon) set({tgt: t, resultHp: {}, stage: mv?.c === 'Z' || (act.move === 'pollenpuff' && t.side === side) ? 'pick' : 'hp', hp: null, defItem: '', forceTo: null, eject: null, cst: null, secFx: []}); }}>{targetOptions.some(x => x.side === side) && `${t.side === 'me' ? '自分' : '相手'} `}{nameOf(battle, t.side, t.mon)}</button>)}</span>}
       </div>
       {damaging && tgt && <>
-        <details class="pa-predictions">
-          <summary>予測 {selectedOutcome ? `残り ${selectedOutcome.to}` : '計算できません'} <small>詳細</small></summary>
+        <section class="pa-predictions" aria-label="ダメージ予測">
+          <div class="pa-prediction-title">予測 {selectedOutcome ? `残り ${selectedOutcome.to}` : '計算できません'}</div>
           <div class="pa-rows">
           {scenLabels.map(([k, label]) => {
             const x = preds?.[k];
@@ -610,7 +611,7 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
             );
           })}
           </div>
-        </details>
+        </section>
       </>}
       {!damaging && <p class="muted">{act.move === 'pollenpuff' ? '味方のHPを半分回復' : '変化技'}{act.inflict ? ` (${STATUS_OPTS.find(x => x[0] === act.inflict)?.[1]})` : ''}</p>}
       {damaging && tgt && <Toggle small on={!!act.afterResidual} onChange={v => set({afterResidual: v})}>回復・定数ダメージ後のHP</Toggle>}

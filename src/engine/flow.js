@@ -500,7 +500,8 @@ export function addAct(b, input, usage) {
       }
     } else if (mvd && !a.flags.cant) condOf(b, side, mon).lastResult = {n: t.n, failed: !!failed};
     // 被弾時の特性は「判明している特性」だけで反映する (使用率からの推測で能力ランクを動かさない)
-    if (!failed && tgt && tgt.side !== side) onHitEffects(b, {side, mon, move: a.move, hits: input.hits, crit: a.flags.crit, tgt, before: hpBeforeHit, defItem}, defaultAbilityResolver, log);
+    a.hpBeforeHit = hpBeforeHit;
+    if (!failed && tgt && tgt.side !== side) onHitEffects(b, {side, mon, move: a.move, hits: input.hits, crit: a.flags.crit, tgt, before: hpBeforeHit, defItem, action: a}, defaultAbilityResolver, log);
     // 攻撃した側のHPの変化 (いのちのたま・反動・ゴツゴツメット・さめはだ・吸収)
     if (!failed && tgt && tgt.side !== side && input.selfFx?.length) attackerHpEffects(b, {side, mon, tgt, move: a.move, fx: input.selfFx, hpAfter: input.atkHpAfter ?? input.observedHp?.find(h => h.side === side && h.mon === mon)?.hpAfter, tgtBefore: hpBeforeHit, a}, log);
     // 追加効果・変化技で相手が状態異常になった
@@ -785,7 +786,21 @@ export function addEvent(b, ev, usage) {
     return [text, ...log];
   }
   else if (ev.kind === 'status') { cond.status = ev.status || ''; cond.toxicCounter = 1; text = STATUS_JA[ev.status || '']; }
-  else if (ev.kind === 'ability') { if (side === 'opp') build.ability = ev.ability; text = ev.ability ? `特性 ${abilityName(ev.ability)} ${ev.activate ? '発動' : '判明'}` : '特性を不明に戻す'; if (ev.activate && b.state.sides[side].active.includes(mon) && !cond.fainted) applyEntryAbility(b, side, mon, {log, resolveAbility: defaultAbilityResolver}); }
+  else if (ev.kind === 'ability') {
+    if (side === 'opp') build.ability = ev.ability;
+    text = ev.ability ? `特性 ${abilityName(ev.ability)} ${ev.activate ? '発動' : '判明'}` : '特性を不明に戻す';
+    if (ev.activate && b.state.sides[side].active.includes(mon) && !cond.fainted) {
+      if (HIT_ABILITIES.has(ev.ability)) {
+        const hit = ev.hitKey ? t.acts.find(a => a.in?.hitKey === ev.hitKey) : hitAbilityAction(b, side, mon);
+        if (hit && hit.hitAbility !== ev.ability) {
+          hit.in ||= legacyInput(hit);
+          hit.in.hitKey ||= `${Date.now()}-${Math.random()}`;
+          ev = {...ev, hitKey: hit.in.hitKey};
+          onHitEffects(b, {side: hit.side, mon: hit.mon, move: hit.move, hits: hit.in.hits, crit: hit.flags?.crit, tgt: {side, mon}, before: hit.hpBeforeHit, onlyAbility: true, action: hit}, defaultAbilityResolver, log);
+        }
+      } else applyEntryAbility(b, side, mon, {log, resolveAbility: defaultAbilityResolver});
+    }
+  }
   else if (ev.kind === 'mega') { megaEvolve(b, side, mon, ev.forme || null, {log, resolveAbility: res}); text = 'メガシンカ'; }
   else if (ev.kind === 'field') {
     if (ev.key === 'weather') { setWeather(b, ev.value); text = ev.value ? `天候: ${WEATHER_JA[ev.value]}` : '天候が元に戻った'; }
@@ -1239,16 +1254,38 @@ function simultaneousEntry(b, usage, side, mon, res) {
 
 // 攻撃を受けたときに必ず起きる特性・持ち物の効果 (ランク変化・天候・フィールド)
 const HIT_ITEM_BOOST = {weaknesspolicy: {atk: 2, spa: 2}, cellbattery: {atk: 1}, absorbbulb: {spa: 1}, luminousmoss: {spd: 1}, snowball: {atk: 1}, keeberry: {def: 1}, marangaberry: {spd: 1}};
-function onHitEffects(b, {side, mon, move, hits, crit, tgt, before, defItem}, res, log) {
+export const HIT_ABILITIES = new Set(['stamina','weakarmor','justified','steamengine','watercompaction','rattled','thermalexchange','angerpoint','berserk','seedsower','sandspit','gooey','tanglinghair','toxicdebris','cottondown']);
+
+// 間に交代を挟んだ技や、前のターンの技にはさかのぼらない。
+export function hitAbilityAction(b, side, mon) {
+  const acts = openTurn(b)?.acts || [];
+  for (let i = acts.length - 1; i >= 0; i--) {
+    const a = acts[i];
+    if ((a.type === 'switch' || a.kind === 'send') && a.side === side) return null;
+    if (a.type !== 'move' || a.target?.side !== side || a.target?.mon !== mon) continue;
+    if (a.flags?.miss || a.flags?.cant || a.flags?.protect || a.moveImmune || a.disguiseHit || dex.moves[a.move]?.c === 'Z') return null;
+    if (a.dmgPct === 0 && !a.hpUnknown) return null;
+    const ab = defaultAbilityResolver(b, side, mon), mv = dex.moves[a.move];
+    if (a.auto?.some(line => line.includes(`の${abilityName(ab)}:`))) return null;
+    const types = {justified: ['Dark'], steamengine: ['Fire','Water'], watercompaction: ['Water'], rattled: ['Bug','Ghost','Dark'], thermalexchange: ['Fire']};
+    if ((['weakarmor','toxicdebris'].includes(ab) && mv?.c !== 'P') || (types[ab] && !types[ab].includes(mv?.t)) || (ab === 'angerpoint' && !a.flags?.crit) || (ab === 'berserk' && !(a.hpBeforeHit > 50 && condOf(b,side,mon).hp <= 50))) return null;
+    if (['gooey','tanglinghair'].includes(ab) && !makesContact(a.move, {...buildOf(b,a.side,a.mon), item: activeItem(b,a.side,a.mon)}, condOf(b,a.side,a.mon))) return null;
+    return a;
+  }
+  return null;
+}
+
+function onHitEffects(b, {side, mon, move, hits, crit, tgt, before, defItem, onlyAbility, action}, res, log) {
   const mv = dex.moves[move];
   if (!mv || mv.c === 'Z') return;
   const tc = condOf(b, tgt.side, tgt.mon);
-  if (before != null && before <= tc.hp && !tc.hpUnknown) return;
+  if (!onlyAbility && before != null && before <= tc.hp && !tc.hpUnknown) return;
   const contact = makesContact(move, {...buildOf(b, side, mon), item: activeItem(b, side, mon)}, condOf(b, side, mon));
   const who = `${tgt.side === 'me' ? '自分' : '相手'}の${speciesName(buildOf(b, tgt.side, tgt.mon).species)}`;
-  const boost = (d, why) => { const l = []; applyBoosts(b, tgt.side, tgt.mon, d, {log: l, resolveAbility: res}); if (l.length) log.push(`${why}: ${l.join('、')}`); };
+  const boost = (d, why) => { if (action && why.startsWith(`${who}の`)) action.hitAbility = res(b, tgt.side, tgt.mon); const l = []; applyBoosts(b, tgt.side, tgt.mon, d, {log: l, resolveAbility: res}); if (l.length) log.push(`${why}: ${l.join('、')}`); };
   if (defItem && HIT_ITEM_BOOST[defItem] && !tc.fainted) boost(HIT_ITEM_BOOST[defItem], itemName(defItem));
   if (tc.fainted) {
+    if (onlyAbility) return;
     if (condOf(b, side, mon).fainted) return;
     // 倒したとき: じしんかじょう等
     const ab = res(b, side, mon);
@@ -1276,9 +1313,10 @@ function onHitEffects(b, {side, mon, move, hits, crit, tgt, before, defItem}, re
     vc.itemGone = true; thc.tricked = true; vc.tricked = true;
     log.push(`${why}: ${victim.side === 'me' ? '自分' : '相手'}の${speciesName(vb.species)}の${vb.item ? itemName(vb.item) : '持ち物'}を奪った`);
   };
-  if (res(b, side, mon) === 'magician' && mv.c !== 'Z') steal({side, mon}, tgt, 'マジシャン');
+  if (!onlyAbility && res(b, side, mon) === 'magician' && mv.c !== 'Z') steal({side, mon}, tgt, 'マジシャン');
   const ab = res(b, tgt.side, tgt.mon);
   if (!ab) return;
+  const abilityLogStart = log.length;
   const name = `${who}の${abilityName(ab)}`;
   if (ab === 'pickpocket' && contact) steal(tgt, {side, mon}, name);
   const t = mv.t;
@@ -1312,6 +1350,7 @@ function onHitEffects(b, {side, mon, move, hits, crit, tgt, before, defItem}, re
     else if (mine) { ac.abilityChanged = 'wanderingspirit'; tc.abilityChanged = mine; log.push(`${name}: 特性を入れ替えた (${abilityName(mine)})`); }
   }
   else if (ab === 'cottondown') { const l = []; applyBoosts(b, side, mon, {spe: -1}, {log: l, fromOpp: true, resolveAbility: res}); if (l.length) log.push(`${name}: ${l.join('、')}`); }
+  if (action && log.length > abilityLogStart) action.hitAbility = ab;
 }
 
 // ---- 5ターン目の天候・フィールド・壁 ----

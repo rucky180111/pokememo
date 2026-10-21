@@ -1575,3 +1575,7 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 }
 
 .pl-body>.scroll-x{flex-shrink:0}
+
+/* HPの入力・記録を先に置き、予測は常時展開する。 */
+.pa-prediction-title { font-size: 12px; font-weight: 700; margin: 3px 0; }
+.pl-info .ability-activate { flex: 0 0 auto; white-space: nowrap; touch-action: manipulation; }
