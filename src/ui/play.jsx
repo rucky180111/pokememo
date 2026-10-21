@@ -227,7 +227,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
     const target = mv?.tg === 'adjacentAlly' ? (ally != null ? {side, mon: ally} : null) : mv?.c === 'Z' && ['self', 'allySide', 'all', 'allies', 'foeSide'].includes(mv.tg) ? (mv.tg === 'foeSide' ? tgt : null) : tgt;
     setAct({side, mon, kind: 'move', move: m, tgt: target, scen: 'base', crit: false, stage: mv && mv.c !== 'Z' && target ? 'hp' : 'pick', hp: null, secFx: [], inflict: STATUS_MOVE[m] || ''});
   };
-  const suggestions = side === 'opp' && !raw.fainted && !done && moves.length < 4 && <div class="pl-suggestions"><span class="muted">未判明の技候補</span><div class="chips">{(view?.moves || []).filter(m => !m.known && !moves.includes(m.id)).slice(0, 4 - moves.length).map(m => <button class="chip" onClick={() => selMove(m.id)}>{moveName(m.id)} <small>推定</small></button>)}</div></div>;
+  const suggestions = side === 'opp' && !raw.fainted && !done && moves.length < 4 && <div class="pl-suggestions"><span class="muted">未判明の技候補（使用率順）</span><div class="chips">{(view?.moves || []).filter(m => !m.known && !moves.includes(m.id)).slice(0, 6).map(m => <button class="chip" title={`${moveName(m.id)}・使用率 ${Math.round(m.rate * 100)}%`} onClick={() => selMove(m.id)}>{moveName(m.id)} <small>推定</small></button>)}</div></div>;
   const setOpp = fn => mut(b => { fn(b.opp[mon]); if (canReplay(b)) replay(b, usage); });
   const abil = currentAbility(build, raw);
   const setBoosts = set => { let log = []; mut(b => { log = addEvent(b, {kind: 'boosts', side, mon, set}, usage); }); toast(log[0] || '記録しました'); };
