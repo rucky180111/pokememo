@@ -360,12 +360,15 @@ export function addAct(b, input, usage) {
     const heal = defItem === 'sitrusberry' ? 25 * ripen + cheek : defItem === 'oranberry' ? null : cheek;
     let hp = input.hpAfter;
     // ばけのかわ: ダメージを受けず HP が 1/8 減るだけ。推定には使わない
-    const disguiseHit = !failed && tgt && mvd && mvd.c !== 'Z' && disguiseIntact(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon)) && !['moldbreaker', 'teravolt', 'turboblaze', 'myceliummight'].includes(res(b, side, mon));
+    const disguiseHit = !failed && tgt && mvd && mvd.c !== 'Z' && disguiseIntact(buildOf(b, tgt.side, tgt.mon), condOf(b, tgt.side, tgt.mon)) && !['sunsteelstrike','moongeistbeam','photongeyser'].includes(a.move) && !['moldbreaker', 'teravolt', 'turboblaze', 'myceliummight'].includes(res(b, side, mon));
     if (disguiseHit) {
       a.disguiseHit = true;
       const tc0 = condOf(b, tgt.side, tgt.mon);
       tc0.disguiseBroken = true;
-      if (hp == null || !Number.isFinite(hp) || hp > tc0.hp) hp = Math.max(0, tc0.hp - 12.5);
+      if (hp == null || !Number.isFinite(hp) || hp > tc0.hp) {
+        const max = tgt.side === 'me' ? maxHPOf(b,tgt.side,tgt.mon) : null;
+        hp = Math.max(0, tc0.hp - (max ? Math.max(1,Math.floor(max / 8)) / max * 100 : 12.5));
+      }
       log.push('ばけのかわがはがれた (HP -1/8)。このダメージからの推定はしません');
     }
     if (sash && !failed && tgt) hp = tgt.side === 'me' ? 100 / statsOf(currentSpecies(buildOf(b, 'me', tgt.mon), condOf(b, 'me', tgt.mon)), buildOf(b, 'me', tgt.mon).sp, buildOf(b, 'me', tgt.mon).nature)[0] : 1;

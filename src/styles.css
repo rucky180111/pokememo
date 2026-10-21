@@ -1487,3 +1487,9 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .pr-banrow select { width: auto; }
 .pr-from { font-size: 11px; margin-left: 4px; }
 .pr-hint h4 .num + .num { margin-left: 3px; }
+.disguise-record{display:flex;flex-direction:column;gap:6px;padding:6px 0;font-size:12px}
+.pl-info select.pl-dd:disabled{opacity:1;color:var(--text)}
+.pl-info{flex-wrap:nowrap}
+.pl-info>.pl-dd{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-info>.chip{flex-shrink:0}
+.pl-info>.tag{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

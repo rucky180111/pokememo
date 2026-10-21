@@ -216,3 +216,5 @@ test('だっしゅつボタン・せいでんき・ねむりから目覚める�
   assert.equal(condOf(b4, 'opp', 0).hp, 92);
   assert.ok(log.some(l => /推定は見送り/.test(l)));
 });
+
+test('自分のばけのかわは最大HPの1/8を切り捨てて減らし、特性を無視する技では破れない',()=>{const b=battle([B('mimikyu')],['garchomp']);const max=maxHPOf(b,'me',0);addAct(b,{side:'opp',type:'move',move:'earthquake',sameTurn:true},usage);assert.ok(Math.abs(condOf(b,'me',0).hp-(max-Math.floor(max/8))/max*100)<1e-9);const bypass=battle([B('garchomp')],['mimikyu']);addAct(bypass,{side:'me',type:'move',move:'sunsteelstrike',hpAfter:50,sameTurn:true},usage);assert.ok(!condOf(bypass,'opp',0).disguiseBroken);assert.equal(condOf(bypass,'opp',0).hp,50);});

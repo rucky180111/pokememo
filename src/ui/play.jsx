@@ -5,7 +5,7 @@
 //   分かっていること (自分の持ち物・特性、判明した相手の持ち物・特性) は聞き直さずに自動で反映する。
 import {useEffect, useLayoutEffect, useMemo, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf, STAT_JA, STAT_KEYS} from '../engine/dex.js';
-import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility, typesOf} from '../engine/calc.js';
+import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility, typesOf, disguiseIntact, defaultHits} from '../engine/calc.js';
 import {condOf, buildOf, other, turnNumber, PIVOT_MOVES, faintedCount, pickCount, defaultAbilityResolver} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {damageRange} from '../engine/damage-range.js';
@@ -235,7 +235,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
   const zoro = side === 'opp' ? battle.opp.map((o, i) => ({o, i})).find(x => /^zoroark/.test(x.o.species) && x.i !== mon && !condOf(battle, 'opp', x.i)?.fainted) : null;
   const [askZoro, setAskZoro] = useState(false);
   const reveal = () => { setAskZoro(false); let n = -1; mut(b => { n = revealIllusion(b, usage, zoro.i); }); toast(n >= 0 ? `ゾロアークに付け替えました (${n}件)` : '最初の盤面が残っていないため付け替えできません'); };
-  const abCands = side === 'opp' && !opp.ability && !s.mega ? (view?.abilities || []) : null;
+  const actualSpecies = dex.species[currentSpecies(build, raw0)];
   return (
     <>
       <div class="pl-head"><div class="pl-title">
@@ -254,12 +254,12 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
           : <span class={cx('pl-dd static', raw.itemGone && 'gone')}>{itemName(build.item) || '持ち物なし'}</span>}
         {opp?.item && !raw.itemGone && consumable(opp.item) && <button class="chip sm" onClick={() => { mut(b => { addEvent(b, {kind: 'item', side, mon, item: opp.item, consumed: true}, usage); }); toast(`${itemName(opp.item)}を使った`); }}>使った</button>}
         {side === 'me' && build.item && !raw.itemGone && consumable(build.item) && <button class="chip sm" onClick={() => { mut(b => { addEvent(b, {kind: 'item', side, mon, item: build.item, consumed: true}, usage); }); toast(`${itemName(build.item)}を使った`); }}>使った</button>}
-        {abCands
-          ? <select class="pl-dd unk" value="" title="発動を確認した特性を選択" onChange={e => { const ability = e.currentTarget.value; mut(b => addEvent(b, {kind: 'ability', side, mon, ability, activate: true}, usage)); }}>
-              <option value="">特性 {abCands.map(([a, r]) => `${abilityName(a)}${r ? ` ${Math.round(r * 100)}%` : ''}`).join(' / ')}</option>
-              {s.ab.map(a => <option value={a}>{abilityName(a)}</option>)}
+        {side === 'opp'
+          ? <select class={cx('pl-dd',!opp.ability && !actualSpecies.mega && 'unk')} aria-label="相手の特性" value={actualSpecies.mega ? actualSpecies.ab[0] : opp.ability || ''} disabled={!!actualSpecies.mega} title={actualSpecies.mega ? 'メガシンカ後の特性は固定です' : '発動を確認した特性を選択。不明にも戻せます'} onChange={e => { const ability = e.currentTarget.value; mut(b => addEvent(b, {kind: 'ability', side, mon, ability, activate: !!ability}, usage)); }}>
+              {!actualSpecies.mega && <option value="">特性 不明（選択）</option>}
+              {[...new Set([...actualSpecies.ab,opp.ability].filter(Boolean))].map(a => <option value={a}>{abilityName(a)}{actualSpecies.mega ? '（メガ・固定）' : ''}</option>)}
             </select>
-          : <span class="pl-dd static" onClick={() => side === 'opp' && !s.mega && mut(b => addEvent(b, {kind: 'ability', side, mon, ability: ''}, usage))} title={side === 'opp' && !s.mega ? '押すと不明に戻す' : ''}>{abilityName(abil) || '特性なし'}</span>}
+          : <span class="pl-dd static">{abilityName(abil) || '特性なし'}</span>}
         {raw.types?.length ? <span class="tag accent">タイプ変化</span> : null}
         {raw.disguiseBroken && <span class="tag">ばけのかわ はがれた</span>}
       </div>
@@ -472,6 +472,10 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
   const tgtMax = tgt?.side === 'me' ? maxHPOf(battle, tgt.mon) : null;
   const set = patch => setAct(a => ({...a, ...patch}));
   const base = {side, mon, type: 'move', move: act.move, crit: act.crit, sameTurn: true, target: battle.format === 'double' ? tgt : null};
+  const disguiseOnly = damaging && tgt && !r?.immune && disguiseIntact(buildOf(battle,tgt.side,tgt.mon),condOf(battle,tgt.side,tgt.mon)) &&
+    defaultHits(act.move,currentAbility(ctx.build(side,mon),ctx.cond(side,mon))) === 1 &&
+    !['moldbreaker','teravolt','turboblaze','myceliummight'].includes(currentAbility(ctx.build(side,mon),ctx.cond(side,mon))) &&
+    !['sunsteelstrike','moongeistbeam','photongeyser'].includes(act.move);
   const variableFx = damaging && sureSelfFx(battle, side, mon, tgt, act.move, act.hp).some(k => ['drain', 'ooze', 'shellbell', 'innards'].includes(k) || (k === 'recoil' && !HALF_RECOIL.has(act.move)));
   const reflected = act.move === 'strengthsap' && tgt && defaultAbilityResolver(battle, tgt.side, tgt.mon) === 'magicbounce';
   const hpTargets = act.move === 'painsplit' ? [{side, mon}, ...(tgt ? [tgt] : [])] : act.move === 'strengthsap' ? [reflected ? tgt : {side, mon}] : variableFx ? [{side, mon}] : [];
@@ -581,7 +585,13 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
       {!damaging && PIVOT_MOVES.has(act.move) && <p class="hint">交代先: {act.to != null ? nameOf(battle, side, act.to) : '上から選択'}</p>}
       {act.stage === 'pick' && hpInputs}
       {act.stage === 'pick' && <div class="btnrow">{hpTargets.length > 0 && <button class="btn" onClick={confirm}>HP不明で記録</button>}<button class="btn primary grow" disabled={missingResultHp || (!damaging && needTo) || (act.move === 'revivalblessing' && dead.length > 0 && act.revive == null)} onClick={confirm}>記録</button></div>}
-      {act.stage === 'hp' && <>
+      {act.stage === 'hp' && disguiseOnly && <div class="disguise-record">
+        <p>ばけのかわで防がれた場合は、残りHPの入力は不要です。</p>
+        <button class="btn primary" disabled={needTo} onClick={() => record({to:act.to,forceTo:act.forceTo,selfFx:sureSelfFx(battle,side,mon,tgt,act.move,null).filter(k => ['lifeorb','helmet','roughskin'].includes(k) || k === 'recoil' && HALF_RECOIL.has(act.move))})}>ばけのかわを記録</button>
+        <small class="muted">皮がはがれた状態とHPの減少を反映します。</small>
+        <button class="btn ghost sm" onClick={() => set({manualDisguiseHp:!act.manualDisguiseHp})}>{act.manualDisguiseHp ? 'HP入力を閉じる' : '実際のHPを指定する'}</button>
+      </div>}
+      {act.stage === 'hp' && (!disguiseOnly || act.manualDisguiseHp) && <>
         <div class="pa-hp"><label>残りHP<input class="input num" type="number" inputMode="numeric" min={0} max={tgtMax || 100} placeholder="未入力" aria-label="残りHP" value={act.hp == null ? '' : tgtMax ? Math.round(tgtMax * act.hp / 100) : act.hp} onInput={e => { const v = e.currentTarget.value; set({hp: v === '' ? null : Math.max(0, Math.min(100, tgtMax ? Number(v) / tgtMax * 100 : Number(v)))}); }} /></label><span>{tgtMax ? `/${tgtMax}` : '%'}</span><button class="btn sm" onClick={() => set({hp: 0})}>ひんし</button></div>
         <StepRange value={tgtMax ? Math.round(tgtMax * (act.hp ?? tgtHp) / 100) : Math.round(act.hp ?? tgtHp)} max={tgtMax || 100} label="残りHPの調整" onChange={n => set({hp: tgtMax ? n / tgtMax * 100 : n})} />
         {hpInputs}
