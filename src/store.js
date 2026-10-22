@@ -169,6 +169,13 @@ export function createStore(backend) {
     exportAll() {
       return {app: 'pokememo', v: 1, exportedAt: new Date().toISOString(), teams: state.teams, battles: state.battles};
     },
+    exportBattle(id) {
+      const battle = state.battles.find(b => b.id === id && !b.deleted);
+      if (!battle) throw new Error('この対戦は見つかりません');
+      // 自分のパーティは対戦内のスナップショットに含まれる。
+      // 構築や他の対戦、同期設定は書き出さない。
+      return structuredCloneSafe({app: 'pokememo', v: 1, exportedAt: new Date().toISOString(), teams: [], battles: [battle]});
+    },
     async importAll(data) {
       if (!data || data.app !== 'pokememo' || !Array.isArray(data.teams) || !Array.isArray(data.battles)) throw new Error('このアプリのバックアップファイルではありません');
       let n = 0;

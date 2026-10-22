@@ -13,6 +13,7 @@ import {TurnBar, FieldBar} from './play.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
 import {PredictTab} from './analysis.jsx';
 import {BattleLog} from './turn.jsx';
+import {BattleExport} from './battle-export.jsx';
 
 const TABS = [['setup', '選出'], ['board', '盤面'], ['dmg', 'ダメージ'], ['log', 'ログ'], ['stat', '傾向']];
 const RESULT_OPTS = [['', '未決'], ['win', '勝ち'], ['lose', '負け'], ['draw', '引分']];
@@ -76,6 +77,7 @@ export function BattleScreen({id}) {
           <span class="muted"> vs {battle.oppName || '相手'}</span>
           {battle.kind === 'sim' && <span class="tag accent">仮想盤面</span>}
         </div>
+        <BattleExport id={battle.id} />
         {battle.kind !== 'sim' && <Seg small value={battle.result} options={RESULT_OPTS} onChange={v => mut(b => { b.result = v; })} />}
       </div>
       <div class="tabs" role="tablist">
