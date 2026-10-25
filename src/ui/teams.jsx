@@ -6,6 +6,7 @@ import {usageEntries, parseSpread} from '../engine/assume.js';
 import {teamRecord, realBattles} from '../engine/predict.js';
 import {TeamReport} from './stats.jsx';
 import {ShotImport} from './shot-import.jsx';
+import {TeamCSVImport} from './team-csv.jsx';
 import {TeamDiagnosis} from './teamdiag.jsx';
 import {PickRulesEditor} from './pickrules.jsx';
 
@@ -85,6 +86,7 @@ export function TeamList() {
   const teams = store.teams();
   const battles = store.battles();
   const [shot, setShot] = useState(false);
+  const [csv, setCSV] = useState(false);
   const create = async () => {
     const t = newTeam('single');
     await store.saveTeam(t);
@@ -95,10 +97,12 @@ export function TeamList() {
       <div class="page-head">
         <h1>構築</h1>
         <div class="btnrow">
+          <button class="btn" onClick={() => setCSV(true)}>CSVでまとめて追加</button>
           <button class="btn" onClick={() => setShot(true)}>スクショから追加</button>
           <button class="btn primary" onClick={create}>新しい構築</button>
         </div>
       </div>
+      {csv && <TeamCSVImport onClose={() => setCSV(false)} />}
       {shot && <ShotImport onClose={() => setShot(false)} />}
       {!teams.length && <Empty>まだ構築がありません。「新しい構築」から6体を登録すると、対戦の記録とダメージ計算に使えます。</Empty>}
       <div class="cards">
