@@ -43,27 +43,24 @@ export function OppStatTable({battle, idx, forme, onBoosts}) {
       <tbody>
         <tr><th>種族値</th>{s.bs.map(v => <td class="num">{v}</td>)}</tr>
         <tr class="est"><th>推定Pt</th>{est.rows.map(r => <td class={cx('num', r.known && 'known')}>{r.known ? rg([r.spLo, r.spHi]) : '—'}</td>)}</tr>
+        {patterns.map(p => <tr class="est-pattern" title={`${natureName(p.nature)}・観測に合う配分の一例`}>
+          <th>{p.labels.join('・')}<small>配分例 · Pt</small></th>
+          {STAT_KEYS.map((key, i) => {const mod = natureMod(p.nature, key);return <td class="num">{p.sp[i]}{mod !== 1 && <span class={mod > 1 ? 'pos' : 'neg'}>{mod > 1 ? '↑' : '↓'}</span>}</td>;})}
+        </tr>)}
         <BoostRow boosts={raw.boosts} onSave={onBoosts} />
         <tr class="real"><th>実数値</th>
           {STAT_KEYS.map((k, i) => {
             const st = raw.boosts?.[k] || 0;
             const r = est.rows[i];
             const base = fmtVal(r);
-            if (!st) return <td class={cx('num', r.known && 'known')}>{base}</td>;
+            if (!st) return <td class={cx('num', r.known && 'known')}>{base}{r.known && r.valLo === r.valHi && <small class="estimate-fixed">確定</small>}</td>;
             const up = v => Math.floor(st > 0 ? (v * (2 + st)) / 2 : (v * 2) / (2 - st));
             return <td class={cx('num', r.known && 'known', st > 0 ? 'pos' : 'neg')}>{fmtVal({valLo: up(r.valLo), valHi: up(r.valHi)})}<small>({base})</small></td>;
           })}
         </tr>
       </tbody>
     </table>
-    <div class="estimate-speed"><b>素早さ S</b><strong>{fmtVal(est.rows[5])}</strong><span>{est.rows[5].valLo === est.rows[5].valHi ? '実数値確定' : est.rows[5].known ? '推定範囲' : '未判明'} ・ ランク補正前</span></div>
-    {patterns.length > 0 && <div class="bulk-patterns">
-      <div class="bulk-pattern-heading"><b>耐久配分の代表例</b><span>同時に成立する組み合わせ</span></div>
-      <table class="bulk-pattern-table"><thead><tr><th>配分の方向</th><th>H</th><th>B</th><th>D</th><th>性格</th></tr></thead><tbody>{patterns.map(p => <tr>
-        <th>{p.labels.join('・')}</th>{[0,2,4].map(i => {const mod = natureMod(p.nature, STAT_KEYS[i]);return <td>{p.sp[i]}{mod !== 1 && <small>{mod > 1 ? '↑' : '↓'}</small>}</td>;})}<td>{natureName(p.nature)}</td>
-      </tr>)}</tbody></table>
-      <p>数値は能力Pt。↑↓は性格補正。観測に合う一例で、途中の配分も候補に残ります。各行のH・B・Dをセットで見てください。</p>
-    </div>}
+    {patterns.length > 0 && <p class="estimate-note">配分例は各行をセットで比較。↑↓は性格補正。実数値は全候補の範囲。</p>}
     </div>
   );
 }

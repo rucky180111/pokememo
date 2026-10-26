@@ -1590,18 +1590,12 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .arena-turnbar .tb-undo { order:-2; width:100%; align-items:stretch; }
 .arena-turnbar .tb-undo-button { width:100%; min-height:46px; font-size:15px; font-weight:700; padding:9px 12px; color:var(--accent); border-color:var(--accent); background:var(--accent-soft); touch-action:manipulation; }
 
-/* 相手の推定は範囲と、相関を保った代表例を分けて読む。 */
+/* 推定範囲と配分例を同じH/A/B/C/D/S列で比較する。 */
 .opp-estimate { min-width: 0; }
-.estimate-speed { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 10px; padding: 5px 6px; background: var(--surface2); font-size: 12px; }
-.estimate-speed strong { color: var(--accent); font-variant-numeric: tabular-nums; }
-.estimate-speed span, .bulk-pattern-heading span { color: var(--muted); font-size: 10px; }
-.bulk-patterns { margin-top: 5px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-.bulk-pattern-heading { display: flex; flex-wrap: wrap; gap: 3px 8px; padding: 5px 6px; font-size: 12px; }
-.bulk-pattern-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
-.bulk-pattern-table th, .bulk-pattern-table td { padding: 4px 3px; border-top: 1px solid var(--border); text-align: center; }
-.bulk-pattern-table th:first-child { text-align: left; padding-left: 6px; }
-.bulk-pattern-table thead { color: var(--muted); background: var(--surface2); font-size: 10px; }
-.bulk-pattern-table td { font-weight: 700; }
-.bulk-pattern-table td:last-child { font-size: 10px; font-weight: 400; }
-.bulk-pattern-table small { color: var(--accent); }
-.bulk-patterns p { font-size: 10px; color: var(--muted); margin: 4px 6px; line-height: 1.4; }
+.mp-table tr.est-pattern { background: var(--surface2); }
+.mp-table tr.est-pattern th { white-space: normal; line-height: 1.15; }
+.mp-table tr.est-pattern th small { display: block; font-size: 9px; font-weight: 400; }
+.mp-table tr.est-pattern td { font-weight: 600; font-variant-numeric: tabular-nums; }
+.mp-table tr.est-pattern:first-of-type { border-top: 2px solid var(--border); }
+.mp-table tr.real td small.estimate-fixed { color: var(--accent); font-size: 9px; }
+.estimate-note { font-size: 10px; color: var(--muted); margin: 3px 0 0; line-height: 1.3; }
