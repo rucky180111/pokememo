@@ -101,7 +101,7 @@ function ensureTurn(b) {
     if (!b.turns.length && !b.start) b.start = clone({state: b.state, pick: b.pick, opp: b.opp});
     t = {n: b.turns.length + 1, acts: [], orderKnown: true, note: '', auto: [], open: true, before: clone({state: b.state, pick: b.pick, opp: b.opp})};
     b.turns.push(t);
-    for (let i = 0; i < b.turns.length - UNDO_DEPTH; i++) delete b.turns[i].before;
+    for (let i = 0; i < b.turns.length - UNDO_DEPTH; i++) { delete b.turns[i].before; delete b.turns[i].undoEnd; }
   }
   return t;
 }
@@ -855,40 +855,77 @@ export function canReplay(b) {
   return b.turns.every(t => t.acts.every(a => a.in || a.type !== 'event'));
 }
 
+// ログから判明した情報を、そのログを消した後に手入力情報として復活させない。
+function revealsFrom(a) {
+  const input=a.in || {}, out=[];
+  const add=(kind,side,mon)=>{if(side==='opp' && mon!=null) out.push(`${kind}:${mon}`);};
+  if(a.type==='event') {
+    if(['item','ability'].includes(a.kind)) add(a.kind,a.side,a.mon);
+    if(a.kind==='residual') {
+      if(RESIDUAL_ITEM[input.key]) add('item',a.side,a.mon);
+      if(STATUS_RESIDUAL.has(input.key)) add('ability',a.side,a.mon);
+    }
+    if(a.kind==='hazard' && input.none) add('item',a.side,a.mon);
+  } else {
+    const target=a.target || input.target;
+    const item = x => typeof x === 'string' ? !!x : !!x?.item;
+    if(item(input.atkItem) || input.mega) add('item',a.side,a.mon);
+    if(item(input.defItem) && target) add('item',target.side,target.mon);
+    if(input.contactAbility && target) add('ability',target.side,target.mon);
+    if(['emergencyexit','wimpout'].includes(a.eject?.reason)) add('ability',a.eject.side,a.side===a.eject.side ? a.mon : target?.mon);
+  }
+  return out;
+}
+
 /**
  * 最初の状態から全ターンを入れ直す。行動を直した・消したときに使う。
  * 相手の判明情報のうち、行動から分かったもの (技・持ち物・能力の絞り込み) は作り直し、
  * 手で入れた情報 (行動に出てこない技・持ち物・特性) は残す。
  */
 export function replay(b, usage, opts = {}) {
-  const start = b.start || b.turns[0]?.before;
-  if (!start) return false;
   const old = b.turns;
+  // 変更していない前半は再生せず、変更ターンの直前から再計算する。
+  const partial = opts.checkpoint && Number.isInteger(opts.fromTurn) && opts.fromTurn >= 0 && opts.fromTurn <= old.length;
+  const fromTurn = partial ? opts.fromTurn : 0;
+  const start = partial ? opts.checkpoint : b.start || old[0]?.before;
+  if (!start) return false;
   const fromActs = new Set();
   for (const t of old) for (const a of t.acts) if (a.side === 'opp' && a.type === 'move') fromActs.add(a.move);
   for (const m of opts.fromActs || []) fromActs.add(m);
   const prev = clone(b.opp);
-  b.start = clone(start);
+  const forget = new Set(opts.forget || []);
+  if (!b.start) b.start = clone(start);
   b.state = clone(start.state);
   b.pick = clone(start.pick);
   b.opp.forEach((o, i) => {
     const s0 = start.opp?.[i];
     if (!s0 || s0.species !== o.species) return;
     // 特性は対戦を通して変わらないので、分かっていれば最初から入れて再生する (登場時の特性の処理が正しくなる)
-    Object.assign(o, {item: s0.item || '', ability: prev[i]?.species === o.species && prev[i].ability ? prev[i].ability : s0.ability || '', moves: [...(s0.moves || [])], statOk: s0.statOk ?? null, speOk: s0.speOk ?? null, scarfLikely: !!s0.scarfLikely, megaSeen: !!s0.megaSeen});
+    Object.assign(o, {item: s0.item || '', ability: !forget.has(`ability:${i}`) && prev[i]?.species === o.species && prev[i].ability ? prev[i].ability : s0.ability || '', moves: [...(s0.moves || [])], statOk: s0.statOk ?? null, speOk: s0.speOk ?? null, scarfLikely: !!s0.scarfLikely, megaSeen: !!s0.megaSeen});
   });
-  b.turns = [];
-  for (const t of old) {
+  b.turns = old.slice(0, fromTurn);
+  for (const t of old.slice(fromTurn)) {
+    let endSnapshot;
+    const endingEvents = new Set(endEvents(t));
     for (const a of t.acts) {
+      if (!endSnapshot && endingEvents.has(a)) endSnapshot = captureEndUndo(b, ensureTurn(b));
       const inp = a.in || legacyInput(a);
       if (!inp) continue;
       if (a.type === 'event') addEvent(b, inp, usage);
-      else addAct(b, {...inp, sameTurn: true}, usage);
+      else {
+        addAct(b, {...inp, sameTurn: true}, usage);
+        if (a.endCorrection && JSON.stringify(inp) === JSON.stringify(a.endCorrection.applied)) openTurn(b).acts.at(-1).endCorrection = clone(a.endCorrection);
+      }
     }
     const nt = ensureTurn(b);
     nt.note = t.note || '';
     if (t.noOrder) nt.noOrder = true;
-    if (!t.open) endTurn(b, usage, t.end || {});
+    if (!t.open) {
+      endSnapshot ||= captureEndUndo(b, nt);
+      endTurn(b, usage, t.end || {});
+      // 終了後HPから逆算された行動は、元入力へ戻してから再計算する必要がある。
+      if (!nt.acts.some(a => a.endCorrection)) nt.undoEnd = {...endSnapshot, guard: endUndoGuard(b, nt)};
+    }
   }
   // イリュージョンで分かった「選出の最後」を、選出の並びの最後に入れる
   if (b.illusionLast != null && b.opp[b.illusionLast]) {
@@ -897,8 +934,8 @@ export function replay(b, usage, opts = {}) {
   b.opp.forEach((o, i) => {
     const p = prev[i];
     if (!p || p.species !== o.species) return;
-    if (!o.item && p.item && !p.megaSeen) o.item = p.item;
-    if (!o.ability && p.ability) o.ability = p.ability;
+    if (!o.item && p.item && !p.megaSeen && !forget.has(`item:${i}`)) o.item = p.item;
+    if (!o.ability && p.ability && !forget.has(`ability:${i}`)) o.ability = p.ability;
     for (const m of p.moves || []) if (!fromActs.has(m) && !o.moves.includes(m) && o.moves.length < 4) o.moves.push(m);
     o.assume = p.assume; o.note = p.note;
   });
@@ -911,6 +948,9 @@ export function deleteActs(b, selections, usage) {
   if (!selections?.length || !canReplay(b)) return false;
   const keys = new Set();
   const fromActs = [];
+  const forget = [];
+  const fromTurn = Math.min(...selections.map(s => s.ti));
+  const checkpoint = b.turns[fromTurn]?.before;
   for (const {ti, ai} of selections) {
     if (!Number.isInteger(ti) || !Number.isInteger(ai) || !b.turns[ti]?.acts[ai]) return false;
     keys.add(`${ti}:${ai}`);
@@ -920,6 +960,7 @@ export function deleteActs(b, selections, usage) {
     t.acts = t.acts.filter((a, ai) => {
       if (!keys.has(`${ti}:${ai}`)) return true;
       if (a.side === 'opp' && a.type === 'move') fromActs.push(a.move);
+      forget.push(...revealsFrom(a));
       return false;
     });
     // このターンの観測HPから導いた制約は、削除前の盤面に依存する。
@@ -929,7 +970,7 @@ export function deleteActs(b, selections, usage) {
     }
     return t.acts.length > 0 || !t.open;
   });
-  return replay(b, usage, {fromActs});
+  return replay(b, usage, {fromActs, fromTurn, checkpoint, forget});
 }
 
 /** ti ターン目の ai 番目の行動を input に置き換える (null で削除)。 */
@@ -940,7 +981,7 @@ export function editAct(b, ti, ai, input, usage) {
   const was = t.acts[ai];
   const fromActs = was.side === 'opp' && was.type === 'move' ? [was.move] : [];
   t.acts[ai] = {...t.acts[ai], in: inputCopy(input)};
-  return replay(b, usage, {fromActs});
+  return replay(b, usage, {fromActs, fromTurn: ti, checkpoint: t.before, forget: revealsFrom(was)});
 }
 
 /** 後から確認した状態異常を、指定した行動の前後に記録して再計算する。 */
@@ -1030,13 +1071,76 @@ export function revealIllusion(b, usage, zIdx) {
   return n;
 }
 
-/** 入力途中のターンを、ターン終了前に戻す (閉じたターンを開き直す) */
+// 終了処理の直前を直近6ターンだけ保持する。行動数に応じた履歴は増やさない。
+function captureEndUndo(b, t) {
+  return clone({state:b.state, pick:b.pick, opp:b.opp, result:b.result, acts:t.acts, auto:t.auto, noOrder:t.noOrder, incomplete:t.incomplete});
+}
+// チェックポイントを、訂正前の古い盤面に誤って使わないための変更検出。
+// 盤面・推定・入力・型が一致する場合だけ高速復元する（暗号用途ではない）。
+function endUndoGuard(b, t) {
+  const text = JSON.stringify([b.state,b.pick,b.my,b.opp,b.result,t.acts.map(a=>[a.type,a.in]),t.end]);
+  let a = 2166136261, c = 5381;
+  for (let i=0;i<text.length;i++) { const n=text.charCodeAt(i); a=Math.imul(a^n,16777619); c=Math.imul(c,33)^n; }
+  return `${text.length}:${a>>>0}:${c>>>0}`;
+}
+function legacyEndEvent(a) {
+  return a.type === 'event' && (a.kind === 'residual' || a.kind === 'hp' && (a.in?.note === 'ターン終了後に確認' || /の直後に確認$/.test(a.in?.note || '')));
+}
+function endEvents(t) {
+  const marked = t.acts.filter(a=>a.in?.turnEnd);
+  if (marked.length) return marked;
+  let i=t.acts.length;
+  while(i>0 && legacyEndEvent(t.acts[i-1])) i--;
+  return t.acts.slice(i);
+}
+
+/** 閉じたターンを、定数処理・回復・終了時の推定もまとめて終了直前へ戻す。 */
 export function reopenLastTurn(b, usage) {
-  const t = b.turns[b.turns.length - 1];
-  if (!t || t.open || !canReplay(b)) return false;
-  t.open = true;
-  delete t.end;
-  return replay(b, usage);
+  const ti=b.turns.length-1, t=b.turns[ti];
+  if (!t || t.open && !endEvents(t).includes(t.acts.at(-1))) return false;
+  if (t.undoEnd?.guard === endUndoGuard(b,t)) {
+    const snap=t.undoEnd;
+    b.state=clone(snap.state); b.pick=clone(snap.pick); b.opp=clone(snap.opp); b.result=snap.result;
+    t.acts=clone(snap.acts); t.auto=clone(snap.auto || []);
+    for (const key of ['noOrder','incomplete']) { if (snap[key] == null) delete t[key]; else t[key]=snap[key]; }
+    t.open=true; delete t.end; delete t.undoEnd; b.updatedAt=Date.now(); b.undoRevision=(b.undoRevision||0)+1;
+    return true;
+  }
+  if (!canReplay(b)) return false;
+  const generated=new Set(endEvents(t));
+  t.acts=t.acts.filter(a=>!generated.has(a));
+  for (const a of t.acts) if (a.endCorrection) {
+    if (JSON.stringify(a.in) === JSON.stringify(a.endCorrection.applied)) a.in=clone(a.endCorrection.original);
+    delete a.endCorrection;
+  }
+  t.open=true; t.auto=[];
+  delete t.end; delete t.undoEnd; delete t.incomplete;
+  const ok=replay(b,usage,{fromTurn:ti,checkpoint:t.before,forget:[...generated].flatMap(revealsFrom)});
+  if(ok) b.undoRevision=(b.undoRevision||0)+1;
+  return ok;
+}
+
+/** 次の「1つ戻す」が取り消す操作。表示と処理で同じ単位を使う。 */
+export function undoPlan(b) {
+  let ti=b.turns.length-1;
+  while(ti>=0 && b.turns[ti].open && !b.turns[ti].acts.length) ti--;
+  if(ti<0) return null;
+  const t=b.turns[ti];
+  if(!t.open || endEvents(t).includes(t.acts.at(-1))) return {kind:'end',ti,turn:t.n,count:endEvents(t).length,label:`ターン${t.n}の終了処理（定数ダメージ・回復などを一括）`};
+  const ai=t.acts.length-1,a=t.acts[ai];
+  const who=a.mon != null && buildOf(b,a.side,a.mon) ? `${a.side==='me'?'自分':'相手'}の${speciesName(a.sp || buildOf(b,a.side,a.mon).species)}：` : '';
+  return {kind:'act',ti,ai,turn:t.n,label:`ターン${t.n} ${who}${actLine(b,a)}`};
+}
+export function undoLast(b, usage) {
+  const plan=undoPlan(b);
+  if(!plan) return null;
+  // 空の入力中ターンは独立した操作として数えない。
+  const trailing=b.turns.splice(plan.ti+1);
+  const ok=plan.kind==='end' ? reopenLastTurn(b,usage) : deleteActs(b,[{ti:plan.ti,ai:plan.ai}],usage);
+  if(!ok) { b.turns.push(...trailing); return null; }
+  if(plan.kind==='act') b.undoRevision=(b.undoRevision||0)+1;
+  const t=openTurn(b);
+  return {...plan,position:t ? `ターン${t.n}・入力中（${t.acts.filter(a=>a.type==='move'||a.type==='switch').length}行動記録済み）` : b.turns.length ? `ターン${b.turns.at(-1).n}・終了後` : '最初の行動を入力する前'};
 }
 
 // ---- ターン終了時の処理 (たべのこし・定数ダメージなど) ----
@@ -1175,8 +1279,9 @@ export function residualCandidates(b, usage) {
  * residual: 選んだターン終了時の処理 / finalHp: {'me0': 割合} ターン終了後のHP (分かったもの)
  * resFirst: 先に処理されたのはどちらか / expiry: [{key, ended, n}] 5ターン目のものが終わったか
  */
-export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete = false, finalHp = {}, resFirst, expiry = [], moody = []} = {}) {
+export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete = false, finalHp = {}, resFirst, expiry = [], moody = [], result} = {}) {
   let t = ensureTurn(b);
+  const undoSnapshot = captureEndUndo(b,t);
   finalHp = {...Object.fromEntries(t.acts.filter(a => a.in?.endHp).map(a => [`${a.in.endHp.side}${a.in.endHp.mon}`, a.in.endHp.hpAfter])), ...finalHp};
   const log = [];
   // 「わからない」で飛ばした攻撃のHPを、ターン終了後のHPから逆算して入れ直す
@@ -1199,8 +1304,10 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete
       h -= side === 'me' ? delta / mx * 100 : f * 100;
     }
     if (ambiguous || h <= 0 || h > 100 + 1e-9) continue;
+    const original = inputCopy(act.in);
     act.in = {...act.in, hpAfter: Math.max(0.1, Math.min(100, h)), exact: side === 'me', ...(side === 'opp' ? {postResidual: {after: val, steps: residual.filter(r => r.side === side && r.mon === mon).map(r => stepOf(b, side, mon, r.key))}} : {})};
     delete act.in.hpUnknown;
+    act.endCorrection = {original,applied:inputCopy(act.in)};
     changed = true;
   }
   if (changed && canReplay(b)) { replay(b, usage); t = ensureTurn(b); }
@@ -1230,8 +1337,8 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete
     const c = condOf(b, r.side, r.mon), step = stepOf(b, r.side, r.mon, r.key);
     const measured = r.side === 'opp' && Number.isInteger(r.hpAfter) && r.hpAfter >= 0 && r.hpAfter <= 100;
     if (measured && c && !c.hpUnknown && Number.isInteger(c.hp) && step) hpFacts.push({opp: r.mon, d0: c.hp, d1: r.hpAfter, steps: [step]});
-    log.push(...addEvent(b, {kind: 'residual', side: r.side, mon: r.mon, key: r.key}, usage));
-    if (measured && c) log.push(...addEvent(b, {kind: 'hp', side: r.side, mon: r.mon, hpAfter: r.hpAfter, note: `${RESIDUAL_JA[r.key]}の直後に確認`}, usage));
+    log.push(...addEvent(b, {kind: 'residual', side: r.side, mon: r.mon, key: r.key, turnEnd: true}, usage));
+    if (measured && c) log.push(...addEvent(b, {kind: 'hp', side: r.side, mon: r.mon, hpAfter: r.hpAfter, note: `${RESIDUAL_JA[r.key]}の直後に確認`, turnEnd: true}, usage));
   }
   // 入力されたターン終了後のHPと計算が合わなければ、入力のほうに合わせる
   for (const [k, val] of Object.entries(finalHp)) {
@@ -1239,10 +1346,12 @@ export function finishTurn(b, usage, {residual = [], noOrder = false, incomplete
     const side = k.startsWith('me') ? 'me' : 'opp', mon = Number(k.replace(/^(me|opp)/, ''));
     const c = condOf(b, side, mon);
     // 相手は表示 (整数%) をそのまま正とする (次の推定で表示の値が要るため)
-    if (c && !c.fainted && (c.hpUnknown || (side === 'me' ? Math.abs(c.hp - val) > 0.7 : Math.abs(c.hp - val) > 1e-6))) log.push(...addEvent(b, {kind: 'hp', side, mon, hpAfter: val, note: 'ターン終了後に確認'}, usage));
+    if (c && !c.fainted && (c.hpUnknown || (side === 'me' ? Math.abs(c.hp - val) > 0.7 : Math.abs(c.hp - val) > 1e-6))) log.push(...addEvent(b, {kind: 'hp', side, mon, hpAfter: val, note: 'ターン終了後に確認', turnEnd: true}, usage));
   }
   const confirmedHP = Object.entries(finalHp).filter(([, value]) => Number.isFinite(value)).map(([key]) => key);
   log.push(...endTurn(b, usage, {noOrder, incomplete, confirmedHP, resFirst, hpFacts, expiry, moody}));
+  if (b.kind !== 'sim' && ['win','lose','draw'].includes(result)) b.result=result;
+  t.undoEnd = {...undoSnapshot,guard:endUndoGuard(b,t)};
   return log;
 }
 

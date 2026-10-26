@@ -9,7 +9,7 @@ import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility
 import {condOf, buildOf, other, turnNumber, PIVOT_MOVES, faintedCount, pickCount, defaultAbilityResolver} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {damageRange} from '../engine/damage-range.js';
-import {HIT_ABILITIES, hitAbilityAction, revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, editAct, correctActHP, reopenLastTurn, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
+import {HIT_ABILITIES, hitAbilityAction, revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, undoPlan, undoLast, correctActHP, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
 import {speedOutlook} from '../engine/assume.js';
 import {finalSpeed} from '../engine/calc.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, Confirm, cx, fmtPct, rate} from './common.jsx';
@@ -79,7 +79,7 @@ export function PlayBoard({battle, ctx, mut, usage, toast, setSheet}) {
   // メガシンカの確認中 ({'me0': 'garchompmega'})。数値だけメガの姿で見せ、行動を記録するときに一緒に記録する
   const [megaPrev, setMegaPrev] = useState({});
   const turn = turnNumber(battle);
-  useLayoutEffect(() => { setAct(null); setMegaPrev({}); }, [turn]);
+  useLayoutEffect(() => { setAct(null); setMegaPrev({}); }, [turn, battle.undoRevision]);
   const prevKeys = Object.keys(megaPrev).filter(k => megaPrev[k]);
   const vctx = useMemo(() => {
     if (!prevKeys.length) return ctx;
@@ -688,6 +688,7 @@ export function TurnBar({battle, ctx, mut, usage, toast, focusSide}) {
   const [exp, setExp] = useState({});
   const [ev, setEv] = useState(false);
   const [keep, setKeep] = useState(false);
+  const [lastUndo, setLastUndo] = useState(null);
   const [skip, setSkip] = useState(false);
   const [resOrder, setResOrder] = useState({key: '', value: ''});
   const [stepHpInput, setStepHpInput] = useState({key: '', values: {}});
@@ -711,24 +712,32 @@ export function TurnBar({battle, ctx, mut, usage, toast, focusSide}) {
     setMaybe({}); setExp({}); setSkip(false);
     toast(log.length ? log[log.length - 1] : 'ターンを終えました');
   };
-  // 1つ戻す: ターンを終えた直後なら「ターン終了」を取り消して、そのターンの入力に戻る。
-  // そうでなければ最後の記録を消す (次の記録は戻ったターンに入る)
+  const nextUndo = undoPlan(battle);
   const undo = () => {
-    const ti = battle.turns.length - 1;
-    const tt = battle.turns[ti];
-    if (!tt) return;
-    if (!tt.open) { mut(b => { reopenLastTurn(b, usage); }); toast(`ターン${tt.n}の終了を取り消しました`); return; }
-    if (!tt.acts.length) return;
-    mut(b => { editAct(b, ti, tt.acts.length - 1, null, usage); });
-    toast('最後の記録を取り消しました');
+    let result;
+    mut(b => { result = undoLast(b, usage); });
+    if (!result) { toast('この記録は取り消せません'); return; }
+    setMaybe({}); setExp({}); setResOrder({key:'',value:''});
+    setEndHpInput({key:'',values:{}}); setStepHpInput({key:'',values:{}});
+    setLastUndo({id:battle.id,label:result.label});
+    toast(`取消：${result.label}。現在：${result.position}`);
   };
-  const lastActs = (t || battle.turns[battle.turns.length - 1])?.acts.length;
+  const currentPosition = t ? `ターン${t.n}・${doneMe && doneOpp ? '終了前' : '入力中'}（${t.acts.filter(a=>a.type==='move'||a.type==='switch').length}行動記録済み）` : battle.turns.length ? `ターン${battle.turns.at(-1).n}終了後・次はターン${turnNumber(battle)}` : '最初の行動を入力する前';
+  const undoControls = <div class="tb-undo">
+    <strong class="tb-undo-position">入力位置：{currentPosition}</strong>
+    {nextUndo && <>
+      <button class="btn ghost sm" onClick={undo} title={`取り消す内容：${nextUndo.label}`} aria-describedby="undo-next">1つ戻す</button>
+      <small id="undo-next" class="tb-undo-next">次に戻す：{nextUndo.label}</small>
+    </>}
+    {lastUndo?.id === battle.id && <small class="tb-undo-result" role="status">戻した内容：{lastUndo.label}</small>}
+  </div>;
   if (lostSide && !keep) {
     const res = lostSide === 'opp' ? 'win' : 'lose';
     return (
       <div class={cx('turnbar game-over', res)}>
+        {undoControls}
         <b class="go-title">{lostSide === 'opp' ? '勝ち！' : '負け'}</b>
-        {t && t.acts.length > 0 && <button class="btn primary" onClick={() => { mut(b => { finishTurn(b, usage); if (b.kind !== 'sim') b.result = res; }); }}>最後のターンを確定</button>}
+        {t && t.acts.length > 0 && <button class="btn primary" onClick={() => { mut(b => { finishTurn(b, usage, {result:res}); }); }}>最後のターンを確定</button>}
         {!t && battle.kind !== 'sim' && battle.result !== res && <button class="btn primary" onClick={() => mut(b => { b.result = res; })}>結果を「{res === 'win' ? '勝ち' : '負け'}」にする</button>}
         <button class="btn ghost sm" onClick={() => setKeep(true)}>記録を続ける</button>
       </div>
@@ -739,7 +748,7 @@ export function TurnBar({battle, ctx, mut, usage, toast, focusSide}) {
       <div class="tb-status">
         <button class={cx('tb-side me', doneMe && 'ok')} onClick={() => focusSide?.('me')} title="自分の盤面へ移動" aria-label="自分の盤面へ">自分 {doneMe ? '✓' : '…'}</button>
         <button class={cx('tb-side opp', doneOpp && 'ok')} onClick={() => focusSide?.('opp')} title="相手の盤面へ移動" aria-label="相手の盤面へ">相手 {doneOpp ? '✓' : '…'}</button>
-        {lastActs > 0 && <button class="btn ghost sm" onClick={undo}>1つ戻す</button>}
+        {undoControls}
         <button class="btn ghost sm" onClick={() => setEv(true)}>その他の変化…</button>
       </div>
       {sure.length > 0 && <div class="tb-auto">ターン終了時: {sure.map(c => `${SIDE_JA[c.side]}${c.label}`).join('・')}</div>}

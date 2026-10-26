@@ -102,7 +102,7 @@ export function BattleLog({battle, ctx, mut, usage, toast, notes}) {
             </div>)}
             {remainingTurnEffects(t).map(e => <div class="tl-system"><span class="log-kind">{e.kind}</span><span>{e.text}</span></div>)}
             {!selecting && !t.open && ti === battle.turns.length - 1 && editable && (
-              <button class="btn ghost sm tl-reopen" onClick={() => { mut(b => { reopenLastTurn(b, usage); }); toast('ターン終了を取り消しました。行動を追加できます'); }}>このターンに行動を追加する</button>
+              <button class="btn ghost sm tl-reopen" onClick={() => { mut(b => { reopenLastTurn(b, usage); }); toast('ターン終了時の定数ダメージ・回復もまとめて取り消しました。行動を追加できます'); }}>このターンに行動を追加する</button>
             )}
             {notes && <input class="input log-note" placeholder="このターンのメモ" value={t.note || ''} onChange={e => mut(b => { b.turns[ti].note = e.currentTarget.value; })} />}
           </div>
