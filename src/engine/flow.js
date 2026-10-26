@@ -4,6 +4,7 @@ import {currentSpecies, typesOf, currentAbility, finalSpeed, disguiseIntact, def
 import moveEffects from '../generated/move-effects.json' with {type: 'json'};
 import {inferHpEffects} from './infer-hp-effects.js';
 
+export const ENTRY_ABILITIES = new Set(['drizzle','drought','sandstream','snowwarning','electricsurge','grassysurge','mistysurge','psychicsurge','intimidate','download','screencleaner','imposter','trace','hospitality','curiousmedicine']);
 export const FORCE_MOVES = new Set(['dragontail', 'circlethrow', 'roar', 'whirlwind']);
 export const STATUS_MOVE = {willowisp:'brn', thunderwave:'par', glare:'par', stunspore:'par', nuzzle:'par', toxic:'tox', poisonpowder:'psn', toxicthread:'psn', spore:'slp', sleeppowder:'slp', hypnosis:'slp', sing:'slp', darkvoid:'slp', lovelykiss:'slp', grasswhistle:'slp'};
 function inflictStatus(b, target, src, st, move, log) {
@@ -968,7 +969,7 @@ export function deleteActs(b, selections, usage) {
     t.acts = t.acts.filter((a, ai) => {
       if (!keys.has(`${ti}:${ai}`)) return true;
       if (a.side === 'opp' && a.type === 'move') fromActs.push(a.move);
-      if(a.in?.retroItem) checkpoint=undefined;
+      if(a.in?.retroItem || a.in?.retroAbility) checkpoint=undefined;
       forget.push(...revealsFrom(a));
       return false;
     });
@@ -990,7 +991,7 @@ export function editAct(b, ti, ai, input, usage) {
   const was = t.acts[ai];
   const fromActs = was.side === 'opp' && was.type === 'move' ? [was.move] : [];
   t.acts[ai] = {...t.acts[ai], in: inputCopy(input)};
-  return replay(b, usage, {fromActs, fromTurn: ti, checkpoint: was.in?.retroItem ? undefined : t.before, forget: revealsFrom(was)});
+  return replay(b, usage, {fromActs, fromTurn: ti, checkpoint: (was.in?.retroItem || was.in?.retroAbility) ? undefined : t.before, forget: revealsFrom(was)});
 }
 
 /** 後から確認した状態異常を、指定した行動の前後に記録して再計算する。 */
@@ -1557,6 +1558,19 @@ export function hazardDamage(b, side, mon) {
   if (!frac) return null;
   if (side === 'me') { const max = maxHPOf(b, side, mon); const d = fractions.reduce((sum, f) => sum + Math.max(1, Math.floor(max * f)), 0); return {pct: (d / max) * 100, hp: d, parts}; }
   return {pct: frac * 100, parts};
+}
+
+/** 後から判明した通常の特性を、ダメージ・被弾効果・推定にも反映する。
+ * 登場時特性は現在の場で発動。過去への二重発動を避ける。
+ */
+export function confirmAbility(b, {side='opp',mon,ability}, usage) {
+  const c = condOf(b,side,mon);
+  if (!c || ability && !dex.abilities[ability]) return false;
+  const retroAbility = side === 'opp' && !ENTRY_ABILITIES.has(ability) && !c.abilityChanged && !c.transformed;
+  const activate = !!ability && !(ENTRY_ABILITIES.has(ability) && defaultAbilityResolver(b,side,mon) === ability);
+  addEvent(b,{kind:'ability',side,mon,ability,activate,retroAbility},usage);
+  if (retroAbility && canReplay(b)) replay(b,usage);
+  return true;
 }
 
 /** 技の後で分かった持ち物を記録し、その持ち物で過去のダメージ・推定を再計算する。 */

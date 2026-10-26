@@ -128,7 +128,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
     }
     return {type: i.type || null, move: i.move || '', to: i.to ?? null, target: t, mega: !!i.mega, megaForme: i.megaForme || '',
       outcome: i.cant ? 'cant' : i.miss ? 'miss' : i.protect ? 'protect' : 'hit', hp, crit: !!i.crit, hits: i.hits || 0,
-      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, healedBy: i.healedBy || [], hpMode: 'left', secFx: i.secFx || [], selfFx: i.selfFx || [], atkHp: '', forceTo: i.forceTo ?? null, inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
+      defItem: i.defItem?.item || '', atkItem: i.atkItem?.item || '', endured: !!i.endured, healedBy: i.healedBy || [], hpMode: 'left', secFx: i.secFx || [], selfFx: i.selfFx || [], atkHp: Number.isFinite(i.atkHpAfter) ? String(side === 'me' ? Math.round(i.atkHpAfter * maxHPOf(battle, mon) / 100) : i.atkHpAfter) : '', forceTo: i.forceTo ?? null, inflict: i.inflict || (i.move ? STATUS_MOVE[i.move] || '' : '')};
   };
   const [f, setF] = useState(fromInit);
   const [pick, setPick] = useState(null);
@@ -193,7 +193,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
   const ready = f.type === 'switch' ? f.to != null : f.type === 'move' && (!!f.move || f.outcome === 'cant');
 
   // 技を選んだ → 結果へ / 交代を選んだ → そのまま記録 (ウィザード時)
-  const chooseMove = id => { set({type: 'move', move: id, inflict: STATUS_MOVE[id] || '', hits: 0, outcome: 'hit'}); if (wizard) goStep('result'); };
+  const chooseMove = id => { set({type: 'move', move: id, inflict: STATUS_MOVE[id] || '', hits: 0, secFx: id === f.move ? f.secFx : [], selfFx: id === f.move ? f.selfFx : [], outcome: 'hit'}); if (wizard) goStep('result'); };
   const chooseSwitch = i => { if (wizard) submit({type: 'switch', to: i, move: ''}); else set({type: 'switch', to: i, move: ''}); };
   // 結果を選んだ → ダメージなどの入力が要るなら次へ、要らなければ記録
   const needDetail = m => m && (m.c !== 'Z' || STATUS_MOVE[f.move] || (PIVOT_MOVES.has(f.move) && bench.length) || FORCE_MOVES.has(f.move) || (double && !m.sp && foes.length > 1));
@@ -440,11 +440,22 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
 }
 
 // 記録した行動・出来事の修正
-function EditSheet({battle, ctx, mut, usage, toast, ti, ai, onClose}) {
+export function EditSheet({battle, ctx, mut, usage, toast, ti, ai, onClose}) {
   const t = battle.turns[ti];
   const a = t?.acts[ai];
   if (!a) return null;
-  const save = input => { mut(b => { editAct(b, ti, ai, input, usage); }); toast('修正して、そのあとのターンを入れ直しました'); onClose(); };
+  const save = input => {
+    // このフォームで扱わない観測・補正情報も、同じ行動の修正では保持する。
+    const prev = a.in || {};
+    if (!input.miss && !input.cant && !input.protect) {
+      if (prev.observedHp) {
+        const target = input.target || a.target || prev.target;
+        input.observedHp = prev.observedHp.map(h => h.side === input.side && h.mon === input.mon && Number.isFinite(input.atkHpAfter) ? {...h,hpAfter:input.atkHpAfter} : target && h.side === target.side && h.mon === target.mon && Number.isFinite(input.hpAfter) ? {...h,hpAfter:input.hpAfter} : h);
+      }
+      if (input.move === prev.move) for (const k of ['pierce','contactStatus','contactAbility','selfHpUnknown','endHp','eject']) if (prev[k] !== undefined) input[k] = prev[k];
+      if (input.hpAfter != null) delete input.endHp;
+    }
+    mut(b => { editAct(b, ti, ai, input, usage); }); toast('修正し、その後の盤面と推定を再計算しました'); onClose(); };
   const del = () => { mut(b => { editAct(b, ti, ai, null, usage); }); toast('削除して、そのあとのターンを入れ直しました'); onClose(); };
   // 修正は「その行動の直前の盤面」で入力したいが、選択肢 (控え・技) は今の盤面で十分なので今の盤面を使う
   return (

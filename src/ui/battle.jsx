@@ -13,7 +13,7 @@ import {TurnBar, FieldBar} from './play.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
 import {PredictTab} from './analysis.jsx';
 import {BattleLog} from './turn.jsx';
-import {confirmItem} from '../engine/flow.js';
+import {confirmItem, confirmAbility} from '../engine/flow.js';
 import {BattleExport} from './battle-export.jsx';
 
 const TABS = [['setup', '選出'], ['board', '盤面'], ['dmg', 'ダメージ'], ['log', 'ログ'], ['stat', '傾向']];
@@ -131,7 +131,7 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose, preview = false
           <div class="os-row"><span class="os-lb">特性</span>
             {dex.species[battle.state.mons.opp[idx]?.forme]?.mega
               ? <b>{abilityName(dex.species[battle.state.mons.opp[idx].forme].ab[0])}</b>
-              : <Seg wrap value={o.ability || ''} options={[['', '不明'], ...s.ab.map(a => [a, abilityName(a)])]} onChange={val => set(x => { x.ability = val; })} />}
+              : <Seg wrap value={o.ability || ''} options={[['', '不明'], ...s.ab.map(a => [a, abilityName(a)])]} onChange={val => usedInLog ? mut(b => confirmAbility(b,{mon:idx,ability:val},usage)) : set(x => { x.ability = val; })} />}
           </div>
         </div>
         <div class="scroll-x"><OppStatTable battle={battle} idx={idx} /></div>

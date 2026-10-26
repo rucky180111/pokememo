@@ -9,7 +9,7 @@ import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility
 import {condOf, buildOf, other, turnNumber, PIVOT_MOVES, faintedCount, pickCount, defaultAbilityResolver} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {damageRange} from '../engine/damage-range.js';
-import {HIT_ABILITIES, hitAbilityAction, confirmItem, revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, undoPlan, undoLast, correctActHP, canReplay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
+import {ENTRY_ABILITIES, HIT_ABILITIES, hitAbilityAction, confirmAbility, confirmItem, revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, undoPlan, undoLast, correctActHP, canReplay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
 import {speedOutlook} from '../engine/assume.js';
 import {finalSpeed} from '../engine/calc.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, Confirm, cx, fmtPct, rate} from './common.jsx';
@@ -17,7 +17,7 @@ import {OppStatTable} from './arena.jsx';
 import {BoostRow} from './boostrow.jsx';
 import {StepRange} from './step-range.jsx';
 import {LateStatusInput} from './status-input.jsx';
-import {MegaButtons, EventForm, STATUS_MOVE, STATUS_OPTS, consumable} from './turn.jsx';
+import {MegaButtons, EditSheet, EventForm, STATUS_MOVE, STATUS_OPTS, consumable} from './turn.jsx';
 
 const SIDE_JA = {me: '自分', opp: '相手'};
 const FLAGS = [['reflect', 'リフレクター'], ['lightScreen', 'ひかりのかべ'], ['auroraVeil', 'オーロラベール'], ['tailwind', 'おいかぜ'], ['sr', 'ステルスロック'], ['stickyWeb', 'ねばねばネット']];
@@ -230,7 +230,8 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
     const mv = dex.moves[m];
     const ally = living(battle, side).find(i => i !== mon);
     const target = mv?.tg === 'adjacentAlly' ? (ally != null ? {side, mon: ally} : null) : mv?.c === 'Z' && ['self', 'allySide', 'all', 'allies', 'foeSide'].includes(mv.tg) ? (mv.tg === 'foeSide' ? tgt : null) : tgt;
-    setAct({side, mon, kind: 'move', move: m, tgt: target, scen: 'base', crit: false, stage: mv && mv.c !== 'Z' && target ? 'hp' : 'pick', hp: null, secFx: [], inflict: STATUS_MOVE[m] || ''});
+    const sameTarget = act?.kind === 'move' && act.side === side && act.mon === mon && act.tgt?.side === target?.side && act.tgt?.mon === target?.mon && dex.moves[act.move]?.c !== 'Z' && mv?.c !== 'Z';
+    setAct({side, mon, kind: 'move', move: m, tgt: target, scen: 'base', crit: sameTarget ? act.crit : false, stage: mv && mv.c !== 'Z' && target ? 'hp' : 'pick', hp: sameTarget ? act.hp : null, resultHp: sameTarget ? act.resultHp : {}, defItem: sameTarget ? act.defItem : '', secFx: [], inflict: STATUS_MOVE[m] || ''});
   };
   const suggestions = side === 'opp' && !raw.fainted && !done && moves.length < 4 && <div class="pl-suggestions"><span class="muted">未判明の技候補（使用率順）</span><div class="chips">{(view?.moves || []).filter(m => !m.known && !moves.includes(m.id)).slice(0, 6).map(m => <button class="chip" title={`${moveName(m.id)}・使用率 ${Math.round(m.rate * 100)}%`} onClick={() => selMove(m.id)}>{moveName(m.id)} <small>推定</small></button>)}</div></div>;
   const abil = currentAbility(build, raw);
@@ -259,15 +260,17 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
         {opp?.item && !raw.itemGone && consumable(opp.item) && <button class="chip sm" onClick={() => { mut(b => { addEvent(b, {kind: 'item', side, mon, item: opp.item, consumed: true}, usage); }); toast(`${itemName(opp.item)}を使った`); }}>使った</button>}
         {side === 'me' && build.item && !raw.itemGone && consumable(build.item) && <button class="chip sm" onClick={() => { mut(b => { addEvent(b, {kind: 'item', side, mon, item: build.item, consumed: true}, usage); }); toast(`${itemName(build.item)}を使った`); }}>使った</button>}
         {side === 'opp'
-          ? <select class={cx('pl-dd',!opp.ability && !actualSpecies.mega && 'unk')} aria-label="相手の特性" value={actualSpecies.mega ? actualSpecies.ab[0] : opp.ability || ''} disabled={!!actualSpecies.mega} title={actualSpecies.mega ? 'メガシンカ後の特性は固定です' : '発動を確認した特性を選択。不明にも戻せます'} onChange={e => { const ability = e.currentTarget.value; mut(b => addEvent(b, {kind: 'ability', side, mon, ability, activate: !!ability && !HIT_ABILITIES.has(ability)}, usage)); }}>
+          ? <select class={cx('pl-dd',!opp.ability && !actualSpecies.mega && 'unk')} aria-label="相手の特性" value={actualSpecies.mega ? actualSpecies.ab[0] : opp.ability || ''} disabled={!!actualSpecies.mega} title={actualSpecies.mega ? 'メガシンカ後の特性は固定です' : '発動を確認した特性を選択。不明にも戻せます'} onChange={e => { const ability = e.currentTarget.value; mut(b => confirmAbility(b, {side, mon, ability}, usage)); }}>
               {!actualSpecies.mega && <option value="">特性 不明（選択）</option>}
               {[...new Set([...actualSpecies.ab,opp.ability].filter(Boolean))].map(a => <option value={a}>{abilityName(a)}{actualSpecies.mega ? '（メガ・固定）' : ''}</option>)}
             </select>
           : <span class="pl-dd static">{abilityName(abil) || '特性なし'}</span>}
         {HIT_ABILITIES.has(side === 'opp' ? opp.ability : abil) && <button class="chip sm ability-activate" aria-label="特性が発動した" disabled={raw.fainted || !hitAbilityAction(battle, side, mon) || hitAbilityAction(battle, side, mon)?.hitAbility === (side === 'opp' ? opp.ability : abil)} title="このターンの直近の被弾に特性の効果を反映" onClick={() => mut(b => addEvent(b, {kind: 'ability', side, mon, ability: side === 'opp' ? opp.ability : abil, activate: true}, usage))}>発動</button>}
+      {side === 'opp' && !opp.ability && !raw.fainted && !raw.transformed && raw.abilityChanged == null && !actualSpecies.mega && actualSpecies.ab.length > 1 && actualSpecies.ab.some(a => ENTRY_ABILITIES.has(a)) && <div class="entry-notice"><span>登場時の特性を確認</span>{actualSpecies.ab.filter(a => ENTRY_ABILITIES.has(a)).map(ability => <button class="chip" onClick={() => mut(b => confirmAbility(b,{side,mon,ability},usage))}>{abilityName(ability)}が発動</button>)}</div>}
         {raw.types?.length ? <span class="tag accent">タイプ変化</span> : null}
         {raw.disguiseBroken && <span class="tag">ばけのかわ はがれた</span>}
       </div>
+
       <HpBar side={side} mon={mon} battle={battle} raw={raw} max={myMax} targeted={targeted} mut={mut} usage={usage} />
       <div class="pl-conditions">
         <select aria-label={`${SIDE_JA[side]}の状態異常`} class="input sm" value={raw.status || ''} onChange={e => mut(b => addEvent(b,{kind:'status',side,mon,status:e.currentTarget.value},usage))}>
@@ -450,22 +453,24 @@ function ActionArea({side, mon, slot, battle, ctx, mut, toast, usage, act, setAc
   }
   if (act?.kind === 'move') return <MoveAction side={side} mon={mon} battle={battle} ctx={ctx} usage={usage} act={act} setAct={setAct} commit={commit} r={pred} preds={preds} />;
   if (mon == null) return null;
-  return done ? <RecentActionHP battle={battle} side={side} mon={mon} mut={mut} usage={usage} toast={toast} /> : <div class="pl-act hint-box"><span>技または交代を選んで記録</span><button class="btn sm cant-direct" onClick={() => commit(b => addAct(b, {side, mon, type: 'move', cant: true, sameTurn: true}, usage))}>行動不能（技不明）</button>{suggestions}</div>;
+  return done ? <RecentActionHP ctx={ctx} battle={battle} side={side} mon={mon} mut={mut} usage={usage} toast={toast} /> : <div class="pl-act hint-box"><span>技または交代を選んで記録</span><button class="btn sm cant-direct" onClick={() => commit(b => addAct(b, {side, mon, type: 'move', cant: true, sameTurn: true}, usage))}>行動不能（技不明）</button>{suggestions}</div>;
 }
 
-function RecentActionHP({battle, side, mon, mut, usage, toast}) {
+function RecentActionHP({ctx, battle, side, mon, mut, usage, toast}) {
   const [editing,setEditing] = useState(null);
+  const [editMove,setEditMove] = useState(false);
   const [values,setValues] = useState({});
   const ti = battle.turns.length - 1, turn = battle.turns[ti];
-  const ai = turn?.acts.findLastIndex(a => a.type === 'move' && a.side === side && a.mon === mon && a.move && !a.flags?.miss && !a.flags?.cant && !a.flags?.protect) ?? -1;
+  const ai = turn?.acts.findLastIndex(a => a.type === 'move' && a.side === side && a.move && !a.flags?.miss && !a.flags?.cant && !a.flags?.protect) ?? -1;
   const a = turn?.acts[ai];
+  const actor = a?.mon ?? mon;
   const receiver = a?.target || a?.in?.target;
   const hpMove = !!(DRAIN[a?.move] || RECOIL[a?.move] || ['strengthsap','painsplit'].includes(a?.move) || a?.in?.selfFx?.length || a?.selfFx?.length || a?.in?.selfHpUnknown);
-  const targets = [...(receiver && (dex.moves[a?.move]?.c !== 'Z' || a?.move === 'painsplit') ? [receiver] : []), ...(hpMove ? [{side,mon}] : [])];
+  const targets = [...(receiver && (dex.moves[a?.move]?.c !== 'Z' || a?.move === 'painsplit') ? [receiver] : []), ...(hpMove ? [{side,mon:actor}] : [])];
   const variableOwn = !!(DRAIN[a?.move] || RECOIL[a?.move] && !HALF_RECOIL.has(a.move) || ['strengthsap','painsplit'].includes(a?.move));
   const pending = targets.filter(t => {
     if(a?.in?.observedHp?.some(h => h.side === t.side && h.mon === t.mon)) return false;
-    if(t.side === side && t.mon === mon) return !Number.isFinite(a?.in?.atkHpAfter) && (a?.in?.selfHpUnknown || variableOwn || condOf(battle,side,mon)?.hpUnknown);
+    if(t.side === side && t.mon === actor) return !Number.isFinite(a?.in?.atkHpAfter) && (a?.in?.selfHpUnknown || variableOwn || condOf(battle,side,actor)?.hpUnknown);
     return a?.in?.hpUnknown || a?.in?.hpAfter == null && !a?.disguiseHit && !a?.in?.endured && a?.in?.defItem?.item !== 'focussash';
   }).length;
   const open = () => {setEditing({ti,ai,input:JSON.stringify(a.in)});setValues({});};
@@ -476,7 +481,8 @@ function RecentActionHP({battle, side, mon, mut, usage, toast}) {
     if(ok){setEditing(null);toast('行動後HPを補正し、その後の盤面と推定を再計算しました');}
     else toast('記録が変わっています。一度閉じて選び直してください');
   };
-  return <div class="pl-act hint-box done"><b>行動済み</b>{a && targets.length > 0 && canReplay(battle) && <>
+  const latestAi = turn?.acts.findLastIndex(x => x.type === 'move' && x.side === side) ?? -1;
+  return <div class="pl-act hint-box done"><b>行動済み</b>{latestAi >= 0 && canReplay(battle) && <button class="btn sm quick-correct" onClick={() => setEditMove(true)}>直前の技・結果を修正</button>}{editMove && latestAi >= 0 && <EditSheet battle={battle} ctx={ctx} mut={mut} usage={usage} toast={toast} ti={ti} ai={latestAi} onClose={() => setEditMove(false)} />}{a && targets.length > 0 && canReplay(battle) && <>
     <small>{pending ? `HP ${pending}件が未確認` : moveName(a.move)}</small>
     <button class="btn sm quick-correct" onClick={open}>直前のHPを補正</button>
   </>}{editing && <Sheet title={`${moveName(a.move)}の行動後HPを補正`} onClose={() => setEditing(null)}><div class="pad quick-correction">
@@ -492,11 +498,16 @@ function ObservedHP({battle, target, value, onChange, when = '行動後HP', comp
   const number = value == null ? null : Math.round(value * max / 100);
   const change = n => onChange(n == null ? null : target.side === 'me' ? Math.max(0, Math.min(max, n)) / max * 100 : Math.max(0, Math.min(100, n)));
   return <div class="pa-hp">
-    <label>{compact ? `${SIDE_JA[target.side]}のHP` : label}<input class="input num" aria-label={label} type="number" inputMode="numeric" min={0} max={max} step={1} placeholder="任意" value={number ?? ''} onInput={e => change(e.currentTarget.value === '' ? null : Number(e.currentTarget.value))} /></label>
+    <label>{compact ? `${SIDE_JA[target.side]}のHP` : label}<input class="input num" aria-label={label} type="number" inputMode="none" min={0} max={max} step={1} placeholder="任意" value={number ?? ''} onInput={e => change(e.currentTarget.value === '' ? null : Number(e.currentTarget.value))} /></label>
     <span>{target.side === 'me' ? `/${max}` : '%'}</span>
-    <button class="btn sm" aria-label={`${label}を1減らす`} disabled={number == null || number <= 0} onClick={() => change(number - 1)}>−</button>
-    <button class="btn sm" aria-label={`${label}を1増やす`} disabled={number == null || number >= max} onClick={() => change(number + 1)}>＋</button>
+    <button class="btn sm" aria-label={`${label}を1減らす`} disabled={number === 0} onClick={() => change((number ?? Math.round((condOf(battle,target.side,target.mon)?.hp ?? 100)*max/100)) - 1)}>−</button>
+    <button class="btn sm" aria-label={`${label}を1増やす`} disabled={number != null && number >= max} onClick={() => change(number == null ? Math.round((condOf(battle,target.side,target.mon)?.hp ?? 100)*max/100) : number + 1)}>＋</button>
+    <StepRange buttons={false} value={number ?? Math.round((condOf(battle,target.side,target.mon)?.hp ?? 100)*max/100)} max={max} label={`${label}の調整`} onChange={change} />
   </div>;
+}
+
+function SwitchChoice({battle, side, mons, value, onChange, label}) {
+  return <div class="pa-switch"><b>{label}</b><div>{mons.map(i => <button class={cx('btn',value === i && 'on')} aria-pressed={value === i} onClick={() => onChange(value === i ? null : i)}><Sprite id={currentSpecies(buildOf(battle,side,i),condOf(battle,side,i))} size={28} />{nameOf(battle,side,i)}</button>)}</div></div>;
 }
 
 function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, preds}) {
@@ -535,7 +546,7 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
   };
   // 変化技は結果を記録。攻撃技は選択直後からHPを入力できる。
   const confirm = () => {
-    if (!damaging || !tgt) { record({inflict: act.inflict || '', to: PIVOT_MOVES.has(act.move) ? act.to : null, revive: act.move === 'revivalblessing' ? act.revive : undefined}); return; }
+    if (!damaging || !tgt) { record({inflict: act.inflict || '', to: PIVOT_MOVES.has(act.move) ? act.to : null, forceTo: FORCE_MOVES.has(act.move) ? act.forceTo : undefined, revive: act.move === 'revivalblessing' ? act.revive : undefined}); return; }
     set({stage: 'hp', hp: null});
   };
   const tb = tgt ? buildOf(battle, tgt.side, tgt.mon) : null, tc = tgt ? condOf(battle, tgt.side, tgt.mon) : null;
@@ -626,10 +637,11 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
       {act.move === 'revivalblessing' && (dead.length
         ? <div class="chips"><span class="muted">復活:</span>{dead.map(i => <button class={cx('chip sm', act.revive === i && 'on')} onClick={() => set({revive: act.revive === i ? null : i})}>{nameOf(battle, side, i)}</button>)}</div>
         : <p class="muted">ひんしのポケモンがいません</p>)}
-      {!damaging && PIVOT_MOVES.has(act.move) && <p class="hint">交代先: {act.to != null ? nameOf(battle, side, act.to) : '上から選択'}</p>}
+      {pivotBench.length > 0 && <SwitchChoice battle={battle} side={side} mons={pivotBench} value={act.to} onChange={to => set({to})} label={`${SIDE_JA[side]}の交代先`} />}
+      {fbench.length > 0 && !willFaint && <SwitchChoice battle={battle} side={tgt.side} mons={fbench} value={act.forceTo} onChange={forceTo => set({forceTo})} label="強制交代で出てきたポケモン" />}
       {act.stage === 'pick' && hpInputs}
       {act.stage === 'pick' && hpTargets.length > 0 && <small class="hint">HPは任意。空欄は未確認として記録し、あとで補正できます。</small>}
-      {act.stage === 'pick' && <div class="btnrow pa-record"><button class="btn primary grow" disabled={(!damaging && needTo) || (act.move === 'revivalblessing' && dead.length > 0 && act.revive == null)} onClick={confirm}>記録</button></div>}
+      {act.stage === 'pick' && <div class="btnrow pa-record"><button class="btn primary grow" disabled={(!damaging && (needTo || needForce)) || (act.move === 'revivalblessing' && dead.length > 0 && act.revive == null)} onClick={confirm}>記録</button></div>}
       {act.stage === 'hp' && disguiseOnly && <div class="disguise-record">
         <p>ばけのかわで防がれた場合は、残りHPの入力は不要です。</p>
         <button class="btn primary" disabled={needTo} onClick={() => record({to:act.to,forceTo:act.forceTo,selfFx:sureSelfFx(battle,side,mon,tgt,act.move,null).filter(k => ['lifeorb','helmet','roughskin'].includes(k) || k === 'recoil' && HALF_RECOIL.has(act.move))})}>ばけのかわを記録</button>
@@ -638,8 +650,9 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
       </div>}
       {act.stage === 'hp' && (!disguiseOnly || act.manualDisguiseHp) && <>
         <div class="pa-quick-fields">
-        <div class="pa-hp"><label>{SIDE_JA[tgt.side]}の残りHP<input class="input num" type="number" inputMode="numeric" min={0} max={tgtMax || 100} placeholder="任意" aria-label="残りHP" value={act.hp == null ? '' : targetValue} onInput={e => { const v = e.currentTarget.value; set({hp: v === '' ? null : Math.max(0, Math.min(100, tgtMax ? Number(v) / tgtMax * 100 : Number(v)))}); }} /></label><span>{tgtMax ? `/${tgtMax}` : '%'}</span><button class="btn sm" aria-label="残りHPの調整を1減らす" disabled={targetValue <= 0} onClick={() => changeTarget(targetValue-1)}>−</button><button class="btn sm" aria-label="残りHPの調整を1増やす" disabled={targetValue >= (tgtMax || 100)} onClick={() => changeTarget(targetValue+1)}>＋</button></div>
+        <div class="pa-hp"><label>{SIDE_JA[tgt.side]}の残りHP<input class="input num" type="number" inputMode="none" min={0} max={tgtMax || 100} placeholder="任意" aria-label="残りHP" value={act.hp == null ? '' : targetValue} onInput={e => { const v = e.currentTarget.value; set({hp: v === '' ? null : Math.max(0, Math.min(100, tgtMax ? Number(v) / tgtMax * 100 : Number(v)))}); }} /></label><span>{tgtMax ? `/${tgtMax}` : '%'}</span><button class="btn sm" aria-label="残りHPの調整を1減らす" disabled={targetValue <= 0} onClick={() => changeTarget(targetValue-1)}>−</button><button class="btn sm" aria-label="残りHPの調整を1増やす" disabled={targetValue >= (tgtMax || 100)} onClick={() => changeTarget(targetValue+1)}>＋</button></div>
         {hpInputs}
+
         <small class="hint pa-unknown">分かったHPだけ入力。空欄は未確認で記録します。</small>
         </div>
         {variableFx ? <details class="pa-fine-adjust"><summary>残りHPをスライダーで調整</summary><StepRange buttons={false} value={targetValue} max={tgtMax || 100} label="残りHPの調整" onChange={changeTarget} /></details>
@@ -647,15 +660,14 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
         <button class="btn ghost sm pa-faint" onClick={() => set({hp:0})}>ひんし</button>
         {act.pierce && <p class="hint">まもるを貫通 (1/4)</p>}
         {sec.length > 0 && <div class="chips"><span class="muted">追加効果:</span>{sec.map(x => <button class={cx('chip sm', secOn(x) && 'on')} onClick={() => set({secFx: secOn(x) ? act.secFx.filter(y => JSON.stringify(y) !== JSON.stringify(x.e)) : [...act.secFx, x.e]})}>{x.label}</button>)}</div>}
-        {tItem && consumable(tItem) && !((tc.healBlock || 0) >= turnNumber(battle) && /berry$/.test(tItem) && tItem !== 'lumberry') && <div class="chips"><button class={cx('chip sm', act.defItem === tItem && 'on')} onClick={() => set({defItem: act.defItem === tItem ? '' : tItem})}>{itemName(tItem)}が発動</button></div>}
-        {tgt.side === 'opp' && !tb.item && <div class="chips"><span class="muted">発動:</span>{['focussash', 'sitrusberry'].filter(it => it !== 'sitrusberry' || !((tc.healBlock || 0) >= turnNumber(battle))).map(it => <button class={cx('chip sm', act.defItem === it && 'on')} onClick={() => set({defItem: act.defItem === it ? '' : it})}>{itemName(it)}</button>)}</div>}
-        {PIVOT_MOVES.has(act.move) && <p class="hint">交代先: {act.to != null ? nameOf(battle, side, act.to) : '上から選択'}</p>}
-        {fbench.length > 0 && <div class="chips"><span class="muted">引きずり出された:</span>{fbench.map(i => <button class={cx('chip sm', act.forceTo === i && 'on')} onClick={() => set({forceTo: act.forceTo === i ? null : i})}>{nameOf(battle, tgt.side, i)}</button>)}</div>}
+        {tItem && tItem !== 'focussash' && consumable(tItem) && !((tc.healBlock || 0) >= turnNumber(battle) && /berry$/.test(tItem) && tItem !== 'lumberry') && <div class="chips"><button class={cx('chip sm', act.defItem === tItem && 'on')} onClick={() => set({defItem: act.defItem === tItem ? '' : tItem})}>{itemName(tItem)}が発動</button></div>}
+        {tgt.side === 'opp' && !tb.item && <div class="chips"><span class="muted">発動:</span>{['sitrusberry'].filter(it => it !== 'sitrusberry' || !((tc.healBlock || 0) >= turnNumber(battle))).map(it => <button class={cx('chip sm', act.defItem === it && 'on')} onClick={() => set({defItem: act.defItem === it ? '' : it})}>{itemName(it)}</button>)}</div>}
+
         {ejects.length > 0 && <div class="chips"><span class="muted">交代:</span>{ejects.map(([k, who]) => <button class={cx('chip sm', act.eject?.reason === k && 'on')} onClick={() => set({eject: act.eject?.reason === k ? null : {reason: k, who, to: null}})}>{EJECT_JA[k]}</button>)}</div>}
         {act.eject && <div class="chips"><span class="muted">出てきた:</span>{ejBench.map(i => <button class={cx('chip sm', act.eject.to === i && 'on')} onClick={() => set({eject: {...act.eject, to: i}})}>{nameOf(battle, ejSide, i)}</button>)}</div>}
         {cst.length > 0 && <div class="chips"><span class="muted">接触:</span>{cst.map(x => <button class={cx('chip sm', act.cst?.st === x.st && act.cst?.ab === x.ab && 'on')} onClick={() => set({cst: act.cst?.st === x.st && act.cst?.ab === x.ab ? null : x})}>{abilityName(x.ab)}で{x.l}</button>)}</div>}
         {blocked && <p class="hint warn">{needTo ? '交代先を選択' : '出てきたポケモンを選択'}</p>}
-        <div class="btnrow pa-record"><button class="btn primary grow" disabled={blocked} onClick={() => save()}>記録</button></div>
+        <div class="btnrow pa-record">{(!tItem || tItem === 'focussash') && <button class={cx('btn pa-sash', act.defItem === 'focussash' && 'on')} aria-pressed={act.defItem === 'focussash'} onClick={() => set({defItem: act.defItem === 'focussash' ? '' : 'focussash'})}>タスキで耐えた{act.defItem === 'focussash' ? ' ✓' : ''}</button>}<button class="btn primary grow" disabled={blocked} onClick={() => save()}>記録</button></div>
       </>}
     </div>
   );
