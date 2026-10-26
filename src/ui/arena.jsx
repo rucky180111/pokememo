@@ -60,7 +60,7 @@ export function OppStatTable({battle, idx, forme, onBoosts}) {
         </tr>
       </tbody>
     </table>
-    {patterns.length > 0 && <p class="estimate-note">配分例は各行をセットで比較。↑↓は性格補正。実数値は全候補の範囲。</p>}
+    {patterns.length > 0 && <p class="estimate-note">省Pt例：観測に合うH＋B／H＋Dが最少の配分。確定ではありません。↑↓は性格補正。</p>}
     </div>
   );
 }
