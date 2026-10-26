@@ -156,3 +156,26 @@ export function fitBuild(opp, build, speciesId) {
   }
   return {...build,sp:best.sp,nature:best.nature};
 }
+
+/** 観測と両立する耐久配分の代表例。全候補の分類や確率ではない。 */
+export function bulkPatterns(opp) {
+  if (!opp.statOk?.def && !opp.statOk?.spd) return [];
+  const blocks = spreadDomains(opp);
+  const axes = [[0, 'HP寄り'], ...(opp.statOk?.def ? [[2, '防御寄り']] : []), ...(opp.statOk?.spd ? [[4, '特防寄り']] : [])];
+  const result = [];
+  for (const [axis, label] of axes) {
+    let best = null;
+    for (const b of blocks) {
+      const sp = b.mins.slice();
+      if (axis) sp[axis] = b.choices[axis - 1].at(-1);
+      const total = sp.reduce((sum, v) => sum + v, 0);
+      const neutral = ['def', 'spd'].reduce((n, key) => n + (natureMod(b.nature, key) === 1 ? 0 : 1), 0);
+      if (!best || sp[axis] > best.sp[axis] || sp[axis] === best.sp[axis] && (total < best.total || total === best.total && neutral < best.neutral))
+        best = {sp, nature: b.nature, total, neutral, labels: [label]};
+    }
+    if (!best) continue;
+    const same = result.find(p => p.nature === best.nature && p.sp.every((v, i) => v === best.sp[i]));
+    if (same) same.labels.push(label); else result.push(best);
+  }
+  return result;
+}

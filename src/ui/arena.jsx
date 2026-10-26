@@ -1,9 +1,9 @@
 // 対戦フェーズ: 横幅があれば自分と相手の盤面を横並びにする。ターン操作は共通。
 import {useMemo, useState} from 'preact/hooks';
-import {dex, speciesName, STAT_JA, STAT_KEYS} from '../engine/dex.js';
+import {dex, speciesName, STAT_JA, STAT_KEYS, natureMod, natureName} from '../engine/dex.js';
 import {currentSpecies} from '../engine/calc.js';
 import {condOf} from '../engine/battle.js';
-import {estimateStats} from '../engine/estimate.js';
+import {estimateStats, bulkPatterns} from '../engine/estimate.js';
 import {cx} from './common.jsx';
 import {OppSheet} from './battle.jsx';
 import {MonEditor} from './teams.jsx';
@@ -33,28 +33,16 @@ export function OppStatTable({battle, idx, forme, onBoosts}) {
   const sid = currentSpecies(opp, raw);
   const s = dex.species[sid];
   const est = useMemo(() => estimateStats(opp, sid), [opp, sid]);
+  const patterns = useMemo(() => bulkPatterns(opp), [opp]);
   if (!s || !est) return null;
   const rg = e => (e[0] === e[1] ? `${e[0]}` : `${e[0]}〜${e[1]}`);
-  const mods = new Set();
-  for (const r of est.rows) if (r.known && r.byMod) for (const m of Object.keys(r.byMod)) mods.add(Number(m));
-  const all = [[1, 'Pt 補正なし'], [1.1, 'Pt 補正↑'], [0.9, 'Pt 補正↓']].filter(([m]) => mods.has(m));
-  const estRows = all.length ? all : [[1, '能力Pt']];
   const fmtVal = r => (r.valLo === r.valHi ? `${r.valLo}` : `${r.valLo}〜${r.valHi}`);
   return (
-    <table class="mp-table">
+    <div class="opp-estimate"><table class="mp-table">
       <thead><tr><th></th>{STAT_JA.map(l => <th>{l}</th>)}</tr></thead>
       <tbody>
         <tr><th>種族値</th>{s.bs.map(v => <td class="num">{v}</td>)}</tr>
-        {estRows.map(([mod, label]) => (
-          <tr class="est" key={mod}><th>{label}</th>
-            {est.rows.map(r => {
-              if (!r.known) return <td></td>;
-              if (r.key === 'hp') return <td class="num known">{mod === estRows[0][0] ? rg([r.spLo, r.spHi]) : ''}</td>;
-              const e = r.byMod?.[mod];
-              return <td class={cx('num', e && 'known')}>{e ? rg(e) : '×'}</td>;
-            })}
-          </tr>
-        ))}
+        <tr class="est"><th>推定Pt</th>{est.rows.map(r => <td class={cx('num', r.known && 'known')}>{r.known ? rg([r.spLo, r.spHi]) : '—'}</td>)}</tr>
         <BoostRow boosts={raw.boosts} onSave={onBoosts} />
         <tr class="real"><th>実数値</th>
           {STAT_KEYS.map((k, i) => {
@@ -68,5 +56,14 @@ export function OppStatTable({battle, idx, forme, onBoosts}) {
         </tr>
       </tbody>
     </table>
+    <div class="estimate-speed"><b>素早さ S</b><strong>{fmtVal(est.rows[5])}</strong><span>{est.rows[5].valLo === est.rows[5].valHi ? '実数値確定' : est.rows[5].known ? '推定範囲' : '未判明'} ・ ランク補正前</span></div>
+    {patterns.length > 0 && <div class="bulk-patterns">
+      <div class="bulk-pattern-heading"><b>耐久配分の代表例</b><span>同時に成立する組み合わせ</span></div>
+      <table class="bulk-pattern-table"><thead><tr><th>配分の方向</th><th>H</th><th>B</th><th>D</th><th>性格</th></tr></thead><tbody>{patterns.map(p => <tr>
+        <th>{p.labels.join('・')}</th>{[0,2,4].map(i => {const mod = natureMod(p.nature, STAT_KEYS[i]);return <td>{p.sp[i]}{mod !== 1 && <small>{mod > 1 ? '↑' : '↓'}</small>}</td>;})}<td>{natureName(p.nature)}</td>
+      </tr>)}</tbody></table>
+      <p>数値は能力Pt。↑↓は性格補正。観測に合う一例で、途中の配分も候補に残ります。各行のH・B・Dをセットで見てください。</p>
+    </div>}
+    </div>
   );
 }
