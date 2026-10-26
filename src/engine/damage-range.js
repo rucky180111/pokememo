@@ -13,7 +13,7 @@ export function candidateSpreads(opp, base, sid, stat) {
   const key=`${sid}:${stat}:${base.item}`;
   if(cached.has(key))return cached.get(key);
   const si=STAT_KEYS.indexOf(stat), out=[];
-  for(const block of spreadDomains(opp,base.item)) for(const value of block.choices[si-1]) {
+  for(const block of spreadDomains(opp,base.item,true)) for(const value of block.choices[si-1]) {
     const sp=block.mins.slice();sp[si]=value;
     out.push({nature:block.nature,sp,hp:statValue(dex.species[sid].bs[0],block.h,1,true),value:statValue(dex.species[sid].bs[si],value,natureMod(block.nature,stat),false)});
   }

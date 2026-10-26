@@ -141,7 +141,7 @@ export function scenarioBuild(opp, baseBuild, speciesId, kind, cat) {
  */
 export function fitBuild(opp, build, speciesId) {
   if (!opp.statOk && !opp.speOk) return build;
-  const blocks=spreadDomains(opp,opp.item || '');
+  const blocks=spreadDomains(opp,build.item || '',true);
   if(!blocks.length)return build;
   let best=null;
   for(const b of blocks) {

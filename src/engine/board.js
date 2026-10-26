@@ -23,9 +23,9 @@ export function boardContext(b, usage) {
     const v = oppView(o, usage, {megaBlocked: megaBlocked && !selfMega, takenItems});
     if (v && (o.statOk || o.speOk)) {
       // 観測 (ダメージ・行動順) がある能力は、その範囲に合わせる
+      if (o.scarfLikely && !o.item) v.build.item = 'choicescarf';
       v.build = fitBuild(o, v.build, c.forme || o.species);
       v.fitted = true;
-      if (o.scarfLikely && !o.item) v.build.item = 'choicescarf';
     }
     return v;
   });

@@ -3,11 +3,11 @@
 import {dex,STAT_KEYS,natureMod,SP_TOTAL} from './dex.js';
 const cache=new WeakMap();
 export const domainCombo=(nature,key,sp)=>(natureMod(nature,key)<1?0:natureMod(nature,key)>1?66:33)+sp;
-export function spreadDomains(opp, item=opp.item || '') {
-  const signature=JSON.stringify([opp.statOk,opp.speOk,item]);
+export function spreadDomains(opp, item=opp.item || '', fixedItem=false) {
+  const signature=JSON.stringify([opp.statOk,opp.speOk,item,fixedItem]);
   const prior=cache.get(opp);if(prior?.signature===signature)return prior.blocks;
   const masks=opp.statOk || {}, blocks=[];
-  const speeds=item==='choicescarf' ? opp.speOk?.scarf : item ? opp.speOk?.plain : null;
+  const speeds=item==='choicescarf' ? opp.speOk?.scarf : item || fixedItem ? opp.speOk?.plain : null;
   const speedOK=c=>speeds ? speeds[c]==='1' : !opp.speOk || !opp.speOk.plain && !opp.speOk.scarf || opp.speOk.plain?.[c]==='1' || opp.speOk.scarf?.[c]==='1';
   for(let h=0;h<=32;h++) {
     if(masks.hp && masks.hp[h]!=='1')continue;
