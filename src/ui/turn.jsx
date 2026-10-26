@@ -1,5 +1,6 @@
 // バトルログ (タップで修正) と、記録の修正フォーム・その他の変化・メガシンカのボタン。
 // 入力そのものは盤面 (play.jsx) で行う。修正すると最初の状態から全ターンを入れ直す。
+import {HPInput} from './hp-input.jsx';
 import {logGroups, remainingTurnEffects} from '../engine/log.js';
 import {useEffect, useRef, useState} from 'preact/hooks';
 import {dex, speciesName, itemName, abilityName, moveName, statsOf, isConsumableItem} from '../engine/dex.js';
@@ -306,18 +307,15 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
       )}
       {damaging && tgt && (
         <div class="af-dmg">
-          <label class="af-hp">
+          <div class="af-hp hp-edit-target">
             <span>{monName(battle, tgt.side, tgt.mon)}の{tgtMax && f.hpMode === 'dmg' ? '受けたダメージ' : '残りHP'} {tgtMax ? '(実数値)' : '(%)'}
               {tgtMax && <Seg small value={f.hpMode} options={[['left', '残りHP'], ['dmg', 'ダメージ量']]} onChange={v => set({hpMode: v, hp: ''})} />}</span>
             {f.endured || f.defItem === 'focussash' ? <b class="num">1{tgtMax ? '' : '%'} (耐えた)</b> : <>
-              <input class="input num" type="number" inputMode="decimal" min={0} max={tgtMax || 100} value={f.hp} autoFocus={wizard}
-                placeholder={tgtMax && f.hpMode === 'dmg' ? '0' : String(tgtMax ? Math.round((tgtNow * tgtMax) / 100) : dispOf(tgtNow))} onInput={e => set({hp: e.currentTarget.value})}
-                onKeyDown={e => { if (e.key === 'Enter' && ready) finish(); }} />
-              <span class="muted">{tgtMax ? (f.hpMode === 'dmg' ? `(いま ${Math.round((tgtNow * tgtMax) / 100)}/${tgtMax})` : `/ ${tgtMax}`) : '%'}</span>
+              <HPInput label={`${monName(battle,tgt.side,tgt.mon)}の${tgtMax && f.hpMode === 'dmg' ? '受けたダメージ' : '残りHP'}`} visibleLabel={tgtMax && f.hpMode === 'dmg' ? '受けたダメージ' : '残りHP'} value={f.hp === '' ? null : Number(f.hp)} current={tgtMax && f.hpMode === 'dmg' ? 0 : tgtNow*(tgtMax || 100)/100} max={tgtMax || 100} unit={tgtMax ? `/${tgtMax}` : '%'} onChange={n => set({hp:n == null ? '' : String(n)})} />
               <button class="chip" onClick={() => set(tgtMax && f.hpMode === 'dmg' ? {hp: String(Math.round((tgtNow * tgtMax) / 100))} : {hp: '0'})}>ひんし</button>
               {wizard && <button class="chip unk" title="回復などで分からなくなったときは、ターン終了時に聞きます" onClick={() => finish({hpUnknown: true, hp: ''})}>? わからない</button>}
             </>}
-          </label>
+          </div>
           <div class="chips">
             <Toggle small on={f.crit} onChange={v => set({crit: v})}>急所</Toggle>
             {Array.isArray(mv.mh) && <><span class="muted">回数:</span>{Array.from({length: mv.mh[1] - mv.mh[0] + 1}, (_, k) => mv.mh[0] + k).map(n => <button class={cx('chip', f.hits === n && 'on')} onClick={() => set({hits: f.hits === n ? 0 : n})}>{n}</button>)}</>}
@@ -406,11 +404,7 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
               {list.map(x => { const on = f.selfFx.includes(x.k); return <button class={cx('chip', on && 'on')} onClick={() => set({selfFx: on ? f.selfFx.filter(y => y !== x.k) : [...f.selfFx, x.k]})}>{SELF_FX_JA[x.k]}{x.sure ? '' : ' (起きていたら)'}</button>; })}
             </div>
             {f.selfFx.length > 0 && (
-              <label class="af-hp">
-                <span>そのあとの{monName(battle, side, mon)}のHP {amax ? '(実数値)' : '(%)'} <small class="muted">入れると相手の最大HPなどを絞り込めます</small></span>
-                <input class="input num" type="number" inputMode="decimal" min={0} max={amax || 100} value={f.atkHp} placeholder={amax ? String(Math.round((now * amax) / 100)) : String(dispOf(now))} onInput={e => set({atkHp: e.currentTarget.value})} />
-                <span class="muted">{amax ? `/ ${amax}` : '%'}</span>
-              </label>
+              <HPInput label={`${monName(battle, side, mon)}の行動後HP`} visibleLabel={`${monName(battle,side,mon)}の残りHP`} value={f.atkHp === '' ? null : Number(f.atkHp)} current={now*(amax || 100)/100} max={amax || 100} unit={amax ? `/${amax}` : '%'} onChange={n => set({atkHp:n == null ? '' : String(n)})} />
             )}
             <div class="btnrow">
               <button class="btn grow" onClick={() => submit({selfFx: [], selfDone: true})}>変わらなかった</button>
@@ -419,6 +413,11 @@ export function ActForm({battle, ctx, usage, side, mon, init, onSubmit, onCancel
           </div>
         );
       })()}
+      {!wizard && f.type === 'move' && hit && selfList(f).length > 0 && <section class="edit-self-hp">
+        <b>行動後の自分側HP</b>
+        <div class="chips">{selfList(f).map(x => <button class={cx('chip',f.selfFx.includes(x.k) && 'on')} onClick={() => set({selfFx:f.selfFx.includes(x.k) ? f.selfFx.filter(k => k !== x.k) : [...f.selfFx,x.k]})}>{SELF_FX_JA[x.k]}</button>)}</div>
+        <HPInput label={`${monName(battle,side,mon)}の行動後HP`} visibleLabel={`${monName(battle,side,mon)}の残りHP`} value={f.atkHp === '' ? null : Number(f.atkHp)} current={(condOf(battle,side,mon)?.hp ?? 100)*(side === 'me' ? maxHPOf(battle,mon) : 100)/100} max={side === 'me' ? maxHPOf(battle,mon) : 100} unit={side === 'me' ? `/${maxHPOf(battle,mon)}` : '%'} onChange={n => set({atkHp:n == null ? '' : String(n),selfFx:f.selfFx.length ? f.selfFx : selfList(f).filter(x => x.sure).map(x => x.k)})} />
+      </section>}
       {!wizard && f.type === 'move' && secList({...f, secFx: []}).length > 0 && (
         <div class="chips"><span class="muted">追加効果:</span>
           {secList({...f, secFx: []}).map(x => { const on = f.secFx.some(y => JSON.stringify(y) === JSON.stringify(x.e)); return <button class={cx('chip', on && 'on')} onClick={() => set({secFx: on ? f.secFx.filter(y => JSON.stringify(y) !== JSON.stringify(x.e)) : [...f.secFx, x.e]})}>{x.label}</button>; })}

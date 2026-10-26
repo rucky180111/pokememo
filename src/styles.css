@@ -1625,3 +1625,41 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .pl-action-column .pa-quick-fields .pa-hp .step-range input[type=range] { width:100%; height:24px; min-height:24px; padding:0; border:0; border-radius:0; background:transparent; grid-column:auto; grid-row:auto; }
 .pl-act.move>.pa-switch { order:3; }
 .pl-action-column .pl-suggestions .chip { min-height:36px; }
+
+/* HPの全入力で同じ数値・レールを使う。旧数値欄のCSSをレールへ適用しない。 */
+.hp-control { min-width:0; padding:3px 4px 0; border:1px solid var(--border); border-radius:7px; background:var(--surface2); }
+.hp-control-row { display:grid; grid-template-columns:minmax(0,1fr) auto 30px 30px; gap:3px; align-items:center; }
+.hp-control-row label { display:flex; align-items:center; justify-content:space-between; min-width:0; gap:3px; font-size:11px; line-height:1.15; }
+.hp-control-row label>span { overflow-wrap:anywhere; }
+.hp-control-row input.input { width:72px; min-width:0; height:34px; min-height:34px; padding:2px 4px; text-align:right; font-size:24px; font-weight:700; color:var(--text); border:1px solid var(--accent); appearance:textfield; }
+.hp-control-row input::placeholder { font-size:12px; font-weight:400; }
+.hp-control-row input::-webkit-inner-spin-button,.hp-control-row input::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+.hp-control .hp-control-row .btn { min-width:30px; width:30px; min-height:34px; height:34px; padding:0; font-size:20px; touch-action:manipulation; }
+.hp-unit { font-size:11px; white-space:nowrap; }
+.hp-control .step-range.rail-only { display:grid; grid-template-columns:minmax(0,1fr); margin:0; min-height:24px; }
+.hp-control .step-track { width:100%; }
+.hp-control .step-track input[type=range] { display:block; width:100%; min-width:0; height:24px; min-height:24px; margin:0; padding:0; border:0; background:transparent; accent-color:var(--accent); }
+.pl-action-column .pa-quick-fields { gap:3px; }
+.quick-correction .hp-control { margin:10px 0; }
+@media(min-width:980px){
+ .board-workspace .pl-main { grid-template-rows:minmax(56px,auto) minmax(28px,auto) 32px 28px minmax(138px,auto) 224px minmax(28px,1fr); }
+ .board-workspace .pl .pl-lower,.board-workspace .pl-action-column { height:224px; min-height:224px; }
+}
+.edit-self-hp { display:flex; flex-direction:column; gap:6px; padding:8px 0; }
+@media(max-width:979px){
+ .pl-act.move>* { order:6; }
+ .pl-act.move>.pa-h { order:0; }
+ .pl-act.move>.pa-outcomes { order:1; }
+ .pl-act.move>.pa-quick-fields { order:2; }
+ .pl-act.move>.pa-switch { order:3; }
+ .pl-act.move>.pa-record { order:4; position:static; }
+ .arena-turnbar { position:static; }
+ html { scroll-padding-bottom:calc(var(--nav-h) + 16px); }
+ .hp-control { scroll-margin-block:70px; }
+}
+
+.hp-control-row .hp-number { position:relative; width:72px; flex:0 0 72px; }
+.hp-control-row .hp-number input { padding-left:18px; }
+.hp-control .hp-number .hp-clear { position:absolute; left:1px; top:1px; border:0; background:transparent; min-width:20px; width:20px; min-height:32px; height:32px; color:var(--muted); font-size:16px; }
+.hp-edit-target { display:flex; flex-direction:column; align-items:stretch; }
+.hp-edit-target>.hp-control { width:100%; }

@@ -15,6 +15,7 @@ import {finalSpeed} from '../engine/calc.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, Confirm, cx, fmtPct, rate} from './common.jsx';
 import {OppStatTable} from './arena.jsx';
 import {BoostRow} from './boostrow.jsx';
+import {HPInput} from './hp-input.jsx';
 import {StepRange} from './step-range.jsx';
 import {LateStatusInput} from './status-input.jsx';
 import {MegaButtons, EditSheet, EventForm, STATUS_MOVE, STATUS_OPTS, consumable} from './turn.jsx';
@@ -497,13 +498,8 @@ function ObservedHP({battle, target, value, onChange, when = '行動後HP', comp
   const label = `${SIDE_JA[target.side]} ${nameOf(battle, target.side, target.mon)}の${when}`;
   const number = value == null ? null : Math.round(value * max / 100);
   const change = n => onChange(n == null ? null : target.side === 'me' ? Math.max(0, Math.min(max, n)) / max * 100 : Math.max(0, Math.min(100, n)));
-  return <div class="pa-hp">
-    <label>{compact ? `${SIDE_JA[target.side]}のHP` : label}<input class="input num" aria-label={label} type="number" inputMode="none" min={0} max={max} step={1} placeholder="任意" value={number ?? ''} onInput={e => change(e.currentTarget.value === '' ? null : Number(e.currentTarget.value))} /></label>
-    <span>{target.side === 'me' ? `/${max}` : '%'}</span>
-    <button class="btn sm" aria-label={`${label}を1減らす`} disabled={number === 0} onClick={() => change((number ?? Math.round((condOf(battle,target.side,target.mon)?.hp ?? 100)*max/100)) - 1)}>−</button>
-    <button class="btn sm" aria-label={`${label}を1増やす`} disabled={number != null && number >= max} onClick={() => change(number == null ? Math.round((condOf(battle,target.side,target.mon)?.hp ?? 100)*max/100) : number + 1)}>＋</button>
-    <StepRange buttons={false} value={number ?? Math.round((condOf(battle,target.side,target.mon)?.hp ?? 100)*max/100)} max={max} label={`${label}の調整`} onChange={change} />
-  </div>;
+  return <HPInput label={label} visibleLabel={compact ? `${SIDE_JA[target.side]}の残りHP` : label} value={number} current={(condOf(battle,target.side,target.mon)?.hp ?? 100)*max/100} max={max} unit={target.side === 'me' ? `/${max}` : '%'} onChange={change} />;
+
 }
 
 function SwitchChoice({battle, side, mons, value, onChange, label}) {
@@ -650,13 +646,11 @@ function MoveAction({side, mon, battle, ctx, usage, act, setAct, commit, r, pred
       </div>}
       {act.stage === 'hp' && (!disguiseOnly || act.manualDisguiseHp) && <>
         <div class="pa-quick-fields">
-        <div class="pa-hp"><label>{SIDE_JA[tgt.side]}の残りHP<input class="input num" type="number" inputMode="none" min={0} max={tgtMax || 100} placeholder="任意" aria-label="残りHP" value={act.hp == null ? '' : targetValue} onInput={e => { const v = e.currentTarget.value; set({hp: v === '' ? null : Math.max(0, Math.min(100, tgtMax ? Number(v) / tgtMax * 100 : Number(v)))}); }} /></label><span>{tgtMax ? `/${tgtMax}` : '%'}</span><button class="btn sm" aria-label="残りHPの調整を1減らす" disabled={targetValue <= 0} onClick={() => changeTarget(targetValue-1)}>−</button><button class="btn sm" aria-label="残りHPの調整を1増やす" disabled={targetValue >= (tgtMax || 100)} onClick={() => changeTarget(targetValue+1)}>＋</button></div>
+        <HPInput label="残りHP" visibleLabel={`${SIDE_JA[tgt.side]}の残りHP`} sliderLabel="残りHPの調整" buttonLabel="残りHPの調整" value={act.hp == null ? null : targetValue} current={tgtHp*(tgtMax || 100)/100} max={tgtMax || 100} unit={tgtMax ? `/${tgtMax}` : '%'} onChange={n => n == null ? set({hp:null}) : changeTarget(n)} />
         {hpInputs}
 
         <small class="hint pa-unknown">分かったHPだけ入力。空欄は未確認で記録します。</small>
         </div>
-        {variableFx ? <details class="pa-fine-adjust"><summary>残りHPをスライダーで調整</summary><StepRange buttons={false} value={targetValue} max={tgtMax || 100} label="残りHPの調整" onChange={changeTarget} /></details>
-          : <StepRange buttons={false} value={targetValue} max={tgtMax || 100} label="残りHPの調整" onChange={changeTarget} />}
         <button class="btn ghost sm pa-faint" onClick={() => set({hp:0})}>ひんし</button>
         {act.pierce && <p class="hint">まもるを貫通 (1/4)</p>}
         {sec.length > 0 && <div class="chips"><span class="muted">追加効果:</span>{sec.map(x => <button class={cx('chip sm', secOn(x) && 'on')} onClick={() => set({secFx: secOn(x) ? act.secFx.filter(y => JSON.stringify(y) !== JSON.stringify(x.e)) : [...act.secFx, x.e]})}>{x.label}</button>)}</div>}
