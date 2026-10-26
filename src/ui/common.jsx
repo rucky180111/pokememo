@@ -2,7 +2,9 @@
 import {createContext} from 'preact';
 import {createPortal, useSyncExternalStore} from 'preact/compat';
 import {useContext, useEffect, useMemo, useRef, useState} from 'preact/hooks';
-import {dex, search, TYPE_JA, speciesName, toID} from '../engine/dex.js';
+import {dex, search, TYPE_JA, speciesName} from '../engine/dex.js';
+import {spriteSources} from '../engine/sprites.js';
+export {spriteIds} from '../engine/sprites.js';
 
 export const AppCtx = createContext(null);
 const DepthCtx = createContext(0);
@@ -193,24 +195,14 @@ export const fmtPct = v => (v >= 100 ? v.toFixed(0) : v.toFixed(1));
 export const rate = (v, digits = 0) => `${(v * 100).toFixed(digits)}%`;
 export const fmtDate = ts => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()}`; };
 
-// ---- ポケモンの画像 (Pokémon Showdown の公開スプライトを読み込む。設定でオフにできる) ----
-const HYPHEN_NAMES = new Set(['Kommo-o', 'Hakamo-o', 'Jangmo-o', 'Ho-Oh', 'Porygon-Z', 'Ting-Lu', 'Chien-Pao', 'Wo-Chien', 'Chi-Yu']);
-export function spriteIds(id) {
-  const s = dex.species[id];
-  if (!s) return [];
-  const n = s.n;
-  const at = n.indexOf('-');
-  const ids = [];
-  if (at > 0 && !HYPHEN_NAMES.has(n)) ids.push(`${toID(n.slice(0, at))}-${toID(n.slice(at + 1))}`, toID(n.slice(0, at)));
-  else ids.push(toID(n));
-  return [...new Set(ids)];
-}
+// ---- 同梱したポケモン画像。欠損時も同じ姿だけを試す。設定でオフにできる。 ----
 export function Sprite({id, size = 40, class: cls, fallback = null}) {
   const app = useApp();
   const on = app?.store?.state?.settings?.sprites !== false;
-  const ids = useMemo(() => spriteIds(id), [id]);
-  const [k, setK] = useState(0);
-  useEffect(() => setK(0), [id]);
-  if (!on || !ids.length || k >= ids.length) return fallback;
-  return <img class={cx('sprite', cls)} src={`https://play.pokemonshowdown.com/sprites/gen5/${ids[k]}.png`} width={size} height={size} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onError={() => setK(k + 1)} />;
+  const sources = useMemo(() => spriteSources(id), [id]);
+  const [attempt, setAttempt] = useState({id, k:0});
+  const k = attempt.id === id ? attempt.k : 0;
+  if (!on || !sources.length) return fallback;
+  if (k >= sources.length) return fallback || <span class={cx('sprite-unavailable',cls)} role="img" aria-label={speciesName(id)} style={{width:size,height:size}}>{speciesName(id)}</span>;
+  return <img key={`${id}:${k}`} class={cx('sprite', cls)} src={sources[k]} width={size} height={size} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onError={() => setAttempt(prev => ({id,k:(prev.id === id ? prev.k : 0) + 1}))} />;
 }

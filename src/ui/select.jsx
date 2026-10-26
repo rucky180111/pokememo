@@ -1,6 +1,6 @@
 // 選出フェーズ: 相手6体を入れて、その場で「誰を出すか」を決める
 import {useMemo, useState} from 'preact/hooks';
-import {dex, speciesName, itemName, moveName, typeEffect, statsOf, megaFormeFor} from '../engine/dex.js';
+import {dex, speciesName, itemName, moveName, typeEffect, statsOf, megaFormeFor, selectionSpeciesId} from '../engine/dex.js';
 import {newOpp, sendOut, activeCount, pickCount} from '../engine/battle.js';
 import {leadRate} from '../engine/assume.js';
 import {oppSpeciesStats, similarTeams, leadsOf, matchupMatrix} from '../engine/predict.js';
@@ -9,15 +9,18 @@ import {MonEditor} from './teams.jsx';
 import {OppSheet} from './battle.jsx';
 import {PickRuleHint} from './pickrules.jsx';
 
+const previewName = id => speciesName(selectionSpeciesId(id));
+const PreviewSprite = props => <Sprite {...props} id={selectionSpeciesId(props.id)} />;
+
 // 素早さの目安 (最速・準速・無振り・最遅)。スカーフはかっこで
 const speLine = sid => {
-  const v = (nat, sp) => statsOf(sid, [0, 0, 0, 0, 0, sp], nat)[5];
+  const v = (nat, sp) => statsOf(selectionSpeciesId(sid), [0, 0, 0, 0, 0, sp], nat)[5];
   return [['最速', v('Timid', 32), true], ['準速', v('Hardy', 32), true], ['無振り', v('Hardy', 0)], ['最遅', v('Brave', 0)]];
 };
 const mySpe = m => {
   if (!dex.species[m.species]) return null;
-  const base = statsOf(m.species, m.sp, m.nature)[5];
-  const mega = megaFormeFor(m.species, m.item);
+  const base = statsOf(selectionSpeciesId(m.species), m.sp, m.nature)[5];
+  const mega = megaFormeFor(selectionSpeciesId(m.species), m.item);
   return {base, mega: mega ? statsOf(mega, m.sp, m.nature)[5] : null};
 };
 
@@ -29,7 +32,15 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
   const [info, setInfo] = useState(false);
   const nLead = activeCount(battle.format), nPick = pickCount(battle.format);
   const others = useMemo(() => store.battles().filter(b => b.id !== battle.id), [store.version, battle.id]);
-  const usageRank = useMemo(() => (usage?.pokemon ? Object.fromEntries(Object.entries(usage.pokemon).map(([k, v]) => [k, v.u])) : null), [usage]);
+  const usageRank = useMemo(() => {
+    if (!usage?.pokemon) return null;
+    const rank = {};
+    for (const [id, v] of Object.entries(usage.pokemon)) {
+      const base = selectionSpeciesId(id);
+      rank[base] = Math.min(1, (rank[base] || 0) + (v.u || 0));
+    }
+    return rank;
+  }, [usage]);
   // 自分の記録: 相手のポケモンごとの 選出率・勝率・初手率 と、自分×相手 の 選出率・勝率
   const colStats = useMemo(() => battle.opp.map(o => oppSpeciesStats(others, o.species, {format: battle.format})), [others, battle.opp, battle.format]);
   const mx = useMemo(() => matchupMatrix(others, battle.my.map(m => m.species), battle.opp.map(o => o.species), {format: battle.format}), [others, battle.my, battle.opp, battle.format]);
@@ -54,7 +65,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
     }
     return Object.entries(best).sort((a, b) => b[1] - a[1]);
   };
-  const myHits = (mi, oi) => typeHits(battle.my[mi].moves || [], dex.species[battle.opp[oi].species]?.t || []);
+  const myHits = (mi, oi) => typeHits(battle.my[mi].moves || [], dex.species[selectionSpeciesId(battle.opp[oi].species)]?.t || []);
   const togglePick = i => mut(b => {
     const list = b.pick.me;
     const at = list.indexOf(i);
@@ -85,11 +96,11 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
           const o = battle.opp[i];
           if (!o) return <button class="opp-tile empty" onClick={() => setPick(i)}>{i === battle.opp.length ? '＋ 追加' : ''}</button>;
           const v = ctx.views[i];
-          const s = dex.species[o.species];
+          const s = dex.species[selectionSpeciesId(o.species)];
           return (
             <button class="opp-tile" onClick={() => setOppEdit(i)}>
-              <Sprite id={o.species} size={48} />
-              <span class="nm">{speciesName(o.species)}</span>
+              <PreviewSprite id={o.species} size={48} />
+              <span class="nm">{previewName(o.species)}</span>
               <span class="types">{s.t.map(t => <TypeChip type={t} small />)}</span>
               <span class="sub">{itemName(v?.build.item) || '持ち物?'}{v?.itemGuess ? '?' : ''}{v?.megaP > 0.05 ? ` (メガ${rate(v.megaP)})` : ''}</span>
             </button>
@@ -102,7 +113,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
           <h4>相手の初手予想 <span class="muted">使用率ベース{sim.n ? `・似た並びとの対戦 ${sim.n}戦` : ''}</span></h4>
           <div class="chips">
             {leads.slice(0, 6).map(x => (
-              <span class={cx('chip', x.p >= 0.25 && 'on')}><Sprite id={x.o.species} size={28} />{speciesName(x.o.species)} <b class="num">{rate(Math.min(1, x.p))}</b>
+              <span class={cx('chip', x.p >= 0.25 && 'on')}><PreviewSprite id={x.o.species} size={28} />{previewName(x.o.species)} <b class="num">{rate(Math.min(1, x.p))}</b>
                 {x.st.seen > 0 && <span class="rate">自分の記録 {x.st.lead}/{x.st.seen}</span>}
                 {sim.lead[x.o.species] ? <span class="rate">似た並び {sim.lead[x.o.species]}/{sim.n}</span> : null}
               </span>
@@ -128,7 +139,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
             <tr class="sel-oppnames"><th></th>{battle.opp.map(o => (
               <th>
                 <div class="so-head">
-                  <div class="so-mon"><Sprite id={o.species} size={44} /><span>{speciesName(o.species)}</span></div>
+                  <div class="so-mon"><PreviewSprite id={o.species} size={44} /><span>{previewName(o.species)}</span></div>
                   {dex.species[o.species] && <dl class="so-spe">{speLine(o.species).map(([l, v, sc]) => <><dt>{l}</dt><dd class="num">{v}{sc ? <small> ({Math.floor(v * 1.5)})</small> : null}</dd></>)}</dl>}
                 </div>
               </th>
@@ -145,8 +156,8 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
                   <th>
                     <button class={cx('sel-mon', order >= 0 && 'on', order >= 0 && order < nLead && 'lead')} onClick={() => togglePick(mi)} aria-pressed={order >= 0}>
                       <span class="no">{order >= 0 ? order + 1 : ''}</span>
-                      <Sprite id={m.species} size={40} class="sm-sprite" />
-                      <span class="nm">{speciesName(m.species)}</span>
+                      <PreviewSprite id={m.species} size={40} class="sm-sprite" />
+                      <span class="nm">{previewName(m.species)}</span>
                       {mySpe(m) && <span class="sm-spe num">S:{mySpe(m).base}{mySpe(m).mega && mySpe(m).mega !== mySpe(m).base ? ` (メガ ${mySpe(m).mega})` : ''}</span>}
                       {mx.row[m.species]?.n > 0 && <span class="rec-s">選出率 {pr(mx.row[m.species].picked, mx.row[m.species].n)}<br />勝率 {pr(mx.row[m.species].win, mx.row[m.species].win + mx.row[m.species].lose)}</span>}
                     </button>
@@ -174,7 +185,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
         </table>
       </div>
       <div class="btnrow pad-s">
-        {battle.my.map((m, i) => <button class="btn ghost sm" onClick={() => setMyEdit(i)}><Sprite id={m.species} size={28} />{speciesName(m.species)}の型</button>)}
+        {battle.my.map((m, i) => <button class="btn ghost sm" onClick={() => setMyEdit(i)}><PreviewSprite id={m.species} size={28} />{previewName(m.species)}の型</button>)}
         {battle.my.length < 6 && <button class="btn ghost sm" onClick={() => setMyEdit({add: true})}>＋ 自分のポケモン</button>}
       </div>
 
@@ -187,10 +198,10 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
           list.forEach((sid, i) => {
             if (!sid) return;
             if (!b.opp[i]) b.opp.push(newOpp(sid));
-            else if (b.opp[i].species !== sid) b.opp[i] = {...newOpp(sid)};
+            else if (selectionSpeciesId(b.opp[i].species) !== sid) b.opp[i] = {...newOpp(sid)};
           });
         }); setPick(null); }} />}
-      {oppEdit != null && battle.opp[oppEdit] && <OppSheet battle={battle} idx={oppEdit} ctx={ctx} mut={mut} usage={usage} onClose={() => setOppEdit(null)} />}
+      {oppEdit != null && battle.opp[oppEdit] && <OppSheet battle={battle} idx={oppEdit} preview ctx={ctx} mut={mut} usage={usage} onClose={() => setOppEdit(null)} />}
       {myEdit != null && (
         <MonEditor title="この対戦での自分の型" usage={usage} isNew={!!myEdit.add}
           build={myEdit.add ? {species: '', item: '', ability: '', nature: 'Serious', sp: [0, 0, 0, 0, 0, 0], moves: [], note: ''} : battle.my[myEdit]}
@@ -203,7 +214,7 @@ void moveName;
 
 // 相手の6体をまとめて入れる: 上の6つの枠に順に入り、枠を押すとそこを選び直せる。確定で決める
 function PartyPicker({battle, rank, start, onClose, onDone}) {
-  const [list, setList] = useState(() => [0, 1, 2, 3, 4, 5].map(i => battle.opp[i]?.species || ''));
+  const [list, setList] = useState(() => [0, 1, 2, 3, 4, 5].map(i => selectionSpeciesId(battle.opp[i]?.species || '')));
   const firstEmpty = l => { const k = l.findIndex(x => !x); return k < 0 ? null : k; };
   const [slot, setSlot] = useState(() => start ?? firstEmpty(list) ?? 0);
   const pickOne = sid => {
@@ -219,13 +230,13 @@ function PartyPicker({battle, rank, start, onClose, onDone}) {
       <div class="party-slots">
         {list.map((sid, i) => (
           <button class={cx('party-slot', sid && 'filled', slot === i && 'on')} onClick={() => setSlot(i)}>
-            {sid ? <><Sprite id={sid} size={40} /><span class="nm">{speciesName(sid)}</span></> : <span class="muted">{i + 1}</span>}
+            {sid ? <><PreviewSprite id={sid} size={40} /><span class="nm">{previewName(sid)}</span></> : <span class="muted">{i + 1}</span>}
           </button>
         ))}
       </div>
       <p class="party-hint">{slot == null ? '6体そろいました。枠を押すと選び直せます。' : `${slot + 1}番目を選んでいます。枠を押すとそこを選び直せます。`}</p>
     </>
   );
-  return <Picker kind="species" title={`相手のパーティ (${n}/6)`} rank={rank} onClose={onClose} onPick={pickOne} header={header}
+  return <Picker kind="species" title={`相手のパーティ (${n}/6)`} rank={rank} filter={id => !dex.species[id].mega && !dex.species[id].bo} onClose={onClose} onPick={pickOne} header={header}
     actions={<button class="btn primary" disabled={!n} onClick={() => onDone(list)}>確定</button>} />;
 }

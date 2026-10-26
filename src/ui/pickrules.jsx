@@ -1,16 +1,16 @@
 // 選出ルール: 構築の画面で編集し、対戦の選出画面で「今回はどのルールか」を出す
 import {useMemo, useState} from 'preact/hooks';
-import {speciesName} from '../engine/dex.js';
+import {speciesName, selectionSpeciesId} from '../engine/dex.js';
 import {parseCond, decidePick, pickIndexes, parseRulesText, rulesToText} from '../engine/pickrule.js';
 import {Sheet, Sprite, TypeChip, cx} from './common.jsx';
 
 // 条件をアイコンで表示: ポケモンはアイコン、タイプはタイプ表示。+ は「かつ」、| は「か」、/ は「または」
-export function CondIcons({cond}) {
+export function CondIcons({cond, preview = false}) {
   const c = typeof cond === 'string' ? parseCond(cond) : cond;
   if (c.any) return <span class="pr-cond"><span class="pr-any">どれにも当てはまらないとき</span></span>;
   if (!c.alts.length) return <span class="pr-cond muted">(条件なし)</span>;
   const atom = a => a.type ? <TypeChip type={a.type} small />
-    : <span class="pr-mon" title={speciesName(a.show)}><Sprite id={a.show} size={30} fallback={<span class="pr-fb">{speciesName(a.show)}</span>} /></span>;
+    : <span class="pr-mon" title={speciesName(preview ? selectionSpeciesId(a.show) : a.show)}><Sprite id={preview ? selectionSpeciesId(a.show) : a.show} size={30} fallback={<span class="pr-fb">{speciesName(preview ? selectionSpeciesId(a.show) : a.show)}</span>} /></span>;
   return (
     <span class="pr-cond">
       {c.alts.map((terms, ai) => <>
@@ -195,15 +195,15 @@ export function PickRuleHint({team, battle, started, onApply}) {
   const one = hit.rows.length === 1 && !hit.auto ? rules[hit.rows[0]] : null;
   return (
     <div class="box pr-hint">
-      <h4>選出ルール {hit.rows.map(i => <span class="num">{i + 1}</span>)}{one && <CondIcons cond={one.cond} />}{opp.length < 6 && <span class="muted"> (相手{opp.length}/6体で判定)</span>}</h4>
+      <h4>選出ルール {hit.rows.map(i => <span class="num">{i + 1}</span>)}{one && <CondIcons cond={one.cond} preview />}{opp.length < 6 && <span class="muted"> (相手{opp.length}/6体で判定)</span>}</h4>
       <div class="pr-hint-row">
         <ol class="pr-hint-pick">
           {idx.map((mi, k) => (
-            <li class={cx(k === 0 && 'lead')}><Sprite id={battle.my[mi].species} size={32} />{speciesName(battle.my[mi].species)}{k === 0 && <span class="tag">先発</span>}
+            <li class={cx(k === 0 && 'lead')}><Sprite id={selectionSpeciesId(battle.my[mi].species)} size={32} />{speciesName(selectionSpeciesId(battle.my[mi].species))}{k === 0 && <span class="tag">先発</span>}
               {!one && <span class="muted pr-from">{hit.from[k] >= 0 ? `行${hit.from[k] + 1}` : '自動'}</span>}</li>
           ))}
         </ol>
-        {hit.bans.length > 0 && <span class="muted">出さない: {hit.bans.map(speciesName).join('・')}</span>}
+        {hit.bans.length > 0 && <span class="muted">出さない: {hit.bans.map(id => speciesName(selectionSpeciesId(id))).join('・')}</span>}
         {hit.auto > 0 && <span class="muted">足りない{hit.auto}体は構築の並び順で埋めました</span>}
         {!started && idx.length > 0 && <button class={cx('btn sm', same ? 'ghost' : 'primary')} disabled={same} onClick={() => onApply(idx)}>{same ? 'この選出になっています' : 'この選出にする'}</button>}
       </div>

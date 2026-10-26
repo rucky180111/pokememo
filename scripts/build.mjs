@@ -8,6 +8,13 @@ import esbuild from 'esbuild';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'docs');
 fs.mkdirSync(out, {recursive: true});
+// 同梱画像が欠けたまま公開して、別フォルムの代替画像に戻ることを防ぐ。
+const species = JSON.parse(fs.readFileSync(path.join(root,'src/generated/dex.json'),'utf8')).species;
+const sprites = JSON.parse(fs.readFileSync(path.join(root,'src/generated/sprites.json'),'utf8'));
+for (const id of Object.keys(species)) {
+  if (!sprites.files[id] || !fs.existsSync(path.join(out,'sprites',`${id}.webp`))) throw new Error(`ポケモン画像がありません: ${id} (scripts/build-sprites.mjs で生成してください)`);
+}
+
 
 const result = await esbuild.build({
   entryPoints: [path.join(root, 'src', 'main.jsx')],

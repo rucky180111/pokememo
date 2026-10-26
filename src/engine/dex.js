@@ -92,6 +92,9 @@ export function search(kind, query, {limit = 60, filter} = {}) {
   return limit ? out.slice(0, limit) : out;
 }
 
+// 見せ合いではメガの判明情報にかかわらず進化前で表示。リージョンフォームは維持する。
+export const selectionSpeciesId = id => dex.species[id]?.mega || id;
+
 export const isMegaForme = id => !!dex.species[id]?.mega;
 // 持ち物からメガシンカ先を求める (持っていなければ null)
 export function megaFormeFor(speciesId, itemId) {

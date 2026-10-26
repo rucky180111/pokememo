@@ -1,6 +1,6 @@
 // 対戦画面: 見せ合い・盤面・ダメージ・素早さ・予測・ログ
 import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
-import {dex, speciesName, itemName, abilityName, moveName} from '../engine/dex.js';
+import {dex, speciesName, itemName, abilityName, moveName, selectionSpeciesId} from '../engine/dex.js';
 import {clone, normalizeBattle, newOpp, describeAct} from '../engine/battle.js';
 import {boardContext} from '../engine/board.js';
 import {spreadLabel, PRESETS, SPE_COMBOS, speFromCombo} from '../engine/assume.js';
@@ -105,7 +105,7 @@ export function dmgClass(r) {
 }
 
 // ---- 相手1体の情報 ----
-export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
+export function OppSheet({battle, idx, ctx, mut, usage, onClose, preview = false}) {
   const [pick, setPick] = useState(null);
   const [custom, setCustom] = useState(false);
   const o = battle.opp[idx];
@@ -121,7 +121,7 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose}) {
   const allItemRank = itemRank;
   const usedInLog = battle.pick.opp.includes(idx) || battle.state.sides.opp.active.includes(idx) || battle.turns.some(t => t.acts.some(a => (a.side === 'opp' && (a.mon === idx || a.to === idx)) || (a.target?.side === 'opp' && a.target.mon === idx) || a.in?.changes?.some(x => x.side === 'opp' && x.mon === idx)));
   return (
-    <Sheet title={`相手の${speciesName(o.species)}`} onClose={onClose} wide>
+    <Sheet title={`相手の${speciesName(preview ? selectionSpeciesId(o.species) : o.species)}`} onClose={onClose} wide>
       <div class="editor">
         <div class="os-info">
           <div class="os-row"><span class="os-lb">持ち物</span>
