@@ -176,6 +176,14 @@ export function createStore(backend) {
       // 構築や他の対戦、同期設定は書き出さない。
       return structuredCloneSafe({app: 'pokememo', v: 1, exportedAt: new Date().toISOString(), teams: [], battles: [battle]});
     },
+    exportTeam(id) {
+      const team = api.team(id);
+      if (!team) throw new Error('この構築は見つかりません');
+      // 構築名の変更や同名の構築に影響されないよう、IDで全対戦を集める。
+      // 未決着の対戦・仮想盤面も含め、統計は読み込み先で再集計できる。
+      const battles = state.battles.filter(b => !b.deleted && b.teamId === id);
+      return structuredCloneSafe({app: 'pokememo', v: 1, exportedAt: new Date().toISOString(), teams: [team], battles});
+    },
     async importAll(data) {
       if (!data || data.app !== 'pokememo' || !Array.isArray(data.teams) || !Array.isArray(data.battles)) throw new Error('このアプリのバックアップファイルではありません');
       let n = 0;

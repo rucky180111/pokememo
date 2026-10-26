@@ -7,6 +7,7 @@ import {teamRecord, realBattles} from '../engine/predict.js';
 import {TeamReport} from './stats.jsx';
 import {ShotImport} from './shot-import.jsx';
 import {TeamCSVImport} from './team-csv.jsx';
+import {TeamExport} from './team-export.jsx';
 import {TeamDiagnosis} from './teamdiag.jsx';
 import {PickRulesEditor} from './pickrules.jsx';
 
@@ -155,6 +156,7 @@ export function TeamEditor({id}) {
       <div class="page-head">
         <button class="btn ghost" onClick={() => nav('#/teams')}>‹ 構築一覧</button>
         <div class="btnrow">
+          <TeamExport id={team.id} />
           <button class="btn" onClick={() => startBattle('sim')}>仮想盤面</button>
           <button class="btn primary" onClick={() => startBattle('battle')}>対戦を記録</button>
         </div>
