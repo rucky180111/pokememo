@@ -13,6 +13,7 @@ import {TurnBar, FieldBar} from './play.jsx';
 import {spreadFits} from '../engine/infer-dmg.js';
 import {PredictTab} from './analysis.jsx';
 import {BattleLog} from './turn.jsx';
+import {confirmItem} from '../engine/flow.js';
 import {BattleExport} from './battle-export.jsx';
 
 const TABS = [['setup', '選出'], ['board', '盤面'], ['dmg', 'ダメージ'], ['log', 'ログ'], ['stat', '傾向']];
@@ -202,7 +203,7 @@ export function OppSheet({battle, idx, ctx, mut, usage, onClose, preview = false
       </div>
       {pick === 'item' && <Picker kind="items" title="相手の持ち物" allowClear clearLabel="不明に戻す" rank={allItemRank} onClose={() => setPick(null)}
         filter={id => !dex.items[id].ms || !!dex.items[id].ms[o.species]}
-        onPick={id => { set(x => { x.item = id; }); setPick(null); }} />}
+        onPick={id => { mut(b => confirmItem(b,{side:'opp',mon:idx,item:id},usage)); setPick(null); }} />}
       {pick === 'move' && <Picker kind="moves" title="判明した技" rank={moveRank} prefer={dex.learn[o.species]} preferLabel="覚えない技も表示" onClose={() => setPick(null)}
         onPick={id => { set(x => { if (!x.moves.includes(id) && x.moves.length < 4) x.moves.push(id); }); setPick(null); }} />}
       {pick === 'species' && <Picker kind="species" title="ポケモンを変更" onClose={() => setPick(null)} filter={id => !dex.species[id].mega && !dex.species[id].bo}

@@ -1,7 +1,7 @@
 // 相手の能力ポイントの推定: 絞り込めた範囲と、まだ分からない残りポイントを使った最良/最悪ケース
 import {dex, statValue, STAT_KEYS, SP_TOTAL, natureMod} from './dex.js';
 import {SPE_COMBOS, comboMod, comboSP} from './assume.js';
-import {natureOf} from './infer-dmg.js';
+import {spreadDomains,supportedMasks} from './spread-domains.js';
 
 // 能力ごとに許される「補正×SP」の集合を取り出す (絞り込みが無ければ null)
 function allowed(opp, stat) {
@@ -15,6 +15,7 @@ function allowed(opp, stat) {
     return out;
   }
   if (stat === 'spe') {
+    if(k.spe)return k.spe;
     const p = opp.speOk?.plain, s = opp.speOk?.scarf;
     if (p && s) return [...p].map((v, i) => v === '1' || s[i] === '1' ? '1' : '0').join('');
     return p || s || null;
@@ -81,6 +82,9 @@ export function efficientBulk(opp) {
  * 戻り値: [{key, base, spLo, spHi, valLo, valHi, modLo, modHi, known}] と remain (未確定の残りポイント)
  */
 export function estimateStats(opp, speciesId) {
+  const supported=(opp.statOk || opp.speOk) ? supportedMasks(opp) : null;
+  const source=opp;
+  if(supported) opp={...opp,statOk:{...opp.statOk,hp:supported.hp,...Object.fromEntries(['atk','def','spa','spd','spe'].map(k=>[k,supported[k]]))}};
   const s = dex.species[speciesId];
   const rows = STAT_KEYS.map((key, i) => {
     const base = s.bs[i];
@@ -100,21 +104,13 @@ export function estimateStats(opp, speciesId) {
     if (spHi < 0) return {key, base, spLo: 0, spHi: 32, valLo: statValue(base, 0, 0.9, false), valHi: statValue(base, 32, 1.1, false), modLo: 0.9, modHi: 1.1, known: false};
     return {key, base, spLo, spHi, valLo, valHi, modLo, modHi, known: !!m, byMod: m ? byMod : null};
   });
-  // 耐久は効率のいい振り方に寄せる
-  const eff = efficientBulk(opp);
-  if (eff) {
-    const set = (r, sp, mod) => { r.spLo = r.spHi = sp; r.modLo = r.modHi = mod; r.valLo = r.valHi = statValue(r.base, sp, mod, r.key === 'hp'); r.eff = true; };
-    set(rows[0], eff.h, 1);
-    for (const key of ['def', 'spd']) {
-      if (!eff[key]) continue;
-      const r = rows[STAT_KEYS.indexOf(key)];
-      set(r, eff[key].sp, eff[key].mod);
-      r.byMod = Object.fromEntries(Object.entries(eff.alt[key]).map(([m, sp]) => [m, [sp, sp]]));
-    }
+  if(supported) for(const r of rows) {
+    const full=r.key==='hp' ? r.spLo===0&&r.spHi===32 : r.spLo===0&&r.spHi===32&&r.modLo===0.9&&r.modHi===1.1;
+    r.known=!!source.statOk?.[r.key] || r.key==='hp'&&!!(source.statOk?.def||source.statOk?.spd) || r.key==='spe'&&!!source.speOk || !full;
   }
-  const used = rows.reduce((a, r) => a + r.spLo, 0);
+  const used = supported ? Math.min(...spreadDomains(source).map(b=>b.cost)) : rows.reduce((a, r) => a + r.spLo, 0);
   const remain = Math.max(0, SP_TOTAL - used);
-  for (const r of rows) r.spHi = Math.min(r.spHi, r.spLo + remain);
+
   return {rows, remain, used};
 }
 
@@ -124,20 +120,18 @@ export function estimateStats(opp, speciesId) {
  * 無振り側は「確定している最小値」、全振り側は「残りポイントをそこへ全部回した場合」。
  */
 export function scenarioBuild(opp, baseBuild, speciesId, kind, cat) {
-  const {rows, remain} = estimateStats(opp, speciesId);
-  const by = Object.fromEntries(rows.map(r => [r.key, r]));
-  const sp = rows.map(r => r.spLo);
-  const idx = k => STAT_KEYS.indexOf(k);
-  const max = kind.endsWith('Max');
-  const stat = kind.startsWith('bulk') ? (cat === 'P' ? 'def' : 'spd') : (cat === 'P' ? 'atk' : 'spa');
-  let left = remain;
-  if (max) {
-    if (kind === 'bulkMax') { const add = Math.min(by.hp.spHi - by.hp.spLo, left); sp[0] += add; left -= add; }
-    const add2 = Math.min(by[stat].spHi - by[stat].spLo, left); sp[idx(stat)] += add2;
+  const stat=kind.startsWith('bulk') ? (cat==='P'?'def':'spd') : (cat==='P'?'atk':'spa');
+  const si=STAT_KEYS.indexOf(stat),max=kind.endsWith('Max');
+  let best=null;
+  for(const b of spreadDomains(opp)) for(const value of b.choices[si-1]) {
+    const sp=b.mins.slice();sp[si]=value;
+    const raw=statValue(dex.species[speciesId].bs[si],value,natureMod(b.nature,stat),false);
+    const score=kind.startsWith('bulk') ? statValue(dex.species[speciesId].bs[0],b.h,1,true)*raw : raw;
+    // 観測がない火力の下限は、従来どおり補正なしを想定する。
+    if(!max && kind.startsWith('pow') && !opp.statOk?.[stat] && natureMod(b.nature,stat)!==1)continue;
+    if(!best || (max ? score>best.score : score<best.score) || score===best.score&&b.nature===baseBuild.nature)best={score,sp,nature:b.nature};
   }
-  const r = by[stat];
-  const mod = max ? r.modHi : (r.known ? r.modLo : 1);
-  return {...baseBuild, nature: natureOf(stat, mod), sp};
+  return best ? {...baseBuild,sp:best.sp,nature:best.nature} : baseBuild;
 }
 
 /**
@@ -147,38 +141,18 @@ export function scenarioBuild(opp, baseBuild, speciesId, kind, cat) {
  */
 export function fitBuild(opp, build, speciesId) {
   if (!opp.statOk && !opp.speOk) return build;
-  const sp = build.sp.slice();
-  const need = {}; // 能力ごとに必要な性格補正
-  const eff = efficientBulk(opp);
-  if (eff) {
-    sp[0] = eff.h;
-    for (const key of ['def', 'spd']) if (eff[key]) { sp[STAT_KEYS.indexOf(key)] = eff[key].sp; if (eff[key].mod !== natureMod(build.nature, key)) need[key] = eff[key].mod; }
-  }
-  for (const stat of ['atk', 'def', 'spa', 'spd', 'spe']) {
-    if (eff && eff[stat]) continue;
-    const m = allowed(opp, stat);
-    if (!m) continue;
-    const i = STAT_KEYS.indexOf(stat);
-    const curMod = natureMod(build.nature, stat);
-    let best = null;
-    for (let c = 0; c < SPE_COMBOS; c++) {
-      if (m[c] !== '1') continue;
-      const cost = Math.abs(comboSP(c) - sp[i]) + (comboMod(c) === curMod ? 0 : 12);
-      if (!best || cost < best.cost) best = {cost, c};
+  const blocks=spreadDomains(opp,opp.item || '');
+  if(!blocks.length)return build;
+  let best=null;
+  for(const b of blocks) {
+    const sp=b.mins.slice();let left=SP_TOTAL-b.cost;
+    for(let i=1;i<6;i++) {
+      const values=b.choices[i-1].filter(v=>v-sp[i]<=left);
+      const value=values.reduce((a,v)=>Math.abs(v-(build.sp[i]||0))<Math.abs(a-(build.sp[i]||0))?v:a,values[0]);
+      left-=value-sp[i];sp[i]=value;
     }
-    if (!best) continue;
-    sp[i] = comboSP(best.c);
-    if (comboMod(best.c) !== curMod) need[stat] = comboMod(best.c);
+    const score=sp.reduce((sum,v,i)=>sum+Math.abs(v-(build.sp[i]||0)),0)+(b.nature===build.nature?0:8);
+    if(!best || score<best.score)best={sp,nature:b.nature,score};
   }
-  let nature = build.nature;
-  if (Object.keys(need).length) {
-    const cur = dex.natures[build.nature] || {};
-    // 補正なしが必要な能力に、元の性格の補正が残らないようにする
-    let up = Object.keys(need).find(k => need[k] > 1) || (need[cur.p] !== undefined ? null : cur.p) || null;
-    let down = Object.keys(need).find(k => need[k] < 1) || (need[cur.m] !== undefined ? null : cur.m) || null;
-    if (up && !down) down = ['atk', 'spa', 'def', 'spd', 'spe'].find(k => k !== up && !(need[k] >= 1) && !opp.statOk?.[k]) || null;
-    if (down && !up) up = ['atk', 'spa', 'def', 'spd', 'spe'].find(k => k !== down && !need[k] && !opp.statOk?.[k]) || null;
-    nature = (up && down && Object.keys(dex.natures).find(n => dex.natures[n].p === up && dex.natures[n].m === down)) || 'Serious';
-  }
-  return {...build, nature, sp};
+  return {...build,sp:best.sp,nature:best.nature};
 }

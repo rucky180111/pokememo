@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {dex} from '../src/engine/dex.js';
+import {dex,natureMod} from '../src/engine/dex.js';
 import {newCond, finalSpeed} from '../src/engine/calc.js';
 import {newBattle, newTeam, newOpp, normalizeBattle, sendOut, commitTurn, undoTurn, megaEvolve, megaTarget, setHP, applyBoosts, clone, MOVE_BOOSTS, PIVOT_MOVES, SPEED_CHANGING, describeAct, UNDO_DEPTH} from '../src/engine/battle.js';
 import {commitTurnInfer, inferSpeeds} from '../src/engine/infer.js';
@@ -586,8 +586,8 @@ test('推定能力ポイント: 絞り込みの範囲と残りポイント、無
   const lo = scenarioBuild(o, base, 'tyranitar', 'bulkMin', 'P');
   assert.deepEqual(lo.sp, [0, 28, 0, 0, 0, 0]);
   const hi = scenarioBuild(o, base, 'tyranitar', 'bulkMax', 'P');
-  assert.deepEqual(hi.sp, [32, 28, 6, 0, 0, 0], '残り38を HP32 + B6 に');
-  assert.equal(hi.nature, 'Bold');
+  assert.deepEqual(hi.sp, [6, 28, 32, 0, 0, 0], 'A上昇補正を維持し、実在する最も硬いHP×Bを選ぶ');
+  assert.equal(hi.nature, 'Adamant');
   const pm = scenarioBuild(o, base, 'tyranitar', 'powMax', 'P');
   assert.equal(pm.sp[1], 32);
   assert.equal(pm.nature, 'Adamant');
@@ -675,7 +675,7 @@ test('持ち物の発動: きあいのタスキ・オボンのみ・出来事の
 
 import {efficientBulk, fitBuild} from '../src/engine/estimate.js';
 
-test('耐久の推定: 観測に合う中で、使うポイントが最小の振り方を想定する', () => {
+test('耐久の推定: 効率のよい一例を確定値とせず、観測に合うHP×特防の全範囲を残す', () => {
   const b = makeBattle();
   sendOut(b, 'me', 0, 5); sendOut(b, 'opp', 0, 1);
   b.opp[1].ability = 'sandstream'; b.opp[1].item = 'leftovers';
@@ -691,14 +691,15 @@ test('耐久の推定: 観測に合う中で、使うポイントが最小の振
   const total = eff.h + eff.spd.sp;
   for (let h = 0; h <= 32; h++) for (let c = 0; c < 99; c++) if (b.opp[1].statOk.spd[h * 99 + c] === '1') assert.ok(h + (c % 33) >= Math.floor(total) - 0, `H${h} + D${c % 33} は ${total} 以上`);
   const e = estimateStats(b.opp[1], 'tyranitar');
-  assert.deepEqual([e.rows[0].spLo, e.rows[0].spHi], [eff.h, eff.h], 'HP は1点に決まる');
-  assert.deepEqual([e.rows[4].spLo, e.rows[4].spHi], [eff.spd.sp, eff.spd.sp]);
-  assert.ok(e.rows[4].eff);
-  assert.equal(e.remain, 66 - e.rows.reduce((a, r) => a + r.spLo, 0));
+  assert.ok(e.rows[0].spLo<=eff.h && e.rows[0].spHi>=eff.h);
+  assert.ok(e.rows[0].spLo<e.rows[0].spHi,'HPを一例の値に確定しない');
+  assert.ok(e.rows[4].spLo<=eff.spd.sp && e.rows[4].spHi>=eff.spd.sp);
+  assert.ok(!e.rows[4].eff);
+  assert.ok(e.used>=total);
   // 計算に使う配分もこの振り方になる
   const fb = fitBuild(b.opp[1], {species: 'tyranitar', item: 'leftovers', ability: 'sandstream', nature: 'Adamant', sp: [0, 32, 0, 0, 0, 32], moves: []}, 'tyranitar');
-  assert.equal(fb.sp[0], eff.h);
-  assert.equal(fb.sp[4], eff.spd.sp);
+  assert.equal(b.opp[1].statOk.spd[fb.sp[0]*99+cOf(natureMod(fb.nature,'spd'),fb.sp[4])],'1');
+  assert.ok(fb.sp.reduce((a,v)=>a+v,0)<=66);
   assert.equal(efficientBulk(newOpp('tyranitar')), null);
 });
 

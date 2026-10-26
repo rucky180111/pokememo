@@ -244,6 +244,7 @@ check(await page.locator('.dl-ic.opp').count() >= 3 && await page.locator('.dl-i
 check(await page.locator('.dl-ic.on').count() === 2, '選んでいる2体が光る');
 check(await page.locator('.dl-st input[type=range]').count() === 6, '相手の能力Ptスライダーが6本');
 const dmgText = () => page.locator('.dl h4.me ~ .dl-row .dl-v').first().innerText();
+await page.locator('.dl-st').nth(0).locator('input[type=range]').fill('0');
 const before = await dmgText();
 await page.locator('.dl-st').nth(0).locator('input[type=range]').fill('32'); // HPに全振り
 const afterSp = await dmgText();

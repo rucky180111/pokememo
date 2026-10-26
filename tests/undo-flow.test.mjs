@@ -51,3 +51,4 @@ test('持ち物判明・消費を戻すと、元の判明状態と消費状態�
 test('旧形式の定数処理で判明した持ち物も、終了を戻すと不明に戻る',()=>{
  const b=setup();b.opp[0].item='';cant(b);cant(b,'opp');finishTurn(b,null,{noOrder:true,residual:[{side:'opp',mon:0,key:'leftovers'}]});delete b.turns[0].undoEnd;for(const a of b.turns[0].acts)if(a.in)delete a.in.turnEnd;assert.equal(b.opp[0].item,'leftovers');assert.ok(undoLast(b));assert.equal(b.opp[0].item,'');
 });
+test('能力ランクだけの取り消しでは入力中の技をリセットせず、行動を戻すとリセットする',()=>{const b=setup();addEvent(b,{kind:'boost',side:'me',mon:0,stat:'atk',delta:1});const rev=b.undoRevision;undoLast(b);assert.equal(b.undoRevision,rev);cant(b);undoLast(b);assert.ok(b.undoRevision>0);});

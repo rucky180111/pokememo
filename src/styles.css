@@ -1587,3 +1587,5 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .tb-undo-next { color:var(--muted); }
 .tb-undo-result { color:var(--accent); }
 .board-workspace .tb-undo { width:100%; }
+.arena-turnbar .tb-undo { order:-2; width:100%; align-items:stretch; }
+.arena-turnbar .tb-undo-button { width:100%; min-height:46px; font-size:15px; font-weight:700; padding:9px 12px; color:var(--accent); border-color:var(--accent); background:var(--accent-soft); touch-action:manipulation; }

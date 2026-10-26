@@ -6,7 +6,7 @@
 //   ⇄ で 自分→相手 / 相手→自分 を入れ替える
 //   技: 相手はこの対戦で使った技 (固定で上) → 使用率の高い技 TOP10 → 自分で追加した技
 import {useMemo, useState} from 'preact/hooks';
-import {dex, speciesName, itemName, abilityName, moveName, statValue, STAT_KEYS, STAT_JA, SP_MAX, SP_TOTAL} from '../engine/dex.js';
+import {dex, speciesName, itemName, abilityName, moveName, statValue, STAT_KEYS, STAT_JA, SP_MAX, SP_TOTAL, natureMod} from '../engine/dex.js';
 import {currentSpecies, currentAbility} from '../engine/calc.js';
 import {condOf} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
@@ -49,13 +49,14 @@ function LabBody({battle, ctx, oi, mi, setOSel, setMSel, crit, setCrit, dir, set
   const s = dex.species[sid];
   const est = useMemo(() => estimateStats(opp, sid), [opp, sid]);
 
-  // 盤面から決まる初期値 (分かっている能力Ptと性格補正だけ)
+  // 観測があるときは、各能力が同時に成立する実在配分を初期値にする。
   const init = useMemo(() => {
-    const sp = est.rows.map(r => (r.known ? r.spLo : 0));
+    const constrained=!!(opp.statOk || opp.speOk);
+    const sp = constrained ? base.sp.slice() : [0,0,0,0,0,0];
     const mods = {};
-    for (const r of est.rows) if (r.known && r.key !== 'hp' && r.modLo === r.modHi && r.modLo !== 1) mods[r.key] = r.modLo;
+    for (const key of STAT_KEYS.slice(1)) if(constrained && natureMod(base.nature,key)!==1) mods[key]=natureMod(base.nature,key);
     return {sp, mods};
-  }, [est]);
+  }, [est,base,opp]);
   const mk = keyOf(battle, oi);
   const ed = memo.get(mk) || {};
   const set = patch => { memo.set(mk, {...ed, ...patch}); force(x => x + 1); };

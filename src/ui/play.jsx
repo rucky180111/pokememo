@@ -9,7 +9,7 @@ import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies, currentAbility
 import {condOf, buildOf, other, turnNumber, PIVOT_MOVES, faintedCount, pickCount, defaultAbilityResolver} from '../engine/battle.js';
 import {attackTable} from '../engine/board.js';
 import {damageRange} from '../engine/damage-range.js';
-import {HIT_ABILITIES, hitAbilityAction, revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, undoPlan, undoLast, correctActHP, canReplay, replay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
+import {HIT_ABILITIES, hitAbilityAction, confirmItem, revealIllusion, addAct, addEvent, openTurn, residualCandidates, expiryCandidates, finishTurn, undoPlan, undoLast, correctActHP, canReplay, dispOf, ppLeft, sideDone, FORCE_MOVES, EJECT_JA, RECOIL, HALF_RECOIL, DRAIN} from '../engine/flow.js';
 import {speedOutlook} from '../engine/assume.js';
 import {finalSpeed} from '../engine/calc.js';
 import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, Confirm, cx, fmtPct, rate} from './common.jsx';
@@ -233,7 +233,6 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
     setAct({side, mon, kind: 'move', move: m, tgt: target, scen: 'base', crit: false, stage: mv && mv.c !== 'Z' && target ? 'hp' : 'pick', hp: null, secFx: [], inflict: STATUS_MOVE[m] || ''});
   };
   const suggestions = side === 'opp' && !raw.fainted && !done && moves.length < 4 && <div class="pl-suggestions"><span class="muted">未判明の技候補（使用率順）</span><div class="chips">{(view?.moves || []).filter(m => !m.known && !moves.includes(m.id)).slice(0, 6).map(m => <button class="chip" title={`${moveName(m.id)}・使用率 ${Math.round(m.rate * 100)}%`} onClick={() => selMove(m.id)}>{moveName(m.id)} <small>推定</small></button>)}</div></div>;
-  const setOpp = fn => mut(b => { fn(b.opp[mon]); if (canReplay(b)) replay(b, usage); });
   const abil = currentAbility(build, raw);
   const setBoosts = set => { let log = []; mut(b => { log = addEvent(b, {kind: 'boosts', side, mon, set}, usage); }); toast(log[0] || '記録しました'); };
   // イリュージョン: 相手のパーティにゾロアークがいれば、化けていた可能性
@@ -301,7 +300,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
       <SideState battle={battle} side={side} raw={raw} isMega={isMega} abil={side === 'me' || buildOf(battle, side, mon).ability ? abil : ''} />
       {pick === 'item' && <Picker kind="items" title="相手の持ち物" allowClear clearLabel="不明に戻す" rank={view?.items?.length ? Object.fromEntries(view.items) : null} onClose={() => setPick(null)}
         filter={id => !dex.items[id].ms || !!dex.items[id].ms[opp.species]}
-        onPick={id => { setOpp(o => { o.item = id || ''; }); setPick(null); }} />}
+        onPick={id => { mut(b => confirmItem(b,{side,mon,item:id || ''},usage)); setPick(null); toast('持ち物を反映し、関連するダメージと推定を再計算しました'); }} />}
       {pick === 'move' && <Picker kind="moves" title="相手の技" rank={view ? Object.fromEntries(view.moves.filter(m => !m.known).map(m => [m.id, m.rate])) : null} prefer={dex.learn[opp?.species]} preferLabel="覚えない技も表示" onClose={() => setPick(null)}
         onPick={id => { setPick(null); if (id) selMove(id); }} />}
     </>
@@ -461,12 +460,12 @@ function RecentActionHP({battle, side, mon, mut, usage, toast}) {
   const ai = turn?.acts.findLastIndex(a => a.type === 'move' && a.side === side && a.mon === mon && a.move && !a.flags?.miss && !a.flags?.cant && !a.flags?.protect) ?? -1;
   const a = turn?.acts[ai];
   const receiver = a?.target || a?.in?.target;
-  const hpMove = !!(DRAIN[a?.move] || RECOIL[a?.move] || ['strengthsap','painsplit'].includes(a?.move) || a?.in?.selfFx?.length || a?.in?.selfHpUnknown);
+  const hpMove = !!(DRAIN[a?.move] || RECOIL[a?.move] || ['strengthsap','painsplit'].includes(a?.move) || a?.in?.selfFx?.length || a?.selfFx?.length || a?.in?.selfHpUnknown);
   const targets = [...(receiver && (dex.moves[a?.move]?.c !== 'Z' || a?.move === 'painsplit') ? [receiver] : []), ...(hpMove ? [{side,mon}] : [])];
   const variableOwn = !!(DRAIN[a?.move] || RECOIL[a?.move] && !HALF_RECOIL.has(a.move) || ['strengthsap','painsplit'].includes(a?.move));
   const pending = targets.filter(t => {
     if(a?.in?.observedHp?.some(h => h.side === t.side && h.mon === t.mon)) return false;
-    if(t.side === side && t.mon === mon) return !Number.isFinite(a?.in?.atkHpAfter) && (a?.in?.selfHpUnknown || variableOwn);
+    if(t.side === side && t.mon === mon) return !Number.isFinite(a?.in?.atkHpAfter) && (a?.in?.selfHpUnknown || variableOwn || condOf(battle,side,mon)?.hpUnknown);
     return a?.in?.hpUnknown || a?.in?.hpAfter == null && !a?.disguiseHit && !a?.in?.endured && a?.in?.defItem?.item !== 'focussash';
   }).length;
   const open = () => {setEditing({ti,ai,input:JSON.stringify(a.in)});setValues({});};
@@ -726,7 +725,7 @@ export function TurnBar({battle, ctx, mut, usage, toast, focusSide}) {
   const undoControls = <div class="tb-undo">
     <strong class="tb-undo-position">入力位置：{currentPosition}</strong>
     {nextUndo && <>
-      <button class="btn ghost sm" onClick={undo} title={`取り消す内容：${nextUndo.label}`} aria-describedby="undo-next">1つ戻す</button>
+      <button class="btn tb-undo-button" onClick={undo} title={`取り消す内容：${nextUndo.label}`} aria-describedby="undo-next">1つ戻す</button>
       <small id="undo-next" class="tb-undo-next">次に戻す：{nextUndo.label}</small>
     </>}
     {lastUndo?.id === battle.id && <small class="tb-undo-result" role="status">戻した内容：{lastUndo.label}</small>}
@@ -745,10 +744,10 @@ export function TurnBar({battle, ctx, mut, usage, toast, focusSide}) {
   }
   return (
     <div class="turnbar">
+      {undoControls}
       <div class="tb-status">
         <button class={cx('tb-side me', doneMe && 'ok')} onClick={() => focusSide?.('me')} title="自分の盤面へ移動" aria-label="自分の盤面へ">自分 {doneMe ? '✓' : '…'}</button>
         <button class={cx('tb-side opp', doneOpp && 'ok')} onClick={() => focusSide?.('opp')} title="相手の盤面へ移動" aria-label="相手の盤面へ">相手 {doneOpp ? '✓' : '…'}</button>
-        {undoControls}
         <button class="btn ghost sm" onClick={() => setEv(true)}>その他の変化…</button>
       </div>
       {sure.length > 0 && <div class="tb-auto">ターン終了時: {sure.map(c => `${SIDE_JA[c.side]}${c.label}`).join('・')}</div>}

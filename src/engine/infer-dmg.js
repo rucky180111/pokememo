@@ -3,6 +3,7 @@
 import {dex, statValue, natureMod, STAT_KEYS} from './dex.js';
 import {attackTable} from './board.js';
 import {currentAbility} from './calc.js';
+import {spreadDomains,supportedMasks} from './spread-domains.js';
 import {SPE_COMBOS, comboMod, comboSP, comboOf, parseSpread} from './assume.js';
 
 const ALL = n => '1'.repeat(n);
@@ -84,11 +85,11 @@ export function inferFromTaken(ctx, oppIdx, myIdx, moveId, damage, opts = {}) {
     for (const hy of hyps) {
       const alt = {...base, ...hy, nature: natureOf(stat, mod), sp: spArr};
       const r = attackTable(withBuild(ctx, oppIdx, alt), 'opp', oppIdx, {...opts, only: {def: myIdx, move: moveId}})?.targets[0]?.results[moveId];
-      if (r?.ok && (opts.atLeast ? r.max + tol >= damage : damage + tol >= r.min && damage - tol <= r.max)) { ok = true; break; }
+      if (r?.ok && (opts.atLeast ? r.max + tol >= damage : r.rolls?.length && (r.hits || 1) === 1 ? r.rolls.some(v => Math.abs(v-damage) <= tol) : damage + tol >= r.min && damage - tol <= r.max)) { ok = true; break; }
     }
     mask += ok ? '1' : '0';
   }
-  const result = {...summarize(ctx, oppIdx, stat, mask), atLeast: !!opts.atLeast};
+  const result = {...summarize(ctx, oppIdx, stat, mask), sid: cond0.forme || base.species, atLeast: !!opts.atLeast};
   // ボディプレスで判明する防御は、最大HPの候補とは独立。既存のHP×防御形式へ展開。
   return stat === 'def' ? {...result, mask: mask.repeat(33), count: result.count * 33} : result;
 }
@@ -124,13 +125,13 @@ export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts =
     const val = statValue(bs[si], sp, mod, false);
     if (!byVal.has(val)) {
       const spArr = [0, 0, 0, 0, 0, 0]; spArr[si] = sp;
-      let lo = Infinity, hi = -Infinity;
+      const ranges = [];
       for (const hy of hyps) {
         const alt = {...base, ...hy, nature: natureOf(stat, mod), sp: spArr};
         const r = attackTable(withBuild(ctx, oppIdx, alt), 'me', myIdx, {...opts, only: {def: oppIdx, move: moveId}})?.targets[0]?.results[moveId];
-        if (r?.ok) { lo = Math.min(lo, r.min); hi = Math.max(hi, r.max); }
+        if (r?.ok) ranges.push({min:r.min,max:r.max,rolls:(r.hits || 1) === 1 ? r.rolls : null});
       }
-      byVal.set(val, Number.isFinite(lo) ? [lo, hi] : null);
+      byVal.set(val, ranges);
     }
     return byVal.get(val);
   };
@@ -141,14 +142,24 @@ export function inferFromDealt(ctx, myIdx, oppIdx, moveId, before, after, opts =
     for (let c = 0; c < SPE_COMBOS; c++) {
       const r = rolls(c);
       // atLeast: 「少なくとも lost% は入った」(きあいのタスキで耐えた = 本来は倒れていた)
-      const bounds = opts.damageByHP?.[h];
-      const ok = !!r && (opts.damageByHP ? !!bounds && r[1] >= bounds[0] && r[0] <= bounds[1] : (r[1] / maxHP) * 100 >= lost - tol && (opts.atLeast || (r[0] / maxHP) * 100 <= lost + tol))
-        && (!opts.damageRange || (r[1] >= opts.damageRange[0] && (opts.atLeast || r[0] <= opts.damageRange[1])));
+      let bounds = opts.damageByHP?.[h];
+      if (opts.displayHP && !opts.damageByHP && Number.isInteger(before) && Number.isInteger(after)) {
+        const interval = q => q >= 100 ? [maxHP,maxHP] : q <= 0 ? [0,0] : [q===1 ? 1 : Math.max(1,Math.ceil(q*maxHP/100)),Math.min(maxHP-1,Math.ceil((q+1)*maxHP/100)-1)];
+        const pre=interval(before),post=interval(after);
+        bounds=[Math.max(1,pre[0]-post[1]),pre[1]-post[0]];
+      }
+      const ok = r.some(x => {
+        let low=bounds ? bounds[0] : (lost-tol)*maxHP/100;
+        let high=opts.atLeast ? Infinity : bounds ? bounds[1] : (lost+tol)*maxHP/100;
+        if (opts.damageByHP && !bounds) return false;
+        if (opts.damageRange) {low=Math.max(low,opts.damageRange[0]);if(!opts.atLeast)high=Math.min(high,opts.damageRange[1]);}
+        return x.rolls?.length ? x.rolls.some(v=>v>=low-1e-9&&v<=high+1e-9) : x.max>=low&&x.min<=high;
+      });
       mask += ok ? '1' : '0';
       if (ok) { count++; hLo = Math.min(hLo, h); hHi = Math.max(hHi, h); const v = statValue(bs[si], comboSP(c), comboMod(c), false); dLo = Math.min(dLo, v); dHi = Math.max(dHi, v); }
     }
   }
-  return {stat, mask, count, atLeast: !!opts.atLeast, hpRange: count ? [hLo, hHi] : null, defRange: count ? [dLo, dHi] : null};
+  return {stat, mask, count, sid, atLeast: !!opts.atLeast, hpRange: count ? [hLo, hHi] : null, defRange: count ? [dLo, dHi] : null};
 }
 
 // 配分 (性格 + SP) が、これまでの絞り込みと矛盾しないか
@@ -175,15 +186,32 @@ export function applyInference(opp, view, res) {
   const prev = opp.statOk[res.stat];
   const merged = prev ? and(prev, res.mask) : res.mask;
   if (!merged.includes('1')) return `これまでの絞り込みと矛盾します。保存していません (相手の情報から絞り込みをリセットできます)。`;
+  const save = mask => {
+    const proposed={...opp,statOk:{...opp.statOk,[res.stat]:mask}};
+    if(!spreadDomains(proposed).length)return '性格・HPとの組み合わせ・能力Pt合計66と矛盾するため、保存していません';
+    const support=supportedMasks(proposed);
+    opp.statOk[res.stat]=mask;
+    for(const key of Object.keys(opp.statOk)) if(support[key])opp.statOk[key]=support[key];
+    return applyMsg(mergedSummary(opp,res,opp.statOk[res.stat]));
+  };
   // HP の絞り込みがあれば、ぼうぎょ/とくぼうの組み合わせにも反映する
   if ((res.stat === 'def' || res.stat === 'spd') && opp.statOk.hp) {
     let out = '';
     for (let h = 0; h <= 32; h++) out += opp.statOk.hp[h] === '1' ? merged.slice(h * SPE_COMBOS, (h + 1) * SPE_COMBOS) : '0'.repeat(SPE_COMBOS);
     if (!out.includes('1')) return 'HPの絞り込みと矛盾するため、保存していません';
-    opp.statOk[res.stat] = out; return applyMsg(res);
+    return save(out);
   }
-  opp.statOk[res.stat] = merged;
-  return applyMsg(res);
+  return save(merged);
+}
+function mergedSummary(opp,res,mask) {
+  const sid=res.sid || opp.species,base=dex.species[sid]?.bs[STAT_KEYS.indexOf(res.stat)];
+  if(base==null)return res;
+  let lo=Infinity,hi=-Infinity,hLo=33,hHi=-1,spLo=33,spHi=-1;
+  for(let i=0;i<mask.length;i++) if(mask[i]==='1') {
+    const c=i%99,v=statValue(base,comboSP(c),comboMod(c),false);
+    lo=Math.min(lo,v);hi=Math.max(hi,v);spLo=Math.min(spLo,comboSP(c));spHi=Math.max(spHi,comboSP(c));hLo=Math.min(hLo,Math.floor(i/99));hHi=Math.max(hHi,Math.floor(i/99));
+  }
+  return mask.length>99 ? {...res,hpRange:[hLo,hHi],defRange:[lo,hi],range:res.range ? [lo,hi] : undefined} : {...res,range:[lo,hi],spRange:[spLo,spHi]};
 }
 function applyMsg(res) {
   const names = {atk: 'こうげき', spa: 'とくこう', def: 'ぼうぎょ', spd: 'とくぼう'};

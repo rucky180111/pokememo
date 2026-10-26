@@ -2,7 +2,7 @@
 // 入力そのものは盤面 (play.jsx) で行う。修正すると最初の状態から全ターンを入れ直す。
 import {logGroups, remainingTurnEffects} from '../engine/log.js';
 import {useEffect, useRef, useState} from 'preact/hooks';
-import {dex, speciesName, itemName, abilityName, moveName, statsOf} from '../engine/dex.js';
+import {dex, speciesName, itemName, abilityName, moveName, statsOf, isConsumableItem} from '../engine/dex.js';
 import {WEATHERS, TERRAINS, STATUSES, BOOST_KEYS, currentSpecies} from '../engine/calc.js';
 import {megaTarget, buildOf, condOf, other, PIVOT_MOVES} from '../engine/battle.js';
 import {RECOIL, HALF_RECOIL, DRAIN, SELF_FX_JA, FORCE_MOVES} from '../engine/flow.js';
@@ -16,8 +16,7 @@ export const STATUS_OPTS = [['brn', 'やけど'], ['par', 'まひ'], ['psn', '�
 export {STATUS_MOVE} from '../engine/flow.js';
 import {STATUS_MOVE} from '../engine/flow.js';
 // 発動すると無くなる持ち物
-const CONSUMED = new Set(['focussash', 'whiteherb', 'powerherb', 'airballoon', 'weaknesspolicy', 'mentalherb', 'redcard', 'ejectbutton', 'ejectpack', 'throatspray', 'boosterenergy', 'roomservice', 'adrenalineorb', 'absorbbulb', 'cellbattery', 'luminousmoss', 'snowball', 'normalgem', 'covertcloak']);
-export const consumable = id => /berry$/.test(id || '') || /gem$/.test(id || '') || CONSUMED.has(id);
+export const consumable = isConsumableItem;
 const OUTCOMES = [['hit', '当たった'], ['miss', '外し'], ['protect', 'まもられた'], ['cant', '行動不能']];
 
 const alive = (b, side) => b.state.sides[side].active.filter(i => i != null && !condOf(b, side, i)?.fainted);

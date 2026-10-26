@@ -1,9 +1,9 @@
 // 観測マスク、性格、能力Pt合計66を満たす配分からダメージの外側の範囲を求める。
 // 持ち物・特性はコンテキストの条件を固定する。未判明の全持ち物を網羅する範囲ではない。
-import {dex,STAT_KEYS,natureMod,statValue,SP_TOTAL} from './dex.js';
-import {comboOf} from './assume.js';
+import {dex,STAT_KEYS,natureMod,statValue} from './dex.js';
 import {currentAbility,currentSpecies} from './calc.js';
 import {attackTable} from './board.js';
+import {spreadDomains} from './spread-domains.js';
 
 const cache = new WeakMap();
 export function candidateSpreads(opp, base, sid, stat) {
@@ -12,25 +12,10 @@ export function candidateSpreads(opp, base, sid, stat) {
   if (!cached || cached.signature!==signature) {cached=new Map();cached.signature=signature;cache.set(opp,cached);}
   const key=`${sid}:${stat}:${base.item}`;
   if(cached.has(key))return cached.get(key);
-  const si=STAT_KEYS.indexOf(stat), masks=opp.statOk || {}, out=[];
-  const speeds=base.item==='choicescarf' ? opp.speOk?.scarf : opp.speOk?.plain;
-  for(let h=0;h<=32;h++) {
-    if(masks.hp && masks.hp[h]!=='1')continue;
-    for(const nature of Object.keys(dex.natures)) {
-      const choices=STAT_KEYS.slice(1).map(k=>Array.from({length:33},(_,sp)=>sp).filter(sp=>{
-        const c=comboOf(natureMod(nature,k),sp), mask=masks[k];
-        if(mask && mask[(mask.length===99 ? 0 : h*99)+c]!=='1')return false;
-        return k!=='spe' || !speeds || speeds[c]==='1';
-      }));
-      if(choices.some(a=>!a.length))continue;
-      const sp=[h,...choices.map(a=>a[0])], used=sp.reduce((a,b)=>a+b,0);
-      if(used>SP_TOTAL)continue;
-      for(const v of choices[si-1]) {
-        if(used-sp[si]+v>SP_TOTAL)continue;
-        const spread=sp.slice();spread[si]=v;
-        out.push({nature,sp:spread,hp:statValue(dex.species[sid].bs[0],h,1,true),value:statValue(dex.species[sid].bs[si],v,natureMod(nature,stat),false)});
-      }
-    }
+  const si=STAT_KEYS.indexOf(stat), out=[];
+  for(const block of spreadDomains(opp,base.item)) for(const value of block.choices[si-1]) {
+    const sp=block.mins.slice();sp[si]=value;
+    out.push({nature:block.nature,sp,hp:statValue(dex.species[sid].bs[0],block.h,1,true),value:statValue(dex.species[sid].bs[si],value,natureMod(block.nature,stat),false)});
   }
   // 同じ実数値の組をまとめる。通常技はHPと参照能力の大小に対して単調。
   const unique=[...new Map(out.map(v=>[`${v.hp}:${v.value}`,v])).values()];

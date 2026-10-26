@@ -6,6 +6,8 @@ export const STAT_KEYS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 export const STAT_JA = ['H', 'A', 'B', 'C', 'D', 'S'];
 export const SP_MAX = 32;
 export const SP_TOTAL = 66;
+const CONSUMABLE_ITEMS = new Set(['focussash','whiteherb','powerherb','airballoon','weaknesspolicy','mentalherb','redcard','ejectbutton','ejectpack','throatspray','boosterenergy','roomservice','adrenalineorb','absorbbulb','cellbattery','luminousmoss','snowball']);
+export const isConsumableItem = id => /berry$|gem$/.test(id || '') || CONSUMABLE_ITEMS.has(id);
 
 export const TYPE_JA = {
   Normal: 'ノーマル', Fire: 'ほのお', Water: 'みず', Electric: 'でんき', Grass: 'くさ', Ice: 'こおり',

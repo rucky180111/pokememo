@@ -1,5 +1,5 @@
 // 時系列での入力: 行動を1つずつ追加していく。追加のたびに盤面・判明情報・能力の絞り込みへ反映する。
-import {dex, speciesName, moveName, statsOf, itemName, abilityName, TYPE_JA, typeEffect} from './dex.js';
+import {dex, speciesName, moveName, statsOf, itemName, abilityName, TYPE_JA, typeEffect, isConsumableItem} from './dex.js';
 import {currentSpecies, typesOf, currentAbility, finalSpeed, disguiseIntact, defaultHits, calcDamage, makesContact, grounded} from './calc.js';
 import moveEffects from '../generated/move-effects.json' with {type: 'json'};
 import {inferHpEffects} from './infer-hp-effects.js';
@@ -413,7 +413,7 @@ export function addAct(b, input, usage) {
           // きあいのタスキで耐えた = 満タンから倒れるだけのダメージが入っていた (下限だけ分かる)
           const os = dex.species[b.opp[oppIdx].species];
           const iopt = {crit: a.flags.crit, itemUnknown: !b.opp[oppIdx].item, abilityUnknown: !b.opp[oppIdx].ability && os.ab.length > 1, atLeast: sash || knockedOut, ...(heal && !knockedOut && side === 'me' ? {tol: 2} : {}),
-            hits: input.hits ? {[a.move]: input.hits} : undefined};
+            hits: input.hits ? {[a.move]: input.hits} : undefined, displayHP: side === 'me' && !heal};
           if (side === 'me' && input.postResidual && !heal && Number.isInteger(before)) iopt.damageByHP = damageBeforeResidual(b, tgt.mon, before, input.postResidual);
           let r;
           if (side === 'opp') {
@@ -503,7 +503,8 @@ export function addAct(b, input, usage) {
     a.hpBeforeHit = hpBeforeHit;
     if (!failed && tgt && tgt.side !== side) onHitEffects(b, {side, mon, move: a.move, hits: input.hits, crit: a.flags.crit, tgt, before: hpBeforeHit, defItem, action: a}, defaultAbilityResolver, log);
     // 攻撃した側のHPの変化 (いのちのたま・反動・ゴツゴツメット・さめはだ・吸収)
-    if (!failed && tgt && tgt.side !== side && input.selfFx?.length) attackerHpEffects(b, {side, mon, tgt, move: a.move, fx: input.selfFx, hpAfter: input.atkHpAfter ?? input.observedHp?.find(h => h.side === side && h.mon === mon)?.hpAfter, tgtBefore: hpBeforeHit, a}, log);
+    const selfFx = !failed && !a.moveImmune && tgt && tgt.side !== side ? [...new Set([...(input.selfFx || []),...fixedHitEffects(b,side,mon,tgt,a.move)])] : [];
+    if (selfFx.length) attackerHpEffects(b, {side, mon, tgt, move: a.move, fx: selfFx, hpAfter: input.atkHpAfter ?? input.observedHp?.find(h => h.side === side && h.mon === mon)?.hpAfter, tgtBefore: hpBeforeHit, a}, log);
     // 追加効果・変化技で相手が状態異常になった
     const inflict = input.inflict ?? STATUS_MOVE[a.move];
     if (!failed && tgt && inflict) {
@@ -723,7 +724,7 @@ export function addEvent(b, ev, usage) {
   const needMon = ['item', 'hp', 'status', 'boost', 'boosts', 'ability', 'mega', 'faint', 'residual', 'hazard'].includes(ev.kind);
   if (needMon && !cond) return ['場にポケモンがいません'];
   if (ev.kind === 'item') {
-    if (side === 'opp' && ev.item) build.item = ev.item;
+    if (side === 'opp' && ev.item != null) build.item = ev.item;
     if (ev.consumed) cond.itemGone = true;
     let hp = ev.hpAfter;
     if (ev.consumed && /berry$/.test(ev.item || '')) {
@@ -871,6 +872,9 @@ function revealsFrom(a) {
     const item = x => typeof x === 'string' ? !!x : !!x?.item;
     if(item(input.atkItem) || input.mega) add('item',a.side,a.mon);
     if(item(input.defItem) && target) add('item',target.side,target.mon);
+    if(input.selfFx?.some(k=>['lifeorb','shellbell'].includes(k))) add('item',a.side,a.mon);
+    if(input.selfFx?.includes('helmet') && target) add('item',target.side,target.mon);
+    if(input.selfFx?.includes('roughskin') && target) add('ability',target.side,target.mon);
     if(input.contactAbility && target) add('ability',target.side,target.mon);
     if(['emergencyexit','wimpout'].includes(a.eject?.reason)) add('ability',a.eject.side,a.side===a.eject.side ? a.mon : target?.mon);
   }
@@ -894,6 +898,10 @@ export function replay(b, usage, opts = {}) {
   for (const m of opts.fromActs || []) fromActs.add(m);
   const prev = clone(b.opp);
   const forget = new Set(opts.forget || []);
+  const knownItems = new Map();
+  // 以前の版でログなしに選択した常設の持ち物も、確認済み情報として再計算する。
+  b.opp.forEach((o,i)=>{if(o.item && !isConsumableItem(o.item) && !b.state.mons.opp[i]?.tricked && !forget.has(`item:${i}`))knownItems.set(i,o.item);});
+  for(const t of old) for(const a of t.acts) if(a.type==='event' && a.side==='opp' && a.kind==='item' && a.in?.retroItem) knownItems.set(a.mon,a.in.item || '');
   if (!b.start) b.start = clone(start);
   b.state = clone(start.state);
   b.pick = clone(start.pick);
@@ -901,7 +909,7 @@ export function replay(b, usage, opts = {}) {
     const s0 = start.opp?.[i];
     if (!s0 || s0.species !== o.species) return;
     // 特性は対戦を通して変わらないので、分かっていれば最初から入れて再生する (登場時の特性の処理が正しくなる)
-    Object.assign(o, {item: s0.item || '', ability: !forget.has(`ability:${i}`) && prev[i]?.species === o.species && prev[i].ability ? prev[i].ability : s0.ability || '', moves: [...(s0.moves || [])], statOk: s0.statOk ?? null, speOk: s0.speOk ?? null, scarfLikely: !!s0.scarfLikely, megaSeen: !!s0.megaSeen});
+    Object.assign(o, {item: knownItems.has(i) ? knownItems.get(i) : s0.item || '', ability: !forget.has(`ability:${i}`) && prev[i]?.species === o.species && prev[i].ability ? prev[i].ability : s0.ability || '', moves: [...(s0.moves || [])], statOk: s0.statOk ?? null, speOk: s0.speOk ?? null, scarfLikely: !!s0.scarfLikely, megaSeen: !!s0.megaSeen});
   });
   b.turns = old.slice(0, fromTurn);
   for (const t of old.slice(fromTurn)) {
@@ -934,7 +942,7 @@ export function replay(b, usage, opts = {}) {
   b.opp.forEach((o, i) => {
     const p = prev[i];
     if (!p || p.species !== o.species) return;
-    if (!o.item && p.item && !p.megaSeen && !forget.has(`item:${i}`)) o.item = p.item;
+    if (!o.item && p.item && !p.megaSeen && !forget.has(`item:${i}`) && !knownItems.has(i)) o.item = p.item;
     if (!o.ability && p.ability && !forget.has(`ability:${i}`)) o.ability = p.ability;
     for (const m of p.moves || []) if (!fromActs.has(m) && !o.moves.includes(m) && o.moves.length < 4) o.moves.push(m);
     o.assume = p.assume; o.note = p.note;
@@ -950,7 +958,7 @@ export function deleteActs(b, selections, usage) {
   const fromActs = [];
   const forget = [];
   const fromTurn = Math.min(...selections.map(s => s.ti));
-  const checkpoint = b.turns[fromTurn]?.before;
+  let checkpoint = b.turns[fromTurn]?.before;
   for (const {ti, ai} of selections) {
     if (!Number.isInteger(ti) || !Number.isInteger(ai) || !b.turns[ti]?.acts[ai]) return false;
     keys.add(`${ti}:${ai}`);
@@ -960,6 +968,7 @@ export function deleteActs(b, selections, usage) {
     t.acts = t.acts.filter((a, ai) => {
       if (!keys.has(`${ti}:${ai}`)) return true;
       if (a.side === 'opp' && a.type === 'move') fromActs.push(a.move);
+      if(a.in?.retroItem) checkpoint=undefined;
       forget.push(...revealsFrom(a));
       return false;
     });
@@ -981,7 +990,7 @@ export function editAct(b, ti, ai, input, usage) {
   const was = t.acts[ai];
   const fromActs = was.side === 'opp' && was.type === 'move' ? [was.move] : [];
   t.acts[ai] = {...t.acts[ai], in: inputCopy(input)};
-  return replay(b, usage, {fromActs, fromTurn: ti, checkpoint: t.before, forget: revealsFrom(was)});
+  return replay(b, usage, {fromActs, fromTurn: ti, checkpoint: was.in?.retroItem ? undefined : t.before, forget: revealsFrom(was)});
 }
 
 /** 後から確認した状態異常を、指定した行動の前後に記録して再計算する。 */
@@ -1135,10 +1144,11 @@ export function undoLast(b, usage) {
   const plan=undoPlan(b);
   if(!plan) return null;
   // 空の入力中ターンは独立した操作として数えない。
+  const lastAction=plan.kind==='act' ? b.turns[plan.ti].acts[plan.ai] : null;
   const trailing=b.turns.splice(plan.ti+1);
   const ok=plan.kind==='end' ? reopenLastTurn(b,usage) : deleteActs(b,[{ti:plan.ti,ai:plan.ai}],usage);
   if(!ok) { b.turns.push(...trailing); return null; }
-  if(plan.kind==='act') b.undoRevision=(b.undoRevision||0)+1;
+  if(lastAction && (lastAction.type!=='event' || ['send','faint','mega'].includes(lastAction.kind))) b.undoRevision=(b.undoRevision||0)+1;
   const t=openTurn(b);
   return {...plan,position:t ? `ターン${t.n}・入力中（${t.acts.filter(a=>a.type==='move'||a.type==='switch').length}行動記録済み）` : b.turns.length ? `ターン${b.turns.at(-1).n}・終了後` : '最初の行動を入力する前'};
 }
@@ -1547,6 +1557,29 @@ export function hazardDamage(b, side, mon) {
   if (!frac) return null;
   if (side === 'me') { const max = maxHPOf(b, side, mon); const d = fractions.reduce((sum, f) => sum + Math.max(1, Math.floor(max * f)), 0); return {pct: (d / max) * 100, hp: d, parts}; }
   return {pct: frac * 100, parts};
+}
+
+/** 技の後で分かった持ち物を記録し、その持ち物で過去のダメージ・推定を再計算する。 */
+export function confirmItem(b, {side='opp',mon,item}, usage) {
+  if (item && !dex.items[item] || !condOf(b,side,mon)) return false;
+  const c=condOf(b,side,mon);
+  const retroItem=side==='opp' && !c.tricked && !c.itemGone && !isConsumableItem(item);
+  addEvent(b,{kind:'item',side,mon,item,retroItem},usage);
+  if (canReplay(b)) replay(b,usage);
+  return true;
+}
+
+function fixedHitEffects(b, side, mon, tgt, move) {
+  const mv=dex.moves[move];
+  if(!mv || mv.c==='Z') return [];
+  const ability=defaultAbilityResolver(b,side,mon), out=[];
+  if(ability==='magicguard') return out;
+  if(activeItem(b,side,mon)==='lifeorb' && !(ability==='sheerforce' && mv.sec?.length)) out.push('lifeorb');
+  if(makesContact(move,{...buildOf(b,side,mon),item:activeItem(b,side,mon)},condOf(b,side,mon))) {
+    if(activeItem(b,tgt.side,tgt.mon)==='rockyhelmet') out.push('helmet');
+    if(['roughskin','ironbarbs'].includes(defaultAbilityResolver(b,tgt.side,tgt.mon))) out.push('roughskin');
+  }
+  return out;
 }
 
 // ---- 相手のHP表示 (整数%・切り捨て) からHPの実数値を絞り込む ----

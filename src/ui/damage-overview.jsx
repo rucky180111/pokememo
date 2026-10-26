@@ -3,12 +3,13 @@ import {dex,speciesName,moveName,itemName,abilityName,STAT_JA} from '../engine/d
 import {currentAbility,currentSpecies} from '../engine/calc.js';
 import {damageRange} from '../engine/damage-range.js';
 import {attackTable} from '../engine/board.js';
+import {replay,canReplay} from '../engine/flow.js';
 import {Sprite,TypeChip,Toggle,Seg,Sheet,Empty,cx,fmtPct} from './common.jsx';
 import {DamageLab} from './dmglab.jsx';
 
 const WALLS=[['reflect','リフレクター'],['lightScreen','ひかりのかべ'],['auroraVeil','オーロラベール']];
 const STATUS={brn:'やけど',par:'まひ',psn:'どく',tox:'もうどく',slp:'ねむり',frz:'こおり'};
-export function DamageOverview({battle,ctx}) {
+export function DamageOverview({battle,ctx,mut,usage,toast}) {
  const [side,setSide]=useState('me'),[selected,setSelected]=useState({me:null,opp:null}),[formes,setFormes]=useState({}),[crit,setCrit]=useState(false),[detail,setDetail]=useState(null);
  const opposite=side==='me'?'opp':'me';
  const list=s=>s==='me'?battle.my:battle.opp;
@@ -25,8 +26,8 @@ export function DamageOverview({battle,ctx}) {
  const stateText=(s,i)=>[STATUS[preview.cond(s,i)?.status],...WALLS.filter(([k])=>battle.state.sides[s][k]).map(([,label])=>label)].filter(Boolean).join('・');
  if(!battle.my.some(b=>dex.species[b.species])||!battle.opp.some(b=>dex.species[b.species]))return <Empty>自分と相手のポケモンを登録すると、6体のダメージを一覧できます。</Empty>;
  return <div class="damage-overview">
-  <div class="damage-overview-head"><Seg value={side} options={[["me","与ダメージ"],["opp","被ダメージ"]]} onChange={s=>{setSide(s);setDetail(null);}}/><Toggle small on={crit} onChange={setCrit}>急所</Toggle><span class="muted">タップで内訳</span>{stateText(side,idx)&&<span class="damage-active-effects">攻撃側：{stateText(side,idx)}</span>}</div>
-  <p class="damage-range-help"><b>配分候補＋乱数の最小〜最大</b>　観測済みの能力・性格補正・能力Pt合計66で絞り込み。持ち物・特性は現在の想定を固定。特殊な参照をする技は「想定配分」と表示します。</p>
+  <div class="damage-overview-head"><Seg value={side} options={[["me","与ダメージ"],["opp","被ダメージ"]]} onChange={s=>{setSide(s);setDetail(null);}}/><Toggle small on={crit} onChange={setCrit}>急所</Toggle><span class="muted">タップで内訳</span>{mut && canReplay(battle) && <button class="btn ghost sm" onClick={()=>{mut(b=>replay(b,usage));toast?.('全記録から推定を再計算しました');}}>推定を再計算</button>}{stateText(side,idx)&&<span class="damage-active-effects">攻撃側：{stateText(side,idx)}</span>}</div>
+  <p class="damage-range-help"><b>配分候補＋乱数の最小〜最大</b>　観測に合うH×B・H×Dの組み合わせ、1つの性格、能力Pt合計66を同時に満たす候補で絞り込み。持ち物・特性は現在の想定を固定。特殊な参照をする技は「想定配分」と表示します。</p>
   <div class="damage-move-grid">{ranges.map(m=><section class="damage-move" key={m.id}>
    <header><TypeChip type={dex.moves[m.id].t} small/><b>{moveName(m.id)}</b><small>{dex.moves[m.id].c==='Z'?'変化技':`${dex.moves[m.id].c==='P'?'物理':'特殊'}・威力${dex.moves[m.id].bp || '変動'}`}</small></header>
    <div class="damage-six">{m.cells.map(t=>{const r=t.r;return <button key={t.idx} class={cx('damage-target',t.idx===current(opposite)&&'focused',t.active&&'active')} onClick={()=>{setSelected(p=>({...p,[opposite]:t.idx}));setDetail({move:m.id,target:t,r});}}>
@@ -48,7 +49,7 @@ export function DamageOverview({battle,ctx}) {
   <p class="hint">姿の切り替えは計算用です。対戦の記録は変更しません。天候・フィールド・壁・状態異常・能力ランクは盤面を反映します。</p>
   <details class="damage-manual"><summary>配分・持ち物・特性を指定して詳しく計算</summary><DamageLab battle={battle} ctx={preview}/></details>
   {detail&&<Sheet title={`${moveName(detail.move)} → ${speciesName(detail.target.species)}`} onClose={()=>setDetail(null)}><div class="pad">
-   {detail.r?.ok&&!detail.r.status?<><p class="big num">{fmtPct(detail.r.minPct)}〜{fmtPct(detail.r.maxPct)}%</p><p>{detail.r.rangeMode==='assumed'?'この技は現在の想定配分で計算しています。':'観測条件に合う配分とダメージ乱数を含めた範囲です。'}</p>{[['最小側',detail.r.lowBuild],['最大側',detail.r.highBuild]].map(([label,build])=>build&&<p><b>{label}</b>：{dex.natures[build.nature]?.j||build.nature} / {build.sp.map((v,i)=>`${STAT_JA[i]}${v}`).join('・')} Pt</p>)}</>:<p>{detail.r?.status?'変化技です。実際の効果は盤面で技を記録すると反映されます。':detail.r?.error||'計算できませんでした'}</p>}
+   {detail.r?.ok&&!detail.r.status?<><p class="big num">{fmtPct(detail.r.minPct)}〜{fmtPct(detail.r.maxPct)}%</p><p>{detail.r.rangeMode==='assumed'?'この技は現在の想定配分で計算しています。':'観測条件に合うH・B・D等の組み合わせを保った配分と、実際のダメージ乱数から求めた範囲です。下の配分は最小・最大を出す候補の一例です。'}</p>{[['最小側',detail.r.lowBuild],['最大側',detail.r.highBuild]].map(([label,build])=>build&&<p><b>{label}</b>：{dex.natures[build.nature]?.j||build.nature} / {build.sp.map((v,i)=>`${STAT_JA[i]}${v}`).join('・')} Pt</p>)}</>:<p>{detail.r?.status?'変化技です。実際の効果は盤面で技を記録すると反映されます。':detail.r?.error||'計算できませんでした'}</p>}
    <h4>相手の計算条件</h4>{(()=>{const i=side==='me'?detail.target.idx:idx,bd=preview.build('opp',i);return <p>持ち物：{itemName(bd.item)||'なし'}{!battle.opp[i].item?'（想定）':''}<br/>特性：{abilityName(preview.ability('opp',i))||'なし'}{!battle.opp[i].ability?'（想定）':''}</p>;})()}
    <p>{stateText(detail.target.side,detail.target.idx)||'受ける側の壁・状態異常なし'}</p>{detail.target.notes.map(note=><p class="hint">{note}</p>)}
   </div></Sheet>}
