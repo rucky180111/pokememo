@@ -16,6 +16,7 @@ import {Picker, Sheet, Seg, Toggle, TypeChip, Sprite, Confirm, cx, fmtPct, rate}
 import {OppStatTable} from './arena.jsx';
 import {BoostRow} from './boostrow.jsx';
 import {StepRange} from './step-range.jsx';
+import {LateStatusInput} from './status-input.jsx';
 import {MegaButtons, EventForm, STATUS_MOVE, STATUS_OPTS, consumable} from './turn.jsx';
 
 const SIDE_JA = {me: '自分', opp: '相手'};
@@ -273,6 +274,7 @@ function MonView({side, mon, battle, ctx, mut, usage, toast, act, setAct, target
         <select aria-label={`${SIDE_JA[side]}の状態異常`} class="input sm" value={raw.status || ''} onChange={e => mut(b => addEvent(b,{kind:'status',side,mon,status:e.currentTarget.value},usage))}>
           <option value="">状態異常なし</option>{STATUS_OPTS.map(([id,label]) => <option value={id}>{label}</option>)}
         </select>
+        <LateStatusInput battle={battle} side={side} mon={mon} mut={mut} usage={usage} toast={toast} />
         {FLAGS.slice(0,3).map(([key,label]) => <button class={cx('chip sm',sd[key] && 'on')} aria-pressed={!!sd[key]} title={label} onClick={() => mut(b => addEvent(b,{kind:'side',side,key,value:!sd[key]},usage))}>{label}</button>)}
       </div>
       <div class="pl-body">

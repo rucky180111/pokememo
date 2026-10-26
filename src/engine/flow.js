@@ -785,7 +785,14 @@ export function addEvent(b, ev, usage) {
     b.updatedAt = Date.now();
     return [text, ...log];
   }
-  else if (ev.kind === 'status') { cond.status = ev.status || ''; cond.toxicCounter = 1; text = STATUS_JA[ev.status || '']; }
+  else if (ev.kind === 'status') {
+    const status = ev.status || '';
+    if (!Object.hasOwn(STATUS_JA, status)) return [];
+    if (cond.status !== status || !status) {
+      cond.statusKey = ''; cond.statusCant = 0; cond.toxicCounter = 1;
+    }
+    cond.status = status; text = STATUS_JA[status];
+  }
   else if (ev.kind === 'ability') {
     if (side === 'opp') build.ability = ev.ability;
     text = ev.ability ? `特性 ${abilityName(ev.ability)} ${ev.activate ? '発動' : '判明'}` : '特性を不明に戻す';
@@ -934,6 +941,21 @@ export function editAct(b, ti, ai, input, usage) {
   const fromActs = was.side === 'opp' && was.type === 'move' ? [was.move] : [];
   t.acts[ai] = {...t.acts[ai], in: inputCopy(input)};
   return replay(b, usage, {fromActs});
+}
+
+/** 後から確認した状態異常を、指定した行動の前後に記録して再計算する。 */
+export function recordStatusAt(b, {side, mon, status}, at, usage) {
+  if (!['me','opp'].includes(side) || !Number.isInteger(mon) || !condOf(b,side,mon) || !Object.hasOwn(STATUS_JA,status)) return false;
+  const ev = {kind:'status',side,mon,status};
+  if (!at) {
+    if (condOf(b,side,mon).fainted) return false;
+    addEvent(b,ev,usage); return true;
+  }
+  const {ti, ai, when} = at;
+  if (!canReplay(b) || !Number.isInteger(ti) || !Number.isInteger(ai) || !b.turns[ti]?.acts[ai] || !['before','after'].includes(when)) return false;
+  b.turns[ti].acts.splice(ai + (when === 'after' ? 1 : 0), 0, {type:'event',kind:'status',side,mon,in:ev});
+  for (const t of b.turns.slice(ti)) if (t.end) { delete t.end.hpFacts; delete t.end.confirmedHP; }
+  return replay(b,usage);
 }
 
 /** 見逃した行動後HPだけを補正する。別のポケモンの値や予測値は取り込まない。 */
