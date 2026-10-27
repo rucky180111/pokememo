@@ -195,7 +195,7 @@ await page.locator('.tb-end').click();
 // あとから修正: ログをタップして相手のがんせきふうじの残りHPを 80 に直す
 await openLog();
 await page.locator('.tl-turn').nth(1).locator('.tl-act').first().click();
-await page.locator('.overlay .af-hp input').fill('80');
+await page.locator('.overlay .af-hp input[type=number]').fill('80');
 await page.getByRole('button', {name: 'この内容で直す'}).click();
 b = await page.evaluate(() => window.__pokememo.store.battles()[0]);
 check(Math.round(b.state.mons.me[0].hp) === Math.round(80 / 185 * 100) && b.state.mons.opp[1].hp === 20 && b.state.mons.me[0].boosts.atk === 2, `修正が反映され、ほかの記録は残る (${b.state.mons.me[0].hp})`);

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 3,
+  "dataVersion": "v3-example-2026-10-27",
+  "updatedAt": "2026-10-27T00:00:00+09:00",
+  "source": "仕様書第11章の説明用仮値・未校正",
+  "rolesCsv": "条件,役割ID,候補,適性,重要度,合格点,不足減点,メモ\nアシレーヌ,primarina_attack,リザードン,70,100,60,80,説明用仮値。メガYの日照りとソーラービームによる攻めの回答。安全な後出しとは別\nアシレーヌ,primarina_attack,ゴリランダー,85,100,60,80,説明用仮値。草打点での圧力\nドリュウズ,excadrill_pressure,ゴリランダー,70,70,50,60,説明用仮値。型や天候次第で変動し確実な対策ではない\nルカリオ,lucario_special,リザードン,85,100,60,100,説明用仮値。特殊メガルカリオZの判明技への回答。通常型や未判明技は別\nフラエッテ,floette_pressure,サーフゴー,80,100,60,90,説明用仮値。鋼打点と耐性。相手の耐久と積み状態で変動\nアーマーガア,corviknight_break,サーフゴー,85,70,60,60,説明用仮値。特殊積みの崩し候補\nアーマーガア,corviknight_break,リザードン,90,70,60,60,説明用仮値。炎打点の崩し候補\n",
+  "risksCsv": "条件,自分条件,危険ID,対象,場面,減点,理由\nキラフロル,,glimmora_char_pick,リザードン,選出,35,説明用仮値。岩打点と設置技による負担\nキラフロル,,glimmora_char_lead,リザードン,先発,60,説明用仮値。初手の岩打点を警戒。選出リスクとは別の追加負担\nガブリアス,,garchomp_char_lead,リザードン,先発,45,説明用仮値。岩技や設置技の可能性。存在だけで選出禁止にはしない\nアシレーヌ+ペリッパー|ニョロトノ,,rain_primarina_solar,リザードン,対応,30,説明用仮値。primarina_attackの適性を下げる天候リスク\n",
+  "openingCsv": "相手条件,相手型ID,相手先発,自分先発,自分の初手,交代先,相手の初手仮説,初手後の状態,次ターンの見通し,評価,根拠\nバシャーモ,剣舞型候補,バシャーモ,ゴリランダー,交代,リザードン,つるぎのまい,相手A+2。自分が未メガならまだ日照りなし,相手の合法な4技と加速を含めて要確認,未評価,検証ケースの記入例\nアシレーヌ,特殊水技型候補,アシレーヌ,ゴリランダー,交代,リザードン,なみのり,未メガで交代するなら通常リザの水弱点で受ける,交代で生存した後にメガできるか要確認,未評価,検証ケースの記入例\nガブリアス,スケイルショット型候補,ガブリアス,ガブリアス,居座り大地の力,,スケイルショット,命中回数と先手後手によりHP変化。相手S上昇,裏のルカリオ等に必要な体力も要評価,未評価,過去実戦の課題を形式化した記入例\n",
+  "rules": {
+    "schemaVersion": 3,
+    "sampleOnly": true,
+    "teamSize": 6,
+    "pickSize": 3,
+    "registeredMegaHolderCount": 2,
+    "minSelectedMegaHolders": 0,
+    "maxSelectedMegaHolders": 1,
+    "evaluateLeads": true,
+    "reserveOrderMatters": false,
+    "hardRules": [],
+    "riskRoleLinks": {
+      "rain_primarina_solar": "primarina_attack"
+    },
+    "openingEvaluation": {
+      "requiredForFullRecommendation": true,
+      "depthFullTurns": 3,
+      "leadWeightsSource": "manual_or_uniform_until_measured",
+      "implementationStatus": "manual_cases_partial",
+      "caseTemplate": "opening-cases-template.csv"
+    },
+    "scoringWeights": {
+      "staticWeight": 1,
+      "openingWeight": null,
+      "downsideWeight": null,
+      "status": "static_only_until_configured"
+    },
+    "rolesFile": "roles-example.csv",
+    "risksFile": "risks-example.csv"
+  }
+}

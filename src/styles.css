@@ -1663,3 +1663,26 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .hp-control .hp-number .hp-clear { position:absolute; left:1px; top:1px; border:0; background:transparent; min-width:20px; width:20px; min-height:32px; height:32px; color:var(--muted); font-size:16px; }
 .hp-edit-target { display:flex; flex-direction:column; align-items:stretch; }
 .hp-edit-target>.hp-control { width:100%; }
+/* 選出評価v3: 点数の出所と未評価範囲を常に分ける。 */
+.selection-editor { padding:12px 0; display:flex; flex-direction:column; gap:10px; }
+.assessment-metadata { display:flex; flex-wrap:wrap; gap:10px; }
+.assessment-metadata .field { flex:1; min-width:180px; }
+.assessment-source { font-family:ui-monospace,monospace; font-size:13px; min-height:240px; }
+.assessment-errors { border:1px solid var(--bad); padding:10px; border-radius:8px; overflow-wrap:anywhere; }
+.assessment-candidate { border:1px solid var(--border); border-radius:8px; padding:10px; margin:8px 0; }
+.assessment-candidate>header { display:flex; justify-content:space-between; gap:10px; }
+.assessment-candidate>header strong { color:var(--accent); font-variant-numeric:tabular-nums; }
+.assessment-pick { display:flex; flex-wrap:wrap; gap:10px; margin:8px 0; }
+.assessment-pick>span { display:flex; align-items:center; gap:4px; font-size:13px; }
+.assessment-pick small { color:var(--accent); }
+.assessment-candidate summary,.selection-assessment>details>summary { padding:12px 0; cursor:pointer; min-height:44px; }
+.assessment-table { border-collapse:collapse; width:100%; font-size:12px; text-align:left; }
+.assessment-table td,.assessment-table th { border:1px solid var(--border); padding:7px; vertical-align:top; }
+.assessment-table thead { background:var(--surface2); }
+.assessment-table small { display:block; color:var(--muted); font-weight:400; }
+.assessment-table p { margin:0 0 8px; }
+.assessment-opening { min-width:720px; }
+.assessment-detail { min-width:0; }
+.assessment-note { margin:3px 0; }
+.assessment-warning { padding:8px; border-left:3px solid var(--bad); background:var(--surface2); }
+.selection-assessment .btn { min-height:44px; touch-action:manipulation; }

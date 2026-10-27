@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 3,
+  "sampleOnly": true,
+  "teamSize": 6,
+  "pickSize": 3,
+  "registeredMegaHolderCount": 2,
+  "minSelectedMegaHolders": 0,
+  "maxSelectedMegaHolders": 1,
+  "evaluateLeads": true,
+  "reserveOrderMatters": false,
+  "hardRules": [],
+  "riskRoleLinks": {
+    "rain_primarina_solar": "primarina_attack"
+  },
+  "openingEvaluation": {
+    "requiredForFullRecommendation": true,
+    "depthFullTurns": 3,
+    "leadWeightsSource": "manual_or_uniform_until_measured",
+    "implementationStatus": "manual_cases_partial",
+    "caseTemplate": "opening-cases-template.csv"
+  },
+  "scoringWeights": {
+    "staticWeight": 1,
+    "openingWeight": null,
+    "downsideWeight": null,
+    "status": "static_only_until_configured"
+  },
+  "rolesFile": "roles-example.csv",
+  "risksFile": "risks-example.csv"
+}

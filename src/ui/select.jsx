@@ -7,6 +7,7 @@ import {oppSpeciesStats, similarTeams, leadsOf, matchupMatrix} from '../engine/p
 import {useApp, Picker, TypeChip, Sprite, cx, rate} from './common.jsx';
 import {MonEditor} from './teams.jsx';
 import {OppSheet} from './battle.jsx';
+import {SelectionAssessmentHint} from './selection-assessment.jsx';
 import {PickRuleHint} from './pickrules.jsx';
 
 const previewName = id => speciesName(selectionSpeciesId(id));
@@ -26,6 +27,8 @@ const mySpe = m => {
 
 export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
   const {store} = useApp();
+  const liveTeam=store.team(battle.teamId);
+  const assessmentTeam={...liveTeam,selectionAssessment:battle.selectionAssessment || liveTeam?.selectionAssessment};
   const [pick, setPick] = useState(null); // 相手のパーティを選ぶパネル (開くときは最初に選ぶ枠の番号)
   const [oppEdit, setOppEdit] = useState(null);
   const [myEdit, setMyEdit] = useState(null);
@@ -108,7 +111,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
         })}
       </div>
 
-      {battle.opp.length > 0 && (
+      {battle.opp.length > 0 && !assessmentTeam.selectionAssessment && (
         <div class="box">
           <h4>相手の初手予想 <span class="muted">使用率ベース{sim.n ? `・似た並びとの対戦 ${sim.n}戦` : ''}</span></h4>
           <div class="chips">
@@ -122,8 +125,8 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
         </div>
       )}
 
-      <PickRuleHint team={battle.teamId ? store.team(battle.teamId) : null} battle={battle} started={battle.state.sides.me.active.some(x => x != null)}
-        onApply={idx => mut(b => { b.pick.me = idx.slice(0, nPick); })} />
+      {assessmentTeam.selectionAssessment ? <SelectionAssessmentHint team={assessmentTeam} battle={battle} started={battle.turns.length>0 || ['me','opp'].some(side=>battle.state.sides[side].active.some(x=>x!=null))} onApply={(idx,record) => mut(b => { b.pick.me = idx.slice(0,nPick); b.selectionAssessment=structuredClone(assessmentTeam.selectionAssessment); b.selectionRecommendation=record; })} /> : <PickRuleHint team={battle.teamId ? store.team(battle.teamId) : null} battle={battle} started={battle.state.sides.me.active.some(x => x != null)}
+        onApply={idx => mut(b => { b.pick.me = idx.slice(0, nPick); })} />}
 
       <div class="sel-head">
         <h3>自分の選出 <span class="muted">{battle.pick.me.length}/{nPick}・タップした順。先頭{nLead}体が初手</span></h3>
