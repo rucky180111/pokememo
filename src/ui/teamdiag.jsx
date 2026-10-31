@@ -61,6 +61,7 @@ export function TeamDiagnosis({team}) {
 
       {view === 'off' && <>
         <p class="hint">攻撃技 {off.moves}個 × タイプの組み合わせ {off.combos.length}通り</p>
+        <p class="hint">くさむすびなどの威力変動技も含むタイプ相性の診断です。固定ダメージ・一撃必殺技は弱点を突く技に数えません。技の成立条件・実際の威力・倒せるかどうかはダメージ計算で確認してください。</p>
         {off.notHit.length > 0 && <h4>弱点を突けない組み合わせ</h4>}
         <div class="td-combos">
           {off.notHit.map(c => (
@@ -86,7 +87,7 @@ export function TeamDiagnosis({team}) {
 
       {view === 'top' && <>
         {!usage && <Empty>使用率データを読み込むと診断できます。</Empty>}
-        <p class="hint">使用率上位{TOP}位 ({usage?.month || ''}) に弱点を突けるか</p>
+        <p class="hint">使用率上位{TOP}位 ({usage?.month || ''}) に弱点を突けるか（威力変動技を含む・相手の特性や持ち物は使用率からの想定）</p>
         <label class="td-opt"><input type="checkbox" checked={onlyMiss} onChange={e => setOnlyMiss(e.currentTarget.checked)} /> 弱点を突けないポケモンだけ表示</label>
         <div class="td-top">
           {top.filter(t => !onlyMiss || t.best.m < 2).map(t => (

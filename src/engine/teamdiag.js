@@ -17,6 +17,12 @@ const FILTER = new Set(['filter', 'solidrock', 'prismarmor']);
 // 技のタイプを変える特性 (ノーマル技が別のタイプになる)
 const ATE = {aerilate: 'Flying', pixilate: 'Fairy', refrigerate: 'Ice', galvanize: 'Electric', dragonize: 'Dragon'};
 
+// bp=0には威力変動技も含まれる。固定/割合/反射ダメージ・一撃必殺だけを
+// 弱点倍率で威力が増えない技として除外し、通常の物理・特殊技は数える。
+const TYPE_INDEPENDENT_DAMAGE = new Set(['comeuppance','counter','endeavor','finalgambit','fissure','guillotine','horndrill','metalburst','mirrorcoat','nightshade','seismictoss','sheercold','superfang']);
+const isCoverageMove = id => { const m=dex.moves[id]; return !!m && ['P','S'].includes(m.c) && !TYPE_INDEPENDENT_DAMAGE.has(id); };
+
+
 /** 実際に戦うときの姿 (メガストーンを持っていればメガシンカ後) */
 export function battleForm(build) {
   if (build.__types) return {sid: build.species, types: build.__types, ability: '', mega: false};
@@ -38,7 +44,7 @@ export function defMultiplier(atkType, types, ability, item) {
 /** 攻撃技の実際のタイプと、相手のタイプへの倍率 */
 function moveEffect(moveId, atkAbility, defTypes, defAbility) {
   const mv = dex.moves[moveId];
-  if (!mv || mv.c === 'Z' || !mv.bp) return null;
+  if (!isCoverageMove(moveId)) return null;
   let type = mv.t;
   if (atkAbility === 'normalize') type = 'Normal';
   else if (type === 'Normal' && ATE[atkAbility]) type = ATE[atkAbility];
@@ -77,7 +83,7 @@ function attackers(team) {
   const out = [];
   for (const b of team) {
     const f = battleForm(b);
-    for (const m of b.moves || []) if (dex.moves[m] && dex.moves[m].c !== 'Z' && dex.moves[m].bp) out.push({sp: b.species, move: m, ability: f.ability});
+    for (const m of b.moves || []) if (isCoverageMove(m)) out.push({sp: b.species, move: m, ability: f.ability});
   }
   return out;
 }
