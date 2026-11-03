@@ -1,3 +1,4 @@
+import {RuleVisualEditor,CLASS_FIELDS} from './rule-visual-editor.jsx';
 import {useMemo,useRef,useState} from 'preact/hooks';
 import {blankClassRules,compileClassRules,evaluateClassRules,classDecisionRecord,CLASS_HEADER,CLASS_EXAMPLE} from '../engine/class-pickrule.js';
 import {rulesToText,parseCond} from '../engine/pickrule.js';
@@ -24,8 +25,8 @@ export function ClassRulesEditor({team,save}){
   <label class="field"><span>ルールの版</span><input class="input" value={data.version||''} onInput={e=>update('version',e.currentTarget.value)}/></label>
   <div class="btnrow"><button class="btn" onClick={()=>input.current.click()}>CSV／JSONを読み込む</button><input hidden ref={input} type="file" accept=".csv,.tsv,.json" onChange={read}/><button class="btn" disabled={!check.data||!!check.errors.length} onClick={()=>fileDownload(JSON.stringify(check.data,null,2),'pokememo-class-rules.json','application/json')}>JSONを書き出す</button><button class="btn" onClick={()=>fileDownload(data.rowsCsv||CLASS_HEADER,'pokememo-class-rules.csv','text/csv;charset=utf-8')}>CSVを書き出す</button></div>
   <p class="hint">CSVは行データ、JSONは設定・版も含む形式です。</p>
-  <label class="field"><span>classルールCSV</span><textarea class="input assessment-source" rows={12} spellcheck={false} value={data.rowsCsv||''} onInput={e=>update('rowsCsv',e.currentTarget.value)}/></label>
-  <label class="field"><span>設定JSON（軸分岐は明示設定したときだけ使用）</span><textarea class="input assessment-source" rows={5} spellcheck={false} value={settings} onInput={e=>setSettings(e.currentTarget.value)}/></label>
+  <RuleVisualEditor text={data.rowsCsv} header={CLASS_HEADER} fields={CLASS_FIELDS} mons={team.mons} kind="class" title="class条件" csvLabel="classルールCSV" onChange={v=>update('rowsCsv',v)}/>
+  <details><summary>軸分岐の設定</summary><label class="field"><span>設定JSON（軸分岐は明示設定したときだけ使用）</span><textarea class="input assessment-source" rows={5} spellcheck={false} value={settings} onInput={e=>setSettings(e.currentTarget.value)}/></label></details>
   <details><summary>入力例と各列の意味</summary>
    <p>候補は <b>ゴリランダー;ドドゲザン</b> と記入します。any＝どちらか1匹、all＝両方必要。採用では先発を指定しません。除外のallは同時選出禁止です。</p>
    <p>確認済みだけが役割の対応として数えられます。条件は相手6体、対応条件は候補が担当できる追加条件。前提役割IDは上位classの採用が成立した場合だけ有効。対面処理と後出しは別の役割IDにしてください。</p>

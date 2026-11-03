@@ -1,3 +1,6 @@
+import {RuleVisualEditor,ROLE_FIELDS,RISK_FIELDS,CASE_FIELDS} from './rule-visual-editor.jsx';
+import {CondIcons} from './condition-icons.jsx';
+import {CandidateIcons} from './rule-visual-editor.jsx';
 import {useMemo,useRef,useState} from 'preact/hooks';
 import {blankAssessment,compileAssessment,evaluateSelection,ROLE_HEADER,RISK_HEADER,CASE_HEADER} from '../engine/selection-assessment.js';
 import example from '../generated/selection-example.json';
@@ -28,9 +31,9 @@ export function SelectionAssessmentEditor({team,save}){
   <div class="btnrow"><button class="btn" onClick={()=>input.current.click()}>CSV・JSONを読み込む</button><input hidden type="file" accept=".csv,.tsv,.json" multiple ref={input} onChange={readFiles}/><button class="btn" onClick={useExample}>仕様書の見本を編集欄へ</button><button class="btn" disabled={!check.data || !!check.result.errors.length} onClick={()=>download(check.data,'pokememo-selection-v3.json')}>評価データを書き出す</button></div>
   <p class="hint">読み込み後に確認して保存します。見本の点数は仮評価です。</p>
   <div class="assessment-metadata"><label class="field"><span>データ版</span><input class="input" value={draft.dataVersion} onInput={e=>update('dataVersion',e.currentTarget.value)}/></label><label class="field"><span>根拠・評価の出所</span><input class="input" value={draft.source} onInput={e=>update('source',e.currentTarget.value)}/></label></div>
-  <Seg wrap value={tab} options={[['rolesCsv','役割CSV'],['risksCsv','危険CSV'],['openingCsv','初動ケースCSV'],['rules','制約JSON']]} onChange={setTab}/>
-  <label class="field"><span>{({rolesCsv:'役割CSV',risksCsv:'危険CSV',openingCsv:'初動ケースCSV',rules:'制約JSON'})[tab]}</span><textarea class="input assessment-source" rows={12} spellcheck={false} value={tab==='rules'?rulesText:draft[tab]} onInput={e=>tab==='rules'?setRulesText(e.currentTarget.value):update(tab,e.currentTarget.value)}/></label>
-  {tab==='openingCsv'&&<p class="hint">評価を付ける行は、追加列「検証済み」にtrueと根拠が必要です。「自分条件」を追加すると選出3体でケースを限定できます。未検証・未登録は未評価。異なる型に都合のよい初手を選び分けて平均する処理は行いません。</p>}
+  <Seg wrap value={tab} options={[['rolesCsv','役割'],['risksCsv','危険'],['openingCsv','初動ケース'],['rules','制約']]} onChange={setTab}/>
+  {tab==='rules'?<><p class="hint">メガ石持ち選出：{check.data?.rules?.minSelectedMegaHolders??'未設定'}〜{check.data?.rules?.maxSelectedMegaHolders??'未設定'}体</p>{!check.result.errors.length&&check.data?.rules?.hardRules?.map(r=><div class="rule-diagram"><CondIcons cond={r.condition||'*'} preview anyLabel="いつでも"/><b>⇒ {r.type==='forbid'?'除外':'いずれか採用'}</b><CandidateIcons names={(r.targets||[r.target]).filter(Boolean).join(';')} mons={team.mons} action={r.type==='forbid'?'除外':''}/></div>)}<details><summary>制約JSONを編集</summary><label class="field"><span>制約JSON</span><textarea class="input assessment-source" rows={12} value={rulesText} onInput={e=>setRulesText(e.currentTarget.value)} spellcheck={false}/></label></details></>:<RuleVisualEditor key={tab} text={draft[tab]} header={({rolesCsv:ROLE_HEADER,risksCsv:RISK_HEADER,openingCsv:CASE_HEADER})[tab]} fields={({rolesCsv:ROLE_FIELDS,risksCsv:RISK_FIELDS,openingCsv:CASE_FIELDS})[tab]} mons={team.mons} kind={({rolesCsv:'role',risksCsv:'risk',openingCsv:'case'})[tab]} title={({rolesCsv:'役割',risksCsv:'危険',openingCsv:'初動ケース'})[tab]} onChange={v=>update(tab,v)}/>}
+  {tab==='openingCsv'&&<p class="hint">未検証・未登録は未評価です。検証済みの結果を使う場合は、行の編集で根拠と「検証済み」を指定してください。</p>}
   {fileError&&<p role="alert">{fileError}</p>}{check.result.errors.length>0?<div class="assessment-errors" role="alert"><b>保存できません</b><ul>{check.result.errors.map(e=><li>{e}</li>)}</ul></div>:<p class="hint">形式確認済み：役割{check.result.roles.length}行・危険{check.result.risks.length}行・初動ケース{check.result.cases.length}行</p>}
   <div class="btnrow"><button class="btn primary" disabled={!!check.result.errors.length} onClick={apply}>評価データをまとめて保存</button>{team.selectionAssessment&&<button class="btn" onClick={()=>{save(t=>{t.pickRuleMode='legacy';});toast('優先順位を有効にしました');}}>優先順位を使う</button>}</div>
   {dirty&&<small class="hint">編集内容は保存ボタンを押すまで対戦へ反映されません。</small>}
