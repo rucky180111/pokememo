@@ -1717,3 +1717,5 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .rule-row-form .field>label { display:flex; flex-direction:column; gap:4px; }
 .rule-mon-picker { display:flex; flex-wrap:wrap; gap:4px; }
 .rule-mon-picker>.btn { display:flex; align-items:center; gap:3px; min-height:44px; touch-action:manipulation; }
+.selection-comparison .selection-condition-tabs small { display:block; font-size:10px; font-weight:400; }
+.selection-comparison>.hint { margin:4px 8px; }

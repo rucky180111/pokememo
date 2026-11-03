@@ -70,6 +70,8 @@ for (const [vw, name] of [[{width: 390, height: 844}, 'phone'], [{width: 1180, h
   check(JSON.stringify(order) === JSON.stringify([['1', 'ゴリランダー'], ['2', 'ガブリアス'], ['3', 'ドドゲザン']]), `${name}: この選出にする で順番どおり選ばれる ${JSON.stringify(order)}`);
   check(await page.getByRole('button', {name: 'この選出になっています'}).count() === 1, `${name}: 反映済みの表示`);
   await page.screenshot({path: `${out}/pickrules-select-${name}.png`, fullPage: false});
+  // スナップショットのない取り込み済み対戦では構築を参照する。
+  await idb(page, 'const g=s.get("battle:"+a);g.onsuccess=()=>{const b=g.result;delete b.pickRules;s.put(b,"battle:"+a);};', bid);
   // 1体・先発空きの行を重ねて3体になる
   await idb(page, 'const g = s.get("team:prtest"); g.onsuccess = () => { const t = g.result; t.pickRules = [{cond: "カバルドン", pick: ["", "gholdengo"]}, {cond: "カイリュー", pick: ["garchomp"]}, {cond: "ルカリオ", pick: [], ban: ["rillaboom"]}, {cond: "*", pick: ["kingambit", "rillaboom", "empoleon"]}]; s.put(t, "team:prtest"); };', null);
   await page.reload();

@@ -9,6 +9,7 @@ import {MonEditor} from './teams.jsx';
 import {OppSheet} from './battle.jsx';
 import {SelectionAssessmentHint} from './selection-assessment.jsx';
 import {ClassPickHint} from './class-pickrules.jsx';
+import {SELECTION_MODES,comparisonData,selectionStarted,applySelectionComparison} from '../engine/selection-comparison.js';
 import {PickRuleHint} from './pickrules.jsx';
 
 const previewName = id => speciesName(selectionSpeciesId(id));
@@ -30,8 +31,10 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
   const {store} = useApp();
   const liveTeam=store.team(battle.teamId);
   const ruleMode=battle.pickRuleMode || (liveTeam?.pickRuleMode==='class'?null:liveTeam?.pickRuleMode) || ((battle.selectionAssessment || liveTeam?.selectionAssessment)?'assessment':'legacy');
-  const classData=battle.classPickRules || liveTeam?.classPickRules;
-  const assessmentTeam={...liveTeam,selectionAssessment:battle.selectionAssessment || liveTeam?.selectionAssessment};
+  const inputs=comparisonData(battle,liveTeam);
+  const [compareMode,setCompareMode]=useState(ruleMode);
+  const comparisonStarted=selectionStarted(battle);
+  const applyChoice=(mode,pick,record)=>{let ok=false;mut(b=>{ok=applySelectionComparison(b,mode,pick,inputs[mode],record);});if(ok)toast('選出・先発と方式を記録しました');else toast('対戦の状態や条件を確認してください');};
   const [pick, setPick] = useState(null); // 相手のパーティを選ぶパネル (開くときは最初に選ぶ枠の番号)
   const [oppEdit, setOppEdit] = useState(null);
   const [myEdit, setMyEdit] = useState(null);
@@ -114,7 +117,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
         })}
       </div>
 
-      {battle.opp.length > 0 && ruleMode==='legacy' && (
+      {battle.opp.length > 0 && compareMode==='legacy' && (
         <div class="box">
           <h4>相手の初手予想 <span class="muted">使用率ベース{sim.n ? `・似た並びとの対戦 ${sim.n}戦` : ''}</span></h4>
           <div class="chips">
@@ -128,8 +131,18 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
         </div>
       )}
 
-      {ruleMode==='class' ? <ClassPickHint data={classData} battle={battle} started={battle.turns.length>0 || ['me','opp'].some(side=>battle.state.sides[side].active.some(x=>x!=null))} onApply={(idx,record)=>mut(b=>{b.pick.me=idx.slice(0,nPick);b.pickRuleMode='class';b.classPickRules=structuredClone(classData);b.classPickDecision=record;})} /> : ruleMode==='assessment' && assessmentTeam.selectionAssessment ? <SelectionAssessmentHint team={assessmentTeam} battle={battle} started={battle.turns.length>0 || ['me','opp'].some(side=>battle.state.sides[side].active.some(x=>x!=null))} onApply={(idx,record) => mut(b => { b.pick.me = idx.slice(0,nPick); b.selectionAssessment=structuredClone(assessmentTeam.selectionAssessment); b.selectionRecommendation=record; })} /> : <PickRuleHint team={battle.teamId ? store.team(battle.teamId) : null} battle={battle} started={battle.state.sides.me.active.some(x => x != null)}
-        onApply={idx => mut(b => { b.pick.me = idx.slice(0, nPick); })} />}
+      <section class="selection-comparison">
+        <h3>選出案の比較</h3>
+        <div role="tablist" aria-label="選出案の比較方式" class="selection-condition-tabs">{SELECTION_MODES.map(([mode,label],i)=><button class={cx('btn',compareMode===mode&&'primary')} role="tab" id={`pick-compare-${mode}`} aria-controls={`pick-result-${mode}`} aria-label={label} aria-selected={compareMode===mode} tabIndex={compareMode===mode?0:-1} onClick={()=>setCompareMode(mode)} onKeyDown={e=>{const n=e.key==='ArrowRight'?(i+1)%3:e.key==='ArrowLeft'?(i+2)%3:e.key==='Home'?0:e.key==='End'?2:-1;if(n>=0){e.preventDefault();setCompareMode(SELECTION_MODES[n][0]);document.getElementById(`pick-compare-${SELECTION_MODES[n][0]}`)?.focus();}}}>{label}{!inputs[mode]||(mode==='legacy'&&!inputs.legacy.length)?<small>未登録</small>:null}</button>)}</div>
+        <p class="hint">使用中：{SELECTION_MODES.find(([mode])=>mode===ruleMode)?.[1]}。タブの切り替えだけでは選出は変わりません。</p>
+        {SELECTION_MODES.map(([mode,label])=><div role="tabpanel" id={`pick-result-${mode}`} aria-labelledby={`pick-compare-${mode}`} class="selection-rule-panel" hidden={compareMode!==mode}>
+          {!inputs[mode]||(mode==='legacy'&&!inputs.legacy.length)?<div class="box"><b>{label}</b><p class="hint">この方式の条件は未登録です。構築の「選出条件」で設定できます。</p></div>:<>
+            <p class="hint">条件の出所：{mode==='legacy'?(battle.pickRules!=null?'対戦に保存した優先順位':'構築の保存済み優先順位'):mode==='class'?(battle.classPickRules?'対戦に保存したルール':'構築の保存済みルール'):(battle.selectionAssessment?'対戦に保存した評価データ':'構築の保存済み評価データ')}</p>
+            {mode==='legacy'?(battle.opp.length?<PickRuleHint team={{pickRules:inputs.legacy}} battle={battle} started={comparisonStarted} onApply={idx=>applyChoice(mode,idx.slice(0,nPick))}/>:<p class="hint">相手を登録すると選出案を表示します。</p>):mode==='class'?<ClassPickHint data={inputs.class} battle={battle} started={comparisonStarted} onApply={(idx,record)=>applyChoice(mode,idx,record)}/>:<SelectionAssessmentHint team={{...liveTeam,pickRules:inputs.legacy,selectionAssessment:inputs.assessment}} battle={battle} started={comparisonStarted} onApply={(idx,record)=>applyChoice(mode,idx,record)}/>}
+          </>}
+        </div>)}
+        {comparisonStarted&&<p class="hint">対戦開始後は比較のみできます。選出の適用はできません。</p>}
+      </section>
 
       <div class="sel-head">
         <h3>自分の選出 <span class="muted">{battle.pick.me.length}/{nPick}・タップした順。先頭{nLead}体が初手</span></h3>
