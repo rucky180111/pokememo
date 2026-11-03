@@ -34,14 +34,14 @@ for (const [vw, name] of [[{width: 390, height: 844}, 'phone'], [{width: 1180, h
   await page.goto(`${url}#/team/prtest`);
   await page.reload();
   await page.waitForSelector('.page-head');
-  await page.getByRole('button', {name: /^選出ルール/}).click();
+  await page.getByRole('button', {name: /^選出条件/}).click();
   await page.getByRole('button', {name: 'まとめて入力・書き出し'}).click();
   await page.locator('.pr-bulk').fill(sample);
   await page.getByRole('button', {name: 'この内容で置き換える'}).click();
   await page.waitForTimeout(200);
   check(await page.locator('.pr-row').count() === 19, `${name}: 19行のルールが入る`);
   check(await page.locator('.pr-err').count() === 0, `${name}: 条件のエラーなし`);
-  check(await page.getByRole('button', {name: '選出ルール (19)'}).count() === 1, `${name}: タブに件数`);
+  check(await page.getByRole('button', {name: '選出条件'}).count() === 1, `${name}: タブに件数`);
   await page.screenshot({path: `${out}/pickrules-editor-${name}.png`, fullPage: true});
   // 並べ替え: 2行目を上へ
   await page.locator('.pr-row').nth(1).getByRole('button', {name: '上へ'}).click();
@@ -62,7 +62,7 @@ for (const [vw, name] of [[{width: 390, height: 844}, 'phone'], [{width: 1180, h
   await page.reload();
   await page.waitForSelector('.pr-hint');
   const txt = await page.locator('.pr-hint').innerText();
-  check(/選出ルール\s*4/.test(txt) && /ゴリランダー/.test(txt) && /先発/.test(txt), `${name}: ルカリオ+ゴーストで4行目が出る`);
+  check(/優先順位\s*4/.test(txt) && /ゴリランダー/.test(txt) && /先発/.test(txt), `${name}: ルカリオ+ゴーストで4行目が出る`);
   check(await page.locator('.pr-hint .pr-cond .pr-mon').count() >= 1, `${name}: 選出画面の条件もアイコン`);
   await page.getByRole('button', {name: 'この選出にする'}).click();
   await page.waitForTimeout(200);

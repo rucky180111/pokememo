@@ -2,8 +2,10 @@
 import {useMemo, useState} from 'preact/hooks';
 import {speciesName, selectionSpeciesId} from '../engine/dex.js';
 import {parseCond, decidePick, pickIndexes, parseRulesText, rulesToText} from '../engine/pickrule.js';
+import {PickRuleAIHelp} from './pickrule-ai-help.jsx';
+import {SelectionAssessmentEditor} from './selection-assessment.jsx';
 import {ClassRulesEditor} from './class-pickrules.jsx';
-import {Sheet, Sprite, TypeChip, Seg, cx} from './common.jsx';
+import {Sheet, Sprite, TypeChip, cx} from './common.jsx';
 
 // 条件をアイコンで表示: ポケモンはアイコン、タイプはタイプ表示。+ は「かつ」、| は「か」、/ は「または」
 export function CondIcons({cond, preview = false}) {
@@ -90,8 +92,19 @@ function HelpBody() {
 
 // 構築の画面: ルールの一覧 (上が優先)
 export function PickRulesEditor({team,save}) {
-  const [view,setView]=useState(team.pickRuleMode==='class'?'class':'legacy');
-  return <><Seg value={view} options={[["legacy","従来の優先順位"],["class","class・代替候補"]]} onChange={setView}/><p class="hint">使用中：{team.pickRuleMode==='class'?'class・代替候補':team.pickRuleMode==='assessment'||(!team.pickRuleMode&&team.selectionAssessment)?'選出評価v3':'従来の優先順位'}。編集画面の切り替えだけでは方式は変わりません。</p>{view==='legacy'&&team.pickRuleMode!=='legacy'&&<button class="btn" onClick={()=>save(t=>{t.pickRuleMode='legacy';})}>従来方式を有効にする</button>}{view==='class'?<ClassRulesEditor team={team} save={save}/>:<LegacyPickRulesEditor team={team} save={save}/>}</>;
+  const active=team.pickRuleMode || (team.selectionAssessment?'assessment':'legacy');
+  const [view,setView]=useState(active);
+  const tabs=[['legacy','優先順位'],['class','class・代替候補'],['assessment','役割・危険評価']];
+  return <section class="selection-conditions">
+    <div role="tablist" aria-label="選出条件の方式" class="selection-condition-tabs">{tabs.map(([id,label])=><button role="tab" aria-selected={view===id} tabIndex={view===id?0:-1} onKeyDown={e=>{const n=tabs.findIndex(([key])=>key===view);const k=e.key==='ArrowRight'?(n+1)%3:e.key==='ArrowLeft'?(n+2)%3:e.key==='Home'?0:e.key==='End'?2:-1;if(k>=0){e.preventDefault();setView(tabs[k][0]);document.getElementById(`condition-tab-${tabs[k][0]}`)?.focus();}}} id={`condition-tab-${id}`} aria-controls={`condition-panel-${id}`} class={cx('btn',view===id&&'primary')} onClick={()=>setView(id)}>{label}</button>)}</div>
+    <p class="hint">使用中：{tabs.find(([id])=>id===active)?.[1]}。タブの切り替えだけでは方式は変わりません。</p>
+    <PickRuleAIHelp team={team} mode={view}/>
+    <div id="condition-panel-legacy" role="tabpanel" aria-labelledby="condition-tab-legacy" class="selection-rule-panel" hidden={view!=='legacy'}>{active!=='legacy'&&<button class="btn" onClick={()=>save(t=>{t.pickRuleMode='legacy';})}>優先順位を使う</button>}<LegacyPickRulesEditor team={team} save={save}/></div>
+    <div id="condition-panel-class" role="tabpanel" aria-labelledby="condition-tab-class" class="selection-rule-panel" hidden={view!=='class'}><ClassRulesEditor team={team} save={save}/></div>
+    <div id="condition-panel-assessment" role="tabpanel" aria-labelledby="condition-tab-assessment" class="selection-rule-panel" hidden={view!=='assessment'}><SelectionAssessmentEditor team={team} save={save}/></div>
+    <p class="hint">各方式の設定は別保存です。有効化後に作る対戦へ反映されます。</p>
+  </section>;
+
 }
 function LegacyPickRulesEditor({team, save}) {
   const rules = team.pickRules || [];
@@ -102,7 +115,7 @@ function LegacyPickRulesEditor({team, save}) {
   const [editing, setEditing] = useState(-1);
   return (
     <div class="pick-rules">
-      <p class="hint">上から順に、当てはまった行のポケモンを重ねて3体を決めます (3体の行に当たればその3体)。左が先発。行を押すと編集できます。</p>
+      <p class="hint">一致した行を上から重ねて3体を選びます。左端が先発です。行を押すと編集できます。</p>
       <details class="pr-help"><summary>書き方のルール</summary>
         <HelpBody />
       </details>
@@ -194,13 +207,13 @@ export function PickRuleHint({team, battle, started, onApply}) {
   const myIds = battle.my.map(m => m?.species);
   const hit = useMemo(() => decidePick(rules, opp, myIds), [rules, opp.join(), myIds.join()]);
   if (!rules?.length || !opp.length) return null;
-  if (!hit) return <div class="box pr-hint"><h4>選出ルール</h4><p class="hint">当てはまるルールがありません。</p></div>;
+  if (!hit) return <div class="box pr-hint"><h4>優先順位</h4><p class="hint">当てはまるルールがありません。</p></div>;
   const idx = pickIndexes(hit.pick, battle.my);
   const same = idx.length && idx.every((x, k) => battle.pick.me[k] === x) && battle.pick.me.length === idx.length;
   const one = hit.rows.length === 1 && !hit.auto ? rules[hit.rows[0]] : null;
   return (
     <div class="box pr-hint">
-      <h4>選出ルール {hit.rows.map(i => <span class="num">{i + 1}</span>)}{one && <CondIcons cond={one.cond} preview />}{opp.length < 6 && <span class="muted"> (相手{opp.length}/6体で判定)</span>}</h4>
+      <h4>優先順位 {hit.rows.map(i => <span class="num">{i + 1}</span>)}{one && <CondIcons cond={one.cond} preview />}{opp.length < 6 && <span class="muted"> (相手{opp.length}/6体で判定)</span>}</h4>
       <div class="pr-hint-row">
         <ol class="pr-hint-pick">
           {idx.map((mi, k) => (

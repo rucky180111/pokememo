@@ -10,8 +10,8 @@ try{
  for(const width of [1180,1024,390]){
   const page=await browser.newPage({viewport:{width,height:820},hasTouch:true}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(url);await page.waitForSelector('.bottomnav');
   const team=newTeam();team.mons=[{...newBuild('charizard'),item:'charizarditey'},{...newBuild('garchomp'),item:'garchompitez'},newBuild('rillaboom'),newBuild('kingambit'),newBuild('gholdengo'),newBuild('dragonite')];team.pickRules=[{cond:'イエッサン',pick:['rillaboom','kingambit','gholdengo']},{cond:'フラエッテ-ペリッパー',pick:['charizard','rillaboom','gholdengo']}];
-  await page.evaluate(t=>window.__pokememo.store.saveTeam(t),team);await page.goto(`${url}#/team/${team.id}`);await page.getByRole('button',{name:/^選出ルール/}).click();await page.getByRole('button',{name:'class・代替候補',exact:true}).click();const editor=page.locator('.class-rules-editor');
-  await editor.getByText('現在の旧CSVを参照（自動変換しません）',{exact:true}).click();await editor.getByRole('button',{name:'旧CSV行2のリザ条件をclass1へ転記（保存は別）',exact:true}).click();assert.match(await editor.getByLabel('classルールCSV',{exact:true}).inputValue(),/1,フラエッテ-ペリッパー,char_axis/);assert.equal((await page.evaluate(id=>window.__pokememo.store.team(id),team.id)).classPickRules,undefined);await editor.getByLabel('設定JSON（軸分岐は明示設定したときだけ使用）',{exact:true}).fill(JSON.stringify(blankClassRules().settings));
+  await page.evaluate(t=>window.__pokememo.store.saveTeam(t),team);await page.goto(`${url}#/team/${team.id}`);await page.getByRole('button',{name:/^選出条件/}).click();await page.getByRole('tab',{name:'class・代替候補',exact:true}).click();const editor=page.locator('.class-rules-editor');
+  await editor.getByText('現在の優先順位CSVを参照（自動変換しません）',{exact:true}).click();await editor.getByRole('button',{name:'優先順位CSV行2のリザ条件をclass1へ転記（保存は別）',exact:true}).click();assert.match(await editor.getByLabel('classルールCSV',{exact:true}).inputValue(),/1,フラエッテ-ペリッパー,char_axis/);assert.equal((await page.evaluate(id=>window.__pokememo.store.team(id),team.id)).classPickRules,undefined);await editor.getByLabel('設定JSON（軸分岐は明示設定したときだけ使用）',{exact:true}).fill(JSON.stringify(blankClassRules().settings));
   const d=blankClassRules();d.rowsCsv=CLASS_HEADER+'\n3,イエッサン,indeedee,採用,ゴリランダー;ドドゲザン,any,推奨,1,*,,確認済み,対面処理,手動で確認したテスト\n3,アシレーヌ,primarina,採用,ゴリランダー,any,推奨,1,*,,確認済み,対面処理,検証用\n3,ゴーストタイプ,ghost,採用,ドドゲザン,any,推奨,1,*,,確認済み,対面処理,検証用';
   await editor.getByLabel('classルールCSV',{exact:true}).fill(d.rowsCsv);await editor.getByRole('button',{name:'保存してclass方式を有効にする',exact:true}).click();const saved=await page.evaluate(id=>window.__pokememo.store.team(id),team.id);assert.deepEqual(saved.pickRules,team.pickRules);assert.equal(saved.pickRuleMode,'class');
   await editor.getByLabel('classルールCSV',{exact:true}).fill(d.rowsCsv.replace('ゴリランダー;ドドゲザン','存在しない'));assert.ok(await editor.getByRole('button',{name:'保存してclass方式を有効にする',exact:true}).isDisabled());assert.deepEqual((await page.evaluate(id=>window.__pokememo.store.team(id),team.id)).classPickRules,saved.classPickRules);
@@ -24,5 +24,5 @@ try{
   }
   assert.deepEqual(errors,[]);await page.close();
  }
- console.log('ok class方式: 旧CSV保持・保存の原子性・全列挙・先発独立選択・版と理由保存・不足/集中説明・3画面幅');
+ console.log('ok class方式: 優先順位CSV保持・保存の原子性・全列挙・先発独立選択・版と理由保存・不足/集中説明・3画面幅');
 }finally{await browser?.close();server.close();}

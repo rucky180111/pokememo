@@ -24,15 +24,15 @@ export function SelectionAssessmentEditor({team,save}){
  }catch(err){setFileError(err.message);}};
  const apply=()=>{if(!check.data||check.result.errors.length)return;const next={...check.data,updatedAt:new Date().toISOString()};save(t=>{t.selectionAssessment=next;t.pickRuleMode='assessment';});setDraft(next);toast('選出評価データをまとめて保存しました');};
  return <div class="selection-editor">
-  <h3>選出評価 v3</h3><p>選出3体と先発を全列挙し、役割・危険を採点します。交代後は検証済みの手動ケースを参照します。数値モデルのない初動は総合点に含めません。</p>
+  <p class="hint">役割と危険を点数で比較します。初動は手動ケースの参照のみで、自動シミュレーションは行いません。</p>
   <div class="btnrow"><button class="btn" onClick={()=>input.current.click()}>CSV・JSONを読み込む</button><input hidden type="file" accept=".csv,.tsv,.json" multiple ref={input} onChange={readFiles}/><button class="btn" onClick={useExample}>仕様書の見本を編集欄へ</button><button class="btn" disabled={!check.data || !!check.result.errors.length} onClick={()=>download(check.data,'pokememo-selection-v3.json')}>評価データを書き出す</button></div>
-  <p class="hint">読み込みは編集欄への反映だけです。全ファイルの検証後に保存します。見本は仮評価で、自分の6体に合わせて候補を修正する必要があります。</p>
+  <p class="hint">読み込み後に確認して保存します。見本の点数は仮評価です。</p>
   <div class="assessment-metadata"><label class="field"><span>データ版</span><input class="input" value={draft.dataVersion} onInput={e=>update('dataVersion',e.currentTarget.value)}/></label><label class="field"><span>根拠・評価の出所</span><input class="input" value={draft.source} onInput={e=>update('source',e.currentTarget.value)}/></label></div>
   <Seg wrap value={tab} options={[['rolesCsv','役割CSV'],['risksCsv','危険CSV'],['openingCsv','初動ケースCSV'],['rules','制約JSON']]} onChange={setTab}/>
-  <label class="field"><span>{({rolesCsv:ROLE_HEADER,risksCsv:RISK_HEADER,openingCsv:CASE_HEADER,rules:'rules.json'})[tab]}</span><textarea class="input assessment-source" rows={12} spellcheck={false} value={tab==='rules'?rulesText:draft[tab]} onInput={e=>tab==='rules'?setRulesText(e.currentTarget.value):update(tab,e.currentTarget.value)}/></label>
+  <label class="field"><span>{({rolesCsv:'役割CSV',risksCsv:'危険CSV',openingCsv:'初動ケースCSV',rules:'制約JSON'})[tab]}</span><textarea class="input assessment-source" rows={12} spellcheck={false} value={tab==='rules'?rulesText:draft[tab]} onInput={e=>tab==='rules'?setRulesText(e.currentTarget.value):update(tab,e.currentTarget.value)}/></label>
   {tab==='openingCsv'&&<p class="hint">評価を付ける行は、追加列「検証済み」にtrueと根拠が必要です。「自分条件」を追加すると選出3体でケースを限定できます。未検証・未登録は未評価。異なる型に都合のよい初手を選び分けて平均する処理は行いません。</p>}
   {fileError&&<p role="alert">{fileError}</p>}{check.result.errors.length>0?<div class="assessment-errors" role="alert"><b>保存できません</b><ul>{check.result.errors.map(e=><li>{e}</li>)}</ul></div>:<p class="hint">形式確認済み：役割{check.result.roles.length}行・危険{check.result.risks.length}行・初動ケース{check.result.cases.length}行</p>}
-  <div class="btnrow"><button class="btn primary" disabled={!!check.result.errors.length} onClick={apply}>評価データをまとめて保存</button>{team.selectionAssessment&&<button class="btn" onClick={()=>{save(t=>{delete t.selectionAssessment;t.pickRuleMode='legacy';});toast('選出評価を解除し、従来ルールに戻しました');}}>評価を解除して従来ルールへ</button>}</div>
+  <div class="btnrow"><button class="btn primary" disabled={!!check.result.errors.length} onClick={apply}>評価データをまとめて保存</button>{team.selectionAssessment&&<button class="btn" onClick={()=>{save(t=>{t.pickRuleMode='legacy';});toast('優先順位を有効にしました');}}>優先順位を使う</button>}</div>
   {dirty&&<small class="hint">編集内容は保存ボタンを押すまで対戦へ反映されません。</small>}
   {team.selectionAssessment&&<p class="hint">保存版 {team.selectionAssessment.dataVersion} ／ 更新 {new Date(team.selectionAssessment.updatedAt).toLocaleString('ja-JP')} ／ {team.selectionAssessment.source}</p>}
  </div>;
@@ -55,7 +55,7 @@ export function SelectionAssessmentHint({team,battle,started,onApply}){
  const result=useMemo(()=>team?.selectionAssessment?evaluateSelection(team.selectionAssessment,{...team,mons:battle.my},battle.opp):null,[team,battle.my,battle.opp]);
  if(!result)return null;
  if(battle.format==='double')return <div class="box"><b>選出評価 v3</b><p>この評価は6体から3体を選ぶシングル用です。</p></div>;
- if(result.errors.length)return <div class="box" role="alert"><b>選出評価を実行できません</b><ul>{result.errors.map(e=><li>{e}</li>)}</ul><p>構築の「選出評価」で設定を確認してください。従来ルールへの自動切り替えは行いません。</p></div>;
+ if(result.errors.length)return <div class="box" role="alert"><b>選出評価を実行できません</b><ul>{result.errors.map(e=><li>{e}</li>)}</ul><p>構築の「選出条件 → 役割・危険評価」で設定を確認してください。優先順位への自動切り替えは行いません。</p></div>;
  const legacy=team.pickRules?.length?decidePick(team.pickRules,battle.opp.map(o=>o.species),battle.my.map(m=>m.species)):null;
  return <section class="box selection-assessment"><h3>選出評価 <span class="tag">静的順位</span></h3>
   {result.activeRoleCount===0&&<p class="assessment-warning">成立した役割データが0件です。この相手への対応範囲は採点できていません。</p>}
@@ -66,6 +66,6 @@ export function SelectionAssessmentHint({team,battle,started,onApply}){
    {(all?result.candidates:result.candidates.slice(0,3)).map((c,i)=><article class="assessment-candidate"><header><b>{i+1}位</b><strong>{points(c.staticScore)}点</strong></header><SelectionLine candidate={c} team={{...team,mons:battle.my}}/>{!started&&<button class="btn primary" onClick={()=>onApply(c.pick,{schemaVersion:3,dataVersion:result.metadata.version,updatedAt:result.metadata.updatedAt,source:result.metadata.source,pick:c.pick,lead:c.lead,staticScore:c.staticScore,totalScore:null,ranking:result.ranking,evaluatedAt:new Date().toISOString()})}>この選出・先発にする</button>}<details><summary>役割・危険・相手6先発の説明</summary><CandidateDetail candidate={c} team={{...team,mons:battle.my}}/></details></article>)}
    <button class="btn" onClick={()=>setAll(!all)}>{all?'上位3候補に戻す':`全${result.candidates.length}候補を表示`}</button>
   </>}
-  {legacy&&<details><summary>旧優先順位との比較（評価の正解ラベルではありません）</summary><p>{pickIndexes(legacy.pick,battle.my).map(i=>name({mons:battle.my},i)).join(' → ')}</p></details>}
+  {legacy&&<details><summary>優先順位との比較</summary><p>{pickIndexes(legacy.pick,battle.my).map(i=>name({mons:battle.my},i)).join(' → ')}</p></details>}
  </section>;
 }

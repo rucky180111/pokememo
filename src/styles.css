@@ -1691,3 +1691,9 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .class-rules-editor summary { min-height:44px; padding:12px 0; cursor:pointer; }
 .class-pick-hint .btn,.class-rules-editor .btn { min-height:44px; touch-action:manipulation; }
 .class-pick-hint .chips { flex-wrap:wrap; }
+.selection-condition-tabs { display:flex; gap:4px; margin:10px 0; }
+.selection-condition-tabs>.btn { flex:1; min-width:0; min-height:44px; padding:6px; white-space:normal; touch-action:manipulation; }
+.selection-rule-panel[hidden] { display:none; }
+.pickrule-ai-help { margin:8px 0; border:1px solid var(--border); padding:0 10px; border-radius:8px; }
+.pickrule-ai-help summary { min-height:44px; padding:12px 0; cursor:pointer; font-weight:600; }
+.pickrule-ai-help .field { margin-top:8px; }
