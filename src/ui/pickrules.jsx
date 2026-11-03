@@ -2,7 +2,8 @@
 import {useMemo, useState} from 'preact/hooks';
 import {speciesName, selectionSpeciesId} from '../engine/dex.js';
 import {parseCond, decidePick, pickIndexes, parseRulesText, rulesToText} from '../engine/pickrule.js';
-import {Sheet, Sprite, TypeChip, cx} from './common.jsx';
+import {ClassRulesEditor} from './class-pickrules.jsx';
+import {Sheet, Sprite, TypeChip, Seg, cx} from './common.jsx';
 
 // 条件をアイコンで表示: ポケモンはアイコン、タイプはタイプ表示。+ は「かつ」、| は「か」、/ は「または」
 export function CondIcons({cond, preview = false}) {
@@ -88,7 +89,11 @@ function HelpBody() {
 }
 
 // 構築の画面: ルールの一覧 (上が優先)
-export function PickRulesEditor({team, save}) {
+export function PickRulesEditor({team,save}) {
+  const [view,setView]=useState(team.pickRuleMode==='class'?'class':'legacy');
+  return <><Seg value={view} options={[["legacy","従来の優先順位"],["class","class・代替候補"]]} onChange={setView}/><p class="hint">使用中：{team.pickRuleMode==='class'?'class・代替候補':team.pickRuleMode==='assessment'||(!team.pickRuleMode&&team.selectionAssessment)?'選出評価v3':'従来の優先順位'}。編集画面の切り替えだけでは方式は変わりません。</p>{view==='legacy'&&team.pickRuleMode!=='legacy'&&<button class="btn" onClick={()=>save(t=>{t.pickRuleMode='legacy';})}>従来方式を有効にする</button>}{view==='class'?<ClassRulesEditor team={team} save={save}/>:<LegacyPickRulesEditor team={team} save={save}/>}</>;
+}
+function LegacyPickRulesEditor({team, save}) {
   const rules = team.pickRules || [];
   const [bulk, setBulk] = useState(null); // 一括入力の文字列
   const [bulkErr, setBulkErr] = useState([]);

@@ -1686,3 +1686,8 @@ button, input, select, summary, .pl-hp { touch-action: manipulation; }
 .assessment-note { margin:3px 0; }
 .assessment-warning { padding:8px; border-left:3px solid var(--bad); background:var(--surface2); }
 .selection-assessment .btn { min-height:44px; touch-action:manipulation; }
+.class-rules-editor { display:flex; flex-direction:column; gap:10px; padding:12px 0; }
+.class-example { white-space:pre-wrap; overflow-wrap:anywhere; background:var(--surface2); padding:8px; font-size:12px; }
+.class-rules-editor summary { min-height:44px; padding:12px 0; cursor:pointer; }
+.class-pick-hint .btn,.class-rules-editor .btn { min-height:44px; touch-action:manipulation; }
+.class-pick-hint .chips { flex-wrap:wrap; }

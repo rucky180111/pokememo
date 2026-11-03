@@ -22,7 +22,7 @@ export function SelectionAssessmentEditor({team,save}){
   }
   setDraft(next);setRulesText(nextRules);setFileError('');
  }catch(err){setFileError(err.message);}};
- const apply=()=>{if(!check.data||check.result.errors.length)return;const next={...check.data,updatedAt:new Date().toISOString()};save(t=>{t.selectionAssessment=next;});setDraft(next);toast('選出評価データをまとめて保存しました');};
+ const apply=()=>{if(!check.data||check.result.errors.length)return;const next={...check.data,updatedAt:new Date().toISOString()};save(t=>{t.selectionAssessment=next;t.pickRuleMode='assessment';});setDraft(next);toast('選出評価データをまとめて保存しました');};
  return <div class="selection-editor">
   <h3>選出評価 v3</h3><p>選出3体と先発を全列挙し、役割・危険を採点します。交代後は検証済みの手動ケースを参照します。数値モデルのない初動は総合点に含めません。</p>
   <div class="btnrow"><button class="btn" onClick={()=>input.current.click()}>CSV・JSONを読み込む</button><input hidden type="file" accept=".csv,.tsv,.json" multiple ref={input} onChange={readFiles}/><button class="btn" onClick={useExample}>仕様書の見本を編集欄へ</button><button class="btn" disabled={!check.data || !!check.result.errors.length} onClick={()=>download(check.data,'pokememo-selection-v3.json')}>評価データを書き出す</button></div>
@@ -32,7 +32,7 @@ export function SelectionAssessmentEditor({team,save}){
   <label class="field"><span>{({rolesCsv:ROLE_HEADER,risksCsv:RISK_HEADER,openingCsv:CASE_HEADER,rules:'rules.json'})[tab]}</span><textarea class="input assessment-source" rows={12} spellcheck={false} value={tab==='rules'?rulesText:draft[tab]} onInput={e=>tab==='rules'?setRulesText(e.currentTarget.value):update(tab,e.currentTarget.value)}/></label>
   {tab==='openingCsv'&&<p class="hint">評価を付ける行は、追加列「検証済み」にtrueと根拠が必要です。「自分条件」を追加すると選出3体でケースを限定できます。未検証・未登録は未評価。異なる型に都合のよい初手を選び分けて平均する処理は行いません。</p>}
   {fileError&&<p role="alert">{fileError}</p>}{check.result.errors.length>0?<div class="assessment-errors" role="alert"><b>保存できません</b><ul>{check.result.errors.map(e=><li>{e}</li>)}</ul></div>:<p class="hint">形式確認済み：役割{check.result.roles.length}行・危険{check.result.risks.length}行・初動ケース{check.result.cases.length}行</p>}
-  <div class="btnrow"><button class="btn primary" disabled={!!check.result.errors.length} onClick={apply}>評価データをまとめて保存</button>{team.selectionAssessment&&<button class="btn" onClick={()=>{save(t=>{delete t.selectionAssessment;});toast('選出評価を解除し、従来ルールに戻しました');}}>評価を解除して従来ルールへ</button>}</div>
+  <div class="btnrow"><button class="btn primary" disabled={!!check.result.errors.length} onClick={apply}>評価データをまとめて保存</button>{team.selectionAssessment&&<button class="btn" onClick={()=>{save(t=>{delete t.selectionAssessment;t.pickRuleMode='legacy';});toast('選出評価を解除し、従来ルールに戻しました');}}>評価を解除して従来ルールへ</button>}</div>
   {dirty&&<small class="hint">編集内容は保存ボタンを押すまで対戦へ反映されません。</small>}
   {team.selectionAssessment&&<p class="hint">保存版 {team.selectionAssessment.dataVersion} ／ 更新 {new Date(team.selectionAssessment.updatedAt).toLocaleString('ja-JP')} ／ {team.selectionAssessment.source}</p>}
  </div>;

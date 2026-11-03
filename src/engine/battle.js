@@ -27,6 +27,8 @@ export function newBattle({team, format, kind = 'battle'} = {}) {
   const fmt = format || team?.format || 'single';
   return {
     id: uid(), kind, format: fmt, teamId: team?.id || null, teamName: team?.name || '',
+    pickRuleMode:team?.pickRuleMode || (team?.selectionAssessment ? 'assessment' : 'legacy'),
+    ...(team?.classPickRules ? {classPickRules:clone(team.classPickRules)} : {}),
     ...(team?.selectionAssessment ? {selectionAssessment:clone(team.selectionAssessment)} : {}),
     my: clone(team?.mons || []), opp: [],
     oppName: '', date: new Date(now).toISOString().slice(0, 10),

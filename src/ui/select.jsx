@@ -8,6 +8,7 @@ import {useApp, Picker, TypeChip, Sprite, cx, rate} from './common.jsx';
 import {MonEditor} from './teams.jsx';
 import {OppSheet} from './battle.jsx';
 import {SelectionAssessmentHint} from './selection-assessment.jsx';
+import {ClassPickHint} from './class-pickrules.jsx';
 import {PickRuleHint} from './pickrules.jsx';
 
 const previewName = id => speciesName(selectionSpeciesId(id));
@@ -28,6 +29,8 @@ const mySpe = m => {
 export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
   const {store} = useApp();
   const liveTeam=store.team(battle.teamId);
+  const ruleMode=battle.pickRuleMode || (liveTeam?.pickRuleMode==='class'?null:liveTeam?.pickRuleMode) || ((battle.selectionAssessment || liveTeam?.selectionAssessment)?'assessment':'legacy');
+  const classData=battle.classPickRules || liveTeam?.classPickRules;
   const assessmentTeam={...liveTeam,selectionAssessment:battle.selectionAssessment || liveTeam?.selectionAssessment};
   const [pick, setPick] = useState(null); // 相手のパーティを選ぶパネル (開くときは最初に選ぶ枠の番号)
   const [oppEdit, setOppEdit] = useState(null);
@@ -111,7 +114,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
         })}
       </div>
 
-      {battle.opp.length > 0 && !assessmentTeam.selectionAssessment && (
+      {battle.opp.length > 0 && ruleMode==='legacy' && (
         <div class="box">
           <h4>相手の初手予想 <span class="muted">使用率ベース{sim.n ? `・似た並びとの対戦 ${sim.n}戦` : ''}</span></h4>
           <div class="chips">
@@ -125,7 +128,7 @@ export function SelectTab({battle, ctx, mut, usage, setTab, toast}) {
         </div>
       )}
 
-      {assessmentTeam.selectionAssessment ? <SelectionAssessmentHint team={assessmentTeam} battle={battle} started={battle.turns.length>0 || ['me','opp'].some(side=>battle.state.sides[side].active.some(x=>x!=null))} onApply={(idx,record) => mut(b => { b.pick.me = idx.slice(0,nPick); b.selectionAssessment=structuredClone(assessmentTeam.selectionAssessment); b.selectionRecommendation=record; })} /> : <PickRuleHint team={battle.teamId ? store.team(battle.teamId) : null} battle={battle} started={battle.state.sides.me.active.some(x => x != null)}
+      {ruleMode==='class' ? <ClassPickHint data={classData} battle={battle} started={battle.turns.length>0 || ['me','opp'].some(side=>battle.state.sides[side].active.some(x=>x!=null))} onApply={(idx,record)=>mut(b=>{b.pick.me=idx.slice(0,nPick);b.pickRuleMode='class';b.classPickRules=structuredClone(classData);b.classPickDecision=record;})} /> : ruleMode==='assessment' && assessmentTeam.selectionAssessment ? <SelectionAssessmentHint team={assessmentTeam} battle={battle} started={battle.turns.length>0 || ['me','opp'].some(side=>battle.state.sides[side].active.some(x=>x!=null))} onApply={(idx,record) => mut(b => { b.pick.me = idx.slice(0,nPick); b.selectionAssessment=structuredClone(assessmentTeam.selectionAssessment); b.selectionRecommendation=record; })} /> : <PickRuleHint team={battle.teamId ? store.team(battle.teamId) : null} battle={battle} started={battle.state.sides.me.active.some(x => x != null)}
         onApply={idx => mut(b => { b.pick.me = idx.slice(0, nPick); })} />}
 
       <div class="sel-head">
